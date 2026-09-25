@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# test/stubs/btmon — models the real monitor: prints a capture ($SW_FAKE_BTMON), then idles
+# until TERM/INT and exits cleanly (btmon flushes on TERM). Self-limiting (30s) if orphaned.
+fix="${SW_FAKE_BTMON:?test must set SW_FAKE_BTMON to a btmon capture}"
+trap 'exit 0' TERM INT
+cat "$fix"
+end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done

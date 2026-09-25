@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# test/stubs/hcitool — models `hcitool lescan` as far as the scanner still depends on it:
+# it runs until SIGINT (clean exit) or TERM. Its stdout is discarded by sw_ble_scan since
+# Tier-3 (btmon is the data source). SW_FAKE_LESCAN_IGNORE_INT=1 models an hcitool that
+# never honours SIGINT, the hang risk that `timeout -k` backstops.
+case " $* " in *" lescan "*) : ;; *) exit 0 ;; esac
+echo "LE Scan ..."
+if [ -n "${SW_FAKE_LESCAN_IGNORE_INT:-}" ]; then trap '' INT; else trap 'exit 0' INT; fi
+trap 'exit 143' TERM
+# Self-limiting: even if orphaned by a failing test, this stub is gone within 30s.
+end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done

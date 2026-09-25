@@ -1,0 +1,105 @@
+# SquachWatch-Pager
+
+An always-on detector for the wireless signatures of **surveillance devices, personal trackers, and hacker/attack tools** around you — built as native payloads for the **Hak5 WiFi Pineapple Pager**.
+
+A port/homage of [SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD) (skizzophrenic), which runs on an ESP32 "Cheap Yellow Display". Instead of sniffing with a tiny ESP32 radio, this uses the Pager's own continuously-updated recon database (`/root/recon/recon.db`) for WiFi and `btmon` for Bluetooth (decoding each advertisement, so it can spot trackers that broadcast no name), matches everything against one signature file, and raises native Pager alerts (full-screen `ALERT` + colored log + ringtone/vibrate/LED).
+
+> For authorized security research and personal surveillance-awareness only. You are responsible for compliance with local law.
+
+## What's in the box
+
+**1. The always-on scanner** — a user payload at `payloads/user/reconnaissance/squachwatch/`:
+- `payload.sh` — the scan loop (launch it from the Pager's Payloads → reconnaissance menu; stop it with the Pager's cancel button).
+- `signatures.db` — the fingerprint list (see below).
+- `lib/` — `match.sh` (signature matching + `sw_sanitize_ident`), `wifi.sh` (recon.db read), `ble.sh` (btmon capture + parse), `alert.sh` (dedupe + emit + LED/haptics), `log.sh` (CSV loot log), `follow.sh` (tracker-following escalation), `ignore.sh` (your own devices).
+
+Each lap it reads the WiFi recon DB and does a short BLE scan, matches both against the signatures, de-dupes, and on a new high-confidence hit fires a full-screen alert + buzz + LED, at most once per *kind* of device per window (`SW_KIND_COOLDOWN` below — a flood of one kind interrupts once, not once per device). Every new sighting (any confidence) also writes a row to `/root/loot/squachwatch/detections.csv`, GPS-tagged when a fix is available.
+
+Two settings keep a lap cheap and the loot file bounded:
+
+- `SW_RECENCY_SECS` (default 600) — only match devices seen in the last N seconds. The recon DB keeps months of history (20,392 rows on a real Pager, ~110 of them from the last 10 minutes), and a proximity detector only cares about what is nearby now. Set it to `0` to sweep the whole DB.
+- `SW_COOLDOWN` (default 600) — one alert *and* one CSV row per device per category per window, so the loot file grows with distinct sightings rather than with uptime. The cooldown ledger (`seen.db`) is pruned at startup and every `SW_HEALTH_EVERY` laps, so it only holds what was reported within the window.
+- `SW_FOLLOW_SECS` (default 900) / `SW_FOLLOW_GAP` (default 300): a tracker is only *logged* when seen. If the same one keeps showing up for `SW_FOLLOW_SECS` with no gap longer than `SW_FOLLOW_GAP`, it escalates to a full "following you" alert. Only two rules are separation-aware (they match a tracker only while it is away from its owner): Apple Find My / AirTag and Google Find My. An AirTag that has just been powered up (e.g. a fresh battery) sends Apple's pairing broadcast (`0x07`) before it switches to Find My, so that is caught too, as "Apple AirTag (setup mode)". AirPods and Beats use the same broadcast but are recognised by their model code and never match. The SmartTag and Tile rules match **every** SmartTag or Tile, owner nearby or not, so a companion's tag that travels with you will escalate too. Add its MAC to `ignore.txt` to silence it.
+- `SW_FOLLOW_MIN_RSSI` (default -85): the "following you" timer ignores tracker sightings weaker than this: a negative number in dBm without a leading zero (e.g. `-85`, not `-085`), so a neighbour's tracker heard through a wall doesn't "follow" you at home. Weak trackers are still logged. It's a judgment call from close-range readings of -52 to -75 dBm: a tracker hidden far from you could read weaker and not escalate, so tune it if needed. Empty (or anything that isn't a negative number, such as `0` or `85`) turns it off.
+- `SW_SNOOZE_AFTER` (default 3) / `SW_SNOOZE_MARGIN_DB` (default 7) / `SW_SNOOZE_RESET_SECS` (default 1800): AUTO SNOOZE, ported from SquachWatch-CYD, so a tracker that stays with you doesn't buzz every 10 minutes forever. Each follower gets 3 full "following you" alerts (the last one says it is snoozing). After that it buzzes again only if its signal comes back at least 7 dB stronger than its strongest alert, i.e. it has really come closer, or once it has been gone for 30 minutes. Its CSV rows and log lines carry on the whole time. Set `SW_SNOOZE_AFTER=0` to turn it off.
+- `SW_KIND_COOLDOWN` (default 600): one full-screen alert + buzz per *kind* of device (e.g. "Flipper Zero") per window, and only for **high**-confidence detections (see the Signatures section below). A flood of new high-confidence devices of one kind, such as a room full of real Flippers or several Flock cameras appearing at once, buzzes once; a BLE Spam flood of name-only fake Flippers is **med** confidence and never buzzes at all — that's 0 times, not once. Every device still gets its CSV row (and a screen line, up to the per-lap cap; see `SW_LOG_PER_KIND` below). "Following you" alerts are exempt (they have AUTO SNOOZE). Your own devices (your Flipper, say) belong in `ignore.txt` below: left out, a device that stays near you re-alerts every window and spends the kind's one buzz on itself, so a stranger's device of the same kind arriving in that window would only be logged, not buzz. Set `0` to turn it off.
+- `SW_LOG_PER_KIND` (default 3): per lap, at most this many screen lines per kind **and confidence level** of device, then one `...and N more <label>` line, so a flood can't scroll everything else off the screen. A real high-confidence device (e.g. your actual Flipper) gets its own allowance separate from a same-kind med/low flood (e.g. a BLE Spam name-only flood), so it's never folded behind the fakes. Every device still gets its CSV row. `0` = no cap.
+- `/root/loot/squachwatch/ignore.txt`: your own devices, and any companion's Tile or SmartTag you know about, one MAC per line (`#` comments allowed). They're skipped entirely, so your own Tile never alerts. It's read at launch. Put your own Flipper (or any other hacker tool you own) in here too: it isn't skipped by the kind cooldown the way it is by this file, so left out, it re-alerts every `SW_KIND_COOLDOWN` window and spends the kind's one buzz on itself — a stranger's Flipper arriving in that same window would then only be logged, never buzz.
+
+If the recon DB stops updating, every sweep would return zero rows and look exactly like "all clear" — so the scanner detects that case explicitly and logs a warning instead, re-checking every `SW_HEALTH_EVERY` laps.
+
+**2. Four native alert payloads** at `payloads/alerts/` — tiny scripts the Pager fires for free on its built-in events: `deauth_flood_detected`, `handshake_captured`, `pineapple_client_connected` (with OUI→vendor lookup), and `pineapple_auth_captured`.
+
+## Install (on the Pager, reached at `172.16.52.1` over USB-C)
+
+The scanner needs the `sqlite3` CLI to read the recon DB:
+
+```bash
+ssh root@172.16.52.1 'which sqlite3 || (opkg update && opkg install sqlite3-cli)'
+```
+
+Copy the payloads onto the device:
+
+```bash
+scp -r payloads/user/reconnaissance/squachwatch root@172.16.52.1:/root/payloads/user/reconnaissance/
+scp -r payloads/alerts/* root@172.16.52.1:/root/payloads/alerts/
+```
+
+Then launch **SquachWatch** from the Pager UI (Payloads → reconnaissance).
+
+It should say **`SquachWatch armed — watching WiFi + BLE`** in green. Yellow `WARN` / `DEGRADED` lines name what is switched off; a red **`ERROR: can't load … NOT running`** means it can't find its own `lib/` folder, so copy the whole `squachwatch` folder again.
+
+## Signatures
+
+`signatures.db` is a plain text file, one fingerprint per line:
+
+```
+match_type|pattern|category|label|confidence|threat_class
+```
+
+- `match_type`: `wifi_oui` · `wifi_ssid_sub` · `ble_name_sub` · `ble_oui` · `ble_mfr` · `ble_uuid`
+- `pattern`: e.g. `70:C9:4E` (an OUI), `pineapple` (an SSID substring), `Penguin-` (a BLE name substring)
+- `category` / `label`: machine key / human name shown in the alert
+- `confidence`: `high` | `med` | `low` (only `high` raises a full-screen alert; others just log a colored line). This is a per-signature judgment call, not a blanket rule: a **Flipper Zero** matched by its advertised **BLE name alone** is `med`, because BLE names are trivial to fake (BLE Spam floods them), while a hardware match (e.g. the Flipper's `80:E1:26` prefix) makes it `high`. `wifi_ssid_sub|pineapple` still alerts `high` on the SSID alone, which is spoofable in the same way; that rule is revisited in the signature port. When one device matches several rules of the same category, only its strongest match counts.
+- `threat_class`: `surveillance` (magenta) | `tracker` (yellow) | `attacker` (cyan)
+
+Add a detection by adding a line — no code changes. Lines starting with `#` are comments. Signatures never contain `|`; observed device names have `|` and control characters stripped before matching, so a device can't split a token to evade a signature.
+
+**Raw-advertisement matchers (Tier 3).** Every BLE device seen in a lap gets a list of tokens decoded from its advertisement by `btmon`: `mfr:<company>:<type>:<length>` for manufacturer data (Apple Find My separated from its owner = `mfr:004c:12:25`), plus for Apple's pairing broadcast (type `0x07`) `mfr:004c:07:audio:<model>` for AirPods/Beats (every published model code ends in `20`) or `mfr:004c:07:other:<model>` for anything else, `uuid:<16-bit>` for service UUIDs, and `sd:<16-bit>:<first byte>` for service data. Match them with:
+
+- `ble_mfr|004c:12:25`: a whole-segment prefix, so `004c` = any Apple, `004c:12` = any Find My, and `004c:12:25` = separated Find My only.
+- `ble_uuid|fd5a` (the UUID as a service UUID or under service data), `ble_uuid|feaa:41` (service data whose first byte is `41`), and `ble_uuid|3100-3500` (a range).
+
+The seed set covers Tier-1 targets (Flock ALPR cameras + batteries, Flipper Zero, WiFi Pineapple/Pager) plus Tier-2 starters (Ring, Tile). Grow it freely.
+
+## Tests
+
+A zero-dependency offline harness runs the whole detection engine on a normal Linux box (no Pager needed) — it shims the `sqlite3` CLI with python3 and stubs the Pager's DuckyScript verbs:
+
+```bash
+bash test/run.sh
+```
+
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **426 assertions, all passing** (also as root).
+
+## Status & roadmap
+
+The scanner is **installed and running on real hardware**. A full WiFi sweep of a live 20k-row recon DB takes **~6 s** (it took ~5.2 h before the hot path was made fork-free and the recency window added — see `docs/superpowers/P0-findings.md`).
+
+This is **core v1**: WiFi + name-based BLE detection, native alerts, offline-tested — and **verified on real hardware** (`docs/superpowers/P0-findings.md`): the live recon DB read, the real `ssid`/`wifi_device` schema, the `oui.txt` format, and the `LED`/`RINGTONE`/`VIBRATE` syntax are all confirmed on a Pager, with an on-device smoke run detecting a real device. A round of BusyBox portability bugs found there is now guarded by `test/portability_test.sh`.
+
+**Tier 3 (raw BLE advertisements)** is built: name-less trackers are logged on sight (Apple and Google Find My only when separated from their owner; SmartTag and Tile always) and alert only when one stays with you; Raven gunshot sensors are logged at low confidence. Known limits: follow detection needs the tracker to keep its address (true for separated AirTags and Tiles; Google Find My rotates about every 17 min) and is time-only, since GPS rarely has a fix.
+
+**Noise control** (2026-09-23/24, built after a real BLE Spam field test raised 9 full-screen alerts in one lap): a Flipper matched by its advertised name alone only logs (hardware-matched ones still alert); each kind of device buzzes at most once per `SW_KIND_COOLDOWN` (a flood of new devices of one kind interrupts once); the screen shows at most `SW_LOG_PER_KIND` lines per kind and confidence per lap plus "...and N more", so a real device is never buried under spoofed ones; trackers weaker than `SW_FOLLOW_MIN_RSSI` never count toward "following you"; and the cooldown ledger is pruned (future-dated, torn or malformed entries fail open, never silence a lap). Every device still gets its CSV row. A real 15-second BLE Spam capture (607 addresses) is pinned as a regression fixture.
+
+Deferred to their own phases:
+- **Drone Remote-ID over WiFi** — needs monitor-mode (`wlan1mon`) frame parsing, its own subsystem.
+- **Framebuffer "vaporwave" skin + mascot** — a custom `/dev/fb0` UI on top of the native-widget alerts.
+
+## Credits
+
+Homage to **SquachWatch-CYD** by skizzophrenic (https://github.com/skizzophrenic/SquachWatch-CYD, GPL-3.0): this project ports ideas, rules and logic from it, such as AUTO SNOOZE and rating a hacker tool matched by name alone as medium. Detection patterns and data adapted from Hak5 community payloads: Flock_Detect (colonelpanichacks et al.), flipper_detector (nemanjan00), find_hackers (NULLFaceNoCase), SkimmerScanner (Adam Glenn), device_profiler (z3r0l1nk), recondb_reporting (Digs). Native alert event schemas from the official Hak5 example payloads.
+
+## License
+
+GPL-3.0: see [LICENSE](LICENSE). SquachWatch-CYD, which this project ports from, is GPL-3.0 too. The detection data credited above (vendor address prefixes, device-name patterns) is factual information gathered from those projects; the payload code in this repository is original.

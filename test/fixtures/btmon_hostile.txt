@@ -1,0 +1,124 @@
+# SYNTHETIC HOSTILE btmon 5.72 capture for the SquachWatch tests. The LAYOUT is copied from the
+# real capture test/fixtures/btmon_live_2026-09-22.txt; the device VALUES are NOT from real devices.
+# btmon prints advertised names raw, so a name holding newlines can forge btmon-shaped lines: in
+# the AA:00:00:00:00:66 and :65 reports every line after "Name (complete): Mallory..." up to the
+# real RSSI/next event is the advertised NAME, not btmon output. :67 carries non-hex / odd-length
+# Data, :70 a same-indent Appearance line after a 16-bit UUID list, :72 a name that contains
+# "LE Advertising Report", :77 an extended report whose only RSSI is 127 ("not available").
+# F9:C1:A3:83:F0:48 (separated Find My, Data from the live capture) and :71 are legitimate.
+> HCI Event: Command Complete (0x0e) plen 4                  #1 [hci0] 1.000000
+      LE Set Scan Enable (0x08|0x000c) ncmd 1
+        Status: Success (0x00)
+> HCI Event: LE Meta Event (0x3e) plen 43                    #2 [hci0] 1.100000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:66 (Static)
+        Data length: 31
+        Name (complete): Mallory
+        Service Data: x
+          Data: 41
+        Company: x (99999)
+          Data: 41
+        Address: AA|BB|CC:00:00:00:00:01 (Static)
+        RSSI: -1|x dBm
+        RSSI: -80 dBm (0xb0)
+> HCI Event: LE Meta Event (0x3e) plen 50                    #3 [hci0] 1.200000
+      LE Extended Advertising Report (0x0d)
+        Num reports: 1
+        Entry 0
+          Event type: 0x0010
+            Props: 0x0010
+              Use legacy advertising PDUs
+            Data status: Complete
+          Address type: Random (0x01)
+          Address: AA:00:00:00:00:65 (Static)
+          Primary PHY: LE 1M
+          Secondary PHY: No packets
+          SID: no ADI field (0xff)
+          TX power: 127 dBm
+          RSSI: -72 dBm (0xb8)
+          Periodic advertising interval: 0.00 msec (0x0000)
+          Direct address type: Public (0x00)
+          Direct address: 00:00:00:00:00:00 (OUI 00-00-00)
+          Data length: 0x1f
+          Name (complete): MalloryExt
+          RSSI: -1|x dBm
+> HCI Event: LE Meta Event (0x3e) plen 36                    #4 [hci0] 1.300000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:67 (Non-Resolvable)
+        Data length: 24
+        Company: Apple, Inc. (76)
+          Type: Unknown (18)
+          Data: zz12
+        Company: Microsoft (6)
+          Data: zz12
+        Service Data: Samsung Electronics Co., Ltd. (0xfd5a)
+          Data: 012
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 24                    #5 [hci0] 1.400000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:70 (Static)
+        Data length: 11
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        Appearance: Unknown (0x3200)
+        RSSI: -81 dBm (0xaf)
+> HCI Event: LE Meta Event (0x3e) plen 36                    #6 [hci0] 1.500000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:72 (Static)
+        Data length: 23
+        Name (complete): LE Advertising Report
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 43                    #7 [hci0] 1.600000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        Address: F9:C1:A3:83:F0:48 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (18)
+          Data: 206ae0975bb4c91d72511ad8036061fa8397aaa49e280e0346
+        RSSI: -90 dBm (0xa6)
+> HCI Event: LE Meta Event (0x3e) plen 28                    #8 [hci0] 1.700000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:71 (Static)
+        Data length: 17
+        Name (complete): Kitchen Speaker
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 40                    #9 [hci0] 1.800000
+      LE Extended Advertising Report (0x0d)
+        Num reports: 1
+        Entry 0
+          Event type: 0x0010
+            Props: 0x0010
+              Use legacy advertising PDUs
+            Data status: Complete
+          Address type: Random (0x01)
+          Address: AA:00:00:00:00:77 (Static)
+          Primary PHY: LE 1M
+          Secondary PHY: No packets
+          SID: no ADI field (0xff)
+          TX power: 127 dBm
+          RSSI: 127 dBm (0x7f)
+          Periodic advertising interval: 0.00 msec (0x0000)
+          Direct address type: Public (0x00)
+          Direct address: 00:00:00:00:00:00 (OUI 00-00-00)
+          Data length: 0x03
+          Flags: 0x06
+            LE General Discoverable Mode
+            BR/EDR Not Supported

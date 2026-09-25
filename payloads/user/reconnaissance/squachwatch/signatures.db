@@ -1,0 +1,54 @@
+# SquachWatch-Pager signatures — match_type|pattern|category|label|confidence|threat_class
+# ---- Tier 1: Flock (WiFi OUIs verified via WiGLE, from Flock_Detect) ----
+wifi_oui|70:C9:4E|flock_alpr|Flock Falcon camera|high|surveillance
+wifi_oui|3C:91:80|flock_alpr|Flock Falcon camera|high|surveillance
+wifi_oui|D8:F3:BC|flock_alpr|Flock Falcon camera|high|surveillance
+wifi_oui|08:3A:88|flock_alpr|Flock Falcon camera|high|surveillance
+wifi_oui|14:5A:FC|flock_alpr|Flock Falcon camera|high|surveillance
+wifi_oui|58:8E:81|flock_battery|Flock external battery|high|surveillance
+wifi_oui|EC:1B:BD|flock_battery|Flock external battery|high|surveillance
+wifi_oui|90:35:EA|flock_battery|Flock external battery|high|surveillance
+# Lite-On chipset used by Flock Falcon V2 — broad vendor, LOW confidence
+wifi_oui|74:4C:A1|flock_liteon|Possible Flock (Lite-On chipset)|low|surveillance
+wifi_oui|80:30:49|flock_liteon|Possible Flock (Lite-On chipset)|low|surveillance
+# ---- Tier 1: Flock BLE names ----
+ble_name_sub|penguin|flock_battery|Flock Penguin battery|high|surveillance
+ble_name_sub|pigvision|flock_alpr|Flock Pigvision device|high|surveillance
+ble_name_sub|fs ext battery|flock_battery|Flock external battery|high|surveillance
+ble_name_sub|flock|flock_generic|Flock device|med|surveillance
+# ---- Tier 1: hacker tools ----
+# A Flipper matched by its NAME ALONE is med, as in SquachWatch-CYD (src/detection.cpp:
+# matchedByName ? MED_CONF : HIGH_CONF; "the owner can change it"). On 2026-09-23 a BLE Spam
+# flood of random MACs named "Flipper 🐬" hit this rule 9 times in one lap. The hardware
+# prefix below still makes a real Flipper high (strongest match wins, lib/match.sh).
+ble_name_sub|flipper|hacker_flipper|Flipper Zero|med|attacker
+ble_oui|80:E1:26|hacker_flipper|Flipper Zero|high|attacker
+wifi_ssid_sub|pineapple|hacker_pineapple|WiFi Pineapple|high|attacker
+wifi_ssid_sub|pager_open|hacker_pager|WiFi Pineapple Pager|med|attacker
+# ---- Tier 2 starters ----
+ble_name_sub|tile|tracker_tile|Tile tracker|med|tracker
+wifi_ssid_sub|ring-|surveillance_ring|Ring doorbell|med|surveillance
+# ---- Tier 3: raw BLE advertisements via btmon (spec 2026-09-22) ----
+# Trackers log at med (colored line + CSV row). lib/follow.sh escalates one that STAYS
+# with you to a high "<category>_follow" alert. Your own devices: loot dir ignore.txt.
+# Only Find My (004c:12:25) and Google Find My (feaa:41) are separation-aware. The SmartTag
+# and Tile rules match EVERY SmartTag/Tile, owner nearby or not, so a companion's tag that
+# stays with you escalates too: silence a known companion's tag via ignore.txt.
+# Apple Find My, separated from its owner: type 0x12, 25-byte payload (seen live
+# 2026-09-22). The near-owner form (2-byte payload) deliberately does NOT match.
+ble_mfr|004c:12:25|tracker_findmy|Apple Find My (separated)|med|tracker
+# Apple Proximity Pairing (0x07) from a NON-audio model = an AirTag in setup mode: freshly
+# powered, e.g. right after a battery swap (SquachWatch-CYD saw a real separated AirTag send 0x07
+# before it switched to Find My 0x12). AirPods/Beats send 0x07 too, but every published model
+# code for them ends in 0x20, so the parser tags those "audio" and they never match here.
+# CYD matches EVERY 0x07 and accepts the AirPods noise; this keeps the catch without it.
+ble_mfr|004c:07:other|tracker_airtag_setup|Apple AirTag (setup mode)|med|tracker
+ble_uuid|fd5a|tracker_smarttag|Samsung SmartTag|med|tracker
+ble_uuid|feed|tracker_tile|Tile|med|tracker
+ble_uuid|feec|tracker_tile|Tile|med|tracker
+# Google Find My: service data 0xFEAA with frame 0x41 = separated (inferred from Google's
+# spec). The first-byte check keeps Eddystone beacons (also 0xFEAA) out.
+ble_uuid|feaa:41|tracker_gfmd|Google Find My (separated)|med|tracker
+# Raven gunshot sensors: UUID range from SquachWatch-CYD, not device-verified, hence low
+# (log only). Hobby devices live nearby: a Flipper advertises 0x3081.
+ble_uuid|3100-3500|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance

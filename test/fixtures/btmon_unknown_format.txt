@@ -1,0 +1,46 @@
+Bluetooth monitor ver 5.72
+btmon[1384]: = Note: Linux version 6.6.86 (mips)                       0.989438
+btmon[1384]: = Note: Bluetooth subsystem version 2.22                  0.989460
+= New Index: 00:13:37:BC:8F:94 (Primary,USB,hci0)               [hci0] 0.989466
+= Open Index: 00:13:37:BC:8F:94                                 [hci0] 0.989469
+= Index Info: 00:13:37:BC:8F:94 (MediaTek, Inc.)                [hci0] 0.989472
+bluetoothd[2941]: @ MGMT Open: b.. (privileged) version 1.22  {0x0001} 0.989480
+hcitool[1388]: @ RAW Open: hcitool (privileged) version 2.22  {0x0002} 1.779337
+hcitool[1388]: @ RAW Close: hcitool                           {0x0002} 1.779419
+hcitool[1388]: @ RAW Open: hcitool (privileged) version 2.22  {0x0002} 1.779495
+hcitool[1388]: @ RAW Close: hcitool                           {0x0002} 1.779512
+hcitool[1388]: @ RAW Open.. (privileged) version 2.22  {0x0002} [hci0] 1.779581
+hcitool[1388]: < HCI Command: LE Set.. (0x08|0x000b) plen 7  #1 [hci0] 1.779735
+        Type: Active (0x01)
+        Interval: 10.000 msec (0x0010)
+        Window: 10.000 msec (0x0010)
+        Own address type: Public (0x00)
+        Filter policy: Accept all advertisement (0x00)
+> HCI Event: Command Complete (0x0e) plen 4                  #2 [hci0] 1.782032
+      LE Set Scan Parameters (0x08|0x000b) ncmd 1
+        Status: Success (0x00)
+hcitool[1388]: < HCI Command: LE Set.. (0x08|0x000c) plen 2  #3 [hci0] 1.782440
+        Scanning: Enabled (0x01)
+        Filter duplicates: Disabled (0x00)
+> HCI Event: Command Complete (0x0e) plen 4                  #4 [hci0] 1.783395
+      LE Set Scan Enable (0x08|0x000c) ncmd 1
+        Status: Success (0x00)
+[1388]: < HCI Command: LE Set Scan.. (0x08|0x000c) plen 2  #63 [hci0] 13.771723
+        Scanning: Disabled (0x00)
+        Filter duplicates: Disabled (0x00)
+> HCI Event: Command Complete (0x0e) plen 4                #64 [hci0] 13.772549
+      LE Set Scan Enable (0x08|0x000c) ncmd 1
+        Status: Success (0x00)
+[1388]: @ RAW Close: hcitool                          {0x0002} [hci0] 13.772874
+> HCI Event: LE Meta Event (0x3e) plen 43                    #5 [hci0] 2.332216
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        BD_ADDR: F9:C1:A3:83:F0:48 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (18)
+          Data: 206ae0975bb4c91d72511ad8036061fa8397aaa49e280e0346
+        RSSI: -96 dBm (0xa0)
+> HCI Event: LE Meta Event (0x3e) plen 39                    #6 [hci0] 2.499225

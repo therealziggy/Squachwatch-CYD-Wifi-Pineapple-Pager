@@ -1,0 +1,2098 @@
+Bluetooth monitor ver 5.72
+btmon[4424]: = Note: Linux version 6.6.86 (mips)                       0.209990
+btmon[4424]: = Note: Bluetooth subsystem version 2.22                  0.210011
+= New Index: 00:13:37:BC:8F:94 (Primary,USB,hci0)               [hci0] 0.210017
+= Open Index: 00:13:37:BC:8F:94                                 [hci0] 0.210020
+= Index Info: 00:13:37:BC:8F:94 (MediaTek, Inc.)                [hci0] 0.210023
+bluetoothd[2960]: @ MGMT Open: b.. (privileged) version 1.22  {0x0001} 0.210031
+hcitool[4428]: @ RAW Open: hcitool (privileged) version 2.22  {0x0002} 1.259990
+hcitool[4428]: @ RAW Close: hcitool                           {0x0002} 1.260055
+hcitool[4428]: @ RAW Open: hcitool (privileged) version 2.22  {0x0002} 1.260133
+hcitool[4428]: @ RAW Close: hcitool                           {0x0002} 1.260151
+hcitool[4428]: @ RAW Open.. (privileged) version 2.22  {0x0002} [hci0] 1.260218
+hcitool[4428]: < HCI Command: LE Set.. (0x08|0x000b) plen 7  #1 [hci0] 1.260387
+        Type: Active (0x01)
+        Interval: 10.000 msec (0x0010)
+        Window: 10.000 msec (0x0010)
+        Own address type: Public (0x00)
+        Filter policy: Accept all advertisement (0x00)
+> HCI Event: Command Complete (0x0e) plen 4                  #2 [hci0] 1.263012
+      LE Set Scan Parameters (0x08|0x000b) ncmd 1
+        Status: Success (0x00)
+hcitool[4428]: < HCI Command: LE Set.. (0x08|0x000c) plen 2  #3 [hci0] 1.263500
+        Scanning: Enabled (0x01)
+        Filter duplicates: Disabled (0x00)
+> HCI Event: Command Complete (0x0e) plen 4                  #4 [hci0] 1.264562
+      LE Set Scan Enable (0x08|0x000c) ncmd 1
+        Status: Success (0x00)
+> HCI Event: LE Meta Event (0x3e) plen 36                    #5 [hci0] 1.313872
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                    #6 [hci0] 1.344645
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                    #7 [hci0] 1.376624
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 36                    #8 [hci0] 1.602374
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                    #9 [hci0] 1.634136
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -76 dBm (0xb4)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #10 [hci0] 1.660118
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #11 [hci0] 1.661434
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 33                   #12 [hci0] 1.756366
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -85 dBm (0xab)
+> HCI Event: LE Meta Event (0x3e) plen 12                   #13 [hci0] 1.756898
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -85 dBm (0xab)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #14 [hci0] 1.893622
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #15 [hci0] 1.918893
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #16 [hci0] 1.949870
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #17 [hci0] 2.173763
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #18 [hci0] 2.200502
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #19 [hci0] 2.233010
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #20 [hci0] 2.457408
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #21 [hci0] 2.519009
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #22 [hci0] 2.520301
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #23 [hci0] 2.722255
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -99 dBm (0x9d)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #24 [hci0] 2.741766
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #25 [hci0] 2.771124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #26 [hci0] 2.809770
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #27 [hci0] 3.026126
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #28 [hci0] 3.059410
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #29 [hci0] 3.094376
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #30 [hci0] 3.095671
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #31 [hci0] 3.317259
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #32 [hci0] 3.345375
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #33 [hci0] 3.376400
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #34 [hci0] 3.448624
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -101 dBm (0x9b)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #35 [hci0] 3.601382
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #36 [hci0] 3.663131
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #37 [hci0] 3.667245
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #38 [hci0] 3.884998
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #39 [hci0] 3.911375
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #40 [hci0] 3.954124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #41 [hci0] 3.955421
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #42 [hci0] 3.967375
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -102 dBm (0x9a)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #43 [hci0] 4.235996
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #44 [hci0] 4.238385
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #45 [hci0] 4.456622
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #46 [hci0] 4.519126
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #47 [hci0] 4.522909
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #48 [hci0] 4.747620
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #49 [hci0] 4.775308
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #50 [hci0] 4.807623
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #51 [hci0] 4.808925
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #52 [hci0] 5.032997
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #53 [hci0] 5.057495
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #54 [hci0] 5.094752
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 33                   #55 [hci0] 5.271127
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -87 dBm (0xa9)
+> HCI Event: LE Meta Event (0x3e) plen 12                   #56 [hci0] 5.271525
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -87 dBm (0xa9)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #57 [hci0] 5.318755
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #58 [hci0] 5.341886
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #59 [hci0] 5.380369
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #60 [hci0] 5.382922
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #61 [hci0] 5.605890
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #62 [hci0] 5.632875
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -68 dBm (0xbc)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #63 [hci0] 5.671368
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #64 [hci0] 5.755873
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Random (0x01)
+        Address: CD:C4:74:9D:2D:19 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (18)
+          Data: 20fbe42fd7bb9a9816f229d10aca42f197fdec9154cc98022c
+        RSSI: -99 dBm (0x9d)
+> HCI Event: LE Meta Event (0x3e) plen 12                   #65 [hci0] 5.756292
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Random (0x01)
+        Address: CD:C4:74:9D:2D:19 (Static)
+        Data length: 0
+        RSSI: -102 dBm (0x9a)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #66 [hci0] 5.887621
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #67 [hci0] 5.917014
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #68 [hci0] 6.169260
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #69 [hci0] 6.202642
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #70 [hci0] 6.241388
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -68 dBm (0xbc)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #71 [hci0] 6.243637
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #72 [hci0] 6.289018
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -101 dBm (0x9b)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #73 [hci0] 6.456501
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #74 [hci0] 6.494622
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #75 [hci0] 6.528643
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #76 [hci0] 6.533494
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #77 [hci0] 6.593499
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -101 dBm (0x9b)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #78 [hci0] 6.741121
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #79 [hci0] 6.787249
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #80 [hci0] 6.813124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #81 [hci0] 6.824874
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 33                   #82 [hci0] 7.028768
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -92 dBm (0xa4)
+> HCI Event: LE Meta Event (0x3e) plen 12                   #83 [hci0] 7.029293
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -91 dBm (0xa5)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #84 [hci0] 7.031798
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #85 [hci0] 7.068885
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #86 [hci0] 7.093634
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #87 [hci0] 7.110499
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #88 [hci0] 7.324242
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -68 dBm (0xbc)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #89 [hci0] 7.358624
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #90 [hci0] 7.400126
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #91 [hci0] 7.616244
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #92 [hci0] 7.642001
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #93 [hci0] 7.669125
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #94 [hci0] 7.901887
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #95 [hci0] 7.931495
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 21                   #96 [hci0] 7.953874
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                   #97 [hci0] 7.976745
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                   #98 [hci0] 8.183622
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 26                   #99 [hci0] 8.216119
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #100 [hci0] 8.244622
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #101 [hci0] 8.262763
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 36                  #102 [hci0] 8.465761
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                  #103 [hci0] 8.500642
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #104 [hci0] 8.529248
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #105 [hci0] 8.545631
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 33                  #106 [hci0] 8.785372
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -92 dBm (0xa4)
+> HCI Event: LE Meta Event (0x3e) plen 12                  #107 [hci0] 8.785891
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -91 dBm (0xa5)
+> HCI Event: LE Meta Event (0x3e) plen 26                  #108 [hci0] 8.789012
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #109 [hci0] 8.812644
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #110 [hci0] 8.836762
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 43                  #111 [hci0] 8.910880
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -99 dBm (0x9d)
+> HCI Event: LE Meta Event (0x3e) plen 36                  #112 [hci0] 9.033498
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                  #113 [hci0] 9.079881
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #114 [hci0] 9.104750
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #115 [hci0] 9.127380
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 36                  #116 [hci0] 9.317890
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 43                  #117 [hci0] 9.330260
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 07:24:54:EF:0A:61 (Non-Resolvable)
+        Data length: 31
+        Company: Microsoft (6)
+          Data: 01092022c8b18b188faa09b5402306e6def9cb35dd0d32bc11f52f
+        RSSI: -100 dBm (0x9c)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #118 [hci0] 9.395750
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #119 [hci0] 9.413390
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                  #120 [hci0] 9.605124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                  #121 [hci0] 9.660495
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #122 [hci0] 9.676623
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #123 [hci0] 9.702889
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 36                  #124 [hci0] 9.887126
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 26                  #125 [hci0] 9.941135
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 21                  #126 [hci0] 9.967388
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -77 dBm (0xb3)
+> HCI Event: LE Meta Event (0x3e) plen 16                  #127 [hci0] 9.983503
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #128 [hci0] 10.175506
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #129 [hci0] 10.231874
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #130 [hci0] 10.258262
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #131 [hci0] 10.270379
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #132 [hci0] 10.465247
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #133 [hci0] 10.521379
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 33                 #134 [hci0] 10.537997
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -84 dBm (0xac)
+> HCI Event: LE Meta Event (0x3e) plen 12                 #135 [hci0] 10.538526
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -84 dBm (0xac)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #136 [hci0] 10.541786
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #137 [hci0] 10.552624
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #138 [hci0] 10.753622
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #139 [hci0] 10.807513
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #140 [hci0] 10.838624
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #141 [hci0] 11.033999
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #142 [hci0] 11.109264
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #143 [hci0] 11.130380
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #144 [hci0] 11.384127
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -68 dBm (0xbc)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #145 [hci0] 11.400626
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #146 [hci0] 11.418752
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #147 [hci0] 11.617385
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #148 [hci0] 11.667628
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #149 [hci0] 11.686035
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #150 [hci0] 11.703380
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #151 [hci0] 11.897872
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #152 [hci0] 11.959666
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #153 [hci0] 11.969501
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #154 [hci0] 11.990424
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #155 [hci0] 12.183765
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -78 dBm (0xb2)
+> HCI Event: LE Meta Event (0x3e) plen 20                 #156 [hci0] 12.220643
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: E1:A0:6D:9F:A0:FE (Static)
+        Data length: 8
+        Company: Apple, Inc. (76)
+          Type: Unknown (18)
+          Data: 0001
+        RSSI: -102 dBm (0x9a)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #157 [hci0] 12.244248
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #158 [hci0] 12.260243
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #159 [hci0] 12.278753
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 33                 #160 [hci0] 12.290787
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -86 dBm (0xaa)
+> HCI Event: LE Meta Event (0x3e) plen 12                 #161 [hci0] 12.291269
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -87 dBm (0xa9)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #162 [hci0] 12.469621
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #163 [hci0] 12.542388
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #164 [hci0] 12.566127
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #165 [hci0] 12.756762
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #166 [hci0] 12.813122
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #167 [hci0] 12.823883
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #168 [hci0] 12.854247
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #169 [hci0] 13.044005
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #170 [hci0] 13.097761
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #171 [hci0] 13.108644
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #172 [hci0] 13.334873
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #173 [hci0] 13.382373
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #174 [hci0] 13.394749
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #175 [hci0] 13.428004
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #176 [hci0] 13.662887
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #177 [hci0] 13.676385
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #178 [hci0] 13.719126
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #179 [hci0] 13.902374
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #180 [hci0] 13.948748
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #181 [hci0] 13.961124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 33                 #182 [hci0] 14.049120
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -88 dBm (0xa8)
+> HCI Event: LE Meta Event (0x3e) plen 12                 #183 [hci0] 14.049700
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -88 dBm (0xa8)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #184 [hci0] 14.189498
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #185 [hci0] 14.238419
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #186 [hci0] 14.250375
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #187 [hci0] 14.288116
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #188 [hci0] 14.522999
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #189 [hci0] 14.535252
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #190 [hci0] 14.569124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #191 [hci0] 14.761250
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #192 [hci0] 14.812642
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #193 [hci0] 14.823750
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #194 [hci0] 15.102137
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #195 [hci0] 15.109374
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #196 [hci0] 15.137888
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -68 dBm (0xbc)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #197 [hci0] 15.328762
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #198 [hci0] 15.389391
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #199 [hci0] 15.394993
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #200 [hci0] 15.421999
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #201 [hci0] 15.617010
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -64 dBm (0xc0)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #202 [hci0] 15.671120
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 21                 #203 [hci0] 15.683252
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 59:02:79:40:BB:92 (Resolvable)
+        Data length: 9
+        Service Data: Unknown (0xfd5a)
+          Data: 02aabbccdd
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 16                 #204 [hci0] 15.711875
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 6E:DA:56:72:20:21 (Resolvable)
+        Data length: 4
+        16-bit Service UUIDs (complete): 1 entry
+          Tile, Inc. (0xfeed)
+        RSSI: -66 dBm (0xbe)
+> HCI Event: LE Meta Event (0x3e) plen 33                 #205 [hci0] 15.803874
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Connectable undirected - ADV_IND (0x00)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 21
+        Flags: 0x06
+          LE General Discoverable Mode
+          BR/EDR Not Supported
+        Name (complete): MyFlipper
+        16-bit Service UUIDs (partial): 1 entry
+          Unknown (0x3082)
+        TX power: 0 dBm
+        RSSI: -86 dBm (0xaa)
+> HCI Event: LE Meta Event (0x3e) plen 12                 #206 [hci0] 15.804386
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Scan response - SCAN_RSP (0x04)
+        Address type: Public (0x00)
+        Address: 80:E1:26:FA:D6:22 (OUI 80-E1-26)
+        Data length: 0
+        RSSI: -86 dBm (0xaa)
+> HCI Event: LE Meta Event (0x3e) plen 36                 #207 [hci0] 15.906752
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 75:61:15:76:65:B8 (Resolvable)
+        Data length: 24
+        Service Data: Google (0xfeaa)
+          Data: 41aabbccddeeff00112233445566778899aabbcc
+        RSSI: -79 dBm (0xb1)
+> HCI Event: LE Meta Event (0x3e) plen 26                 #208 [hci0] 15.958124
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: 5F:64:DB:66:E7:27 (Resolvable)
+        Data length: 14
+        Service Data: Google (0xfeaa)
+          Data: 10eb03676f6f676c6507
+        RSSI: -64 dBm (0xc0)
+hcitool[4428]: < HCI Command: LE... (0x08|0x000c) plen 2  #209 [hci0] 15.987621
+        Scanning: Disabled (0x00)
+        Filter duplicates: Disabled (0x00)
+> HCI Event: Command Complete (0x0e) plen 4               #210 [hci0] 15.988303
+      LE Set Scan Enable (0x08|0x000c) ncmd 1
+        Status: Success (0x00)
+hcitool[4428]: @ RAW Close: hcitool                   {0x0002} [hci0] 15.988635

@@ -1,0 +1,197 @@
+#!/bin/bash
+# Title: SquachWatch
+# Description: Always-on detector for surveillance devices, trackers, and hacker tools.
+# Author: ziggy
+# Version: 1.0
+# Category: reconnaissance
+# Homage to SquachWatch-CYD (skizzophrenic); reuses Hak5 community payload patterns.
+
+# The Pager UI does not run this file in place: it runs a copy (/tmp/payload-<n>.sh) and
+# passes the real folder in PAYLOAD_HOME. BASH_SOURCE is only right for a direct
+# `bash payload.sh` (SSH, tests).
+SW_HOME="${PAYLOAD_HOME:-$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )}"
+SW_HOME="${SW_HOME%/}"
+# Without its libs every lap is a silent no-op (each step is "command not found"), so a
+# lib that won't load stops the payload loudly instead of letting it run blind.
+for l in match wifi ble alert log follow ignore snooze; do
+  . "$SW_HOME/lib/$l.sh" || { LOG red "ERROR: can't load $SW_HOME/lib/$l.sh — SquachWatch NOT running" 2>/dev/null; exit 1; }
+done
+
+# --- config (overridable via env / PAYLOAD_GET_CONFIG on device) ---
+: "${SW_RECON_DB:=/root/recon/recon.db}"
+: "${SW_BLE_IFACE:=hci0}"
+: "${SW_BLE_SECONDS:=12}"
+: "${SW_COOLDOWN:=600}"
+: "${SW_LOOT_DIR:=/root/loot/squachwatch}"
+: "${SW_SEEN_FILE:=$SW_LOOT_DIR/seen.db}"
+: "${SW_SLEEP:=3}"
+# Only match devices seen in the last N seconds. recon.db keeps months of history
+# (20,294 rows on a real Pager, 222 of them from the last 10 min) and a proximity
+# detector only cares about what is nearby now. 0 scans the whole DB.
+: "${SW_RECENCY_SECS:=600}"
+# Re-run the health check every N laps so a recon DB that dies mid-run still gets
+# reported instead of quietly turning the sweep into "all clear".
+: "${SW_HEALTH_EVERY:=20}"
+
+# Tier-3 follow detection: a tracker seen continuously for SW_FOLLOW_SECS escalates from a
+# logged presence to a full alert; a gap longer than SW_FOLLOW_GAP restarts its clock.
+: "${SW_FOLLOW_SECS:=900}"
+: "${SW_FOLLOW_GAP:=300}"
+# The follow timer ignores tracker sightings weaker than this (dBm): a tracker on you or in your
+# car reads far stronger, and a neighbour's heard through a wall (-95 on 2026-09-23) must not
+# "follow" you at home. The tracker is still logged. It must be a negative number without a
+# leading zero, e.g. -85; -085, 0, 85, or empty all turn the floor off. No ":=": that would
+# replace an explicitly EMPTY value with the default too, so "empty turns it off" would
+# silently stop working (I6).
+: "${SW_FOLLOW_MIN_RSSI=-85}"
+# Follow state is rewritten on every lap for every tracker, so it lives in RAM (/tmp), not on
+# flash: no flash wear, faster writes. A reboot just restarts the follow clock.
+: "${SW_TRACK_FILE:=${SW_TMP_DIR:-/tmp}/sw_track.db}"
+# The owner's own devices, one MAC per line. Lives in the loot dir so redeploys keep it.
+: "${SW_IGNORE_FILE:=$SW_LOOT_DIR/ignore.txt}"
+# AUTO SNOOZE for "following you" alerts, ported from SquachWatch-CYD: a follower gets
+# SW_SNOOZE_AFTER full alerts, then re-alerts only if it comes SW_SNOOZE_MARGIN_DB closer than
+# its strongest alert, or after it has been gone SW_SNOOZE_RESET_SECS. Its CSV rows and log
+# lines continue throughout. 0 turns it off. State is in RAM, like the follow state.
+: "${SW_SNOOZE_AFTER:=3}"
+: "${SW_SNOOZE_MARGIN_DB:=7}"
+: "${SW_SNOOZE_RESET_SECS:=1800}"
+: "${SW_SNOOZE_FILE:=${SW_TMP_DIR:-/tmp}/sw_snooze.db}"
+# One full alert + buzz per KIND of device (category) per window, but only for HIGH-confidence
+# detections: a name-only BLE Spam flood is med confidence and never alerts at all (0 times, not
+# once); a flood of HARDWARE-matched devices of one kind (a hacker con full of real Flippers, or
+# several Flock cameras) interrupts once. Every device still gets its CSV row, and a screen line
+# up to the per-lap cap (SW_LOG_PER_KIND below). "Following you" alerts are exempt. 0 turns it off.
+: "${SW_KIND_COOLDOWN:=600}"
+# Per lap, at most this many screen lines per kind AND CONFIDENCE LEVEL of device (final review
+# 2: a real high-confidence device gets its own allowance, separate from a same-kind med/low
+# flood), then one "...and N more <label>" line, so a flood cannot scroll everything else off
+# the screen. The CSV keeps every row. 0 = no cap.
+: "${SW_LOG_PER_KIND:=3}"
+
+SW_SIGS="$(sw_load_signatures "$SW_HOME/signatures.db")"
+SW_IGNORE_SET="$(sw_load_ignore "$SW_IGNORE_FILE")"
+
+# One-shot health signal. A silently dead source (missing sqlite3, unreadable recon DB,
+# or empty signatures) must NOT read as "all clear" — warn loudly. Returns nonzero if degraded.
+sw_healthcheck() {
+  local degraded=0
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    LOG yellow "WARN: sqlite3 missing — WiFi detection OFF (opkg install sqlite3-cli)" 2>/dev/null; degraded=1
+  elif [ ! -r "$SW_RECON_DB" ]; then
+    LOG yellow "WARN: recon DB unreadable ($SW_RECON_DB) — WiFi detection OFF" 2>/dev/null; degraded=1
+  fi
+  if [ -z "$SW_SIGS" ]; then
+    LOG yellow "WARN: no signatures loaded — nothing will match" 2>/dev/null; degraded=1
+  fi
+  # A DB full of rows with none inside the recency window means recon stopped writing
+  # (or the clock is wrong): every sweep would return zero and look like "all clear".
+  if sw_wifi_stale_db "$SW_RECON_DB"; then
+    LOG yellow "WARN: recon DB not updating (no rows in last ${SW_RECENCY_SECS}s) — WiFi detection is blind" 2>/dev/null; degraded=1
+  fi
+  # btmon is the only BLE data source (Tier-3): without it every BLE lap is empty.
+  if ! command -v btmon >/dev/null 2>&1; then
+    LOG yellow "WARN: btmon missing — BLE detection OFF" 2>/dev/null; degraded=1
+  fi
+  return $degraded
+}
+
+# BLE source seam: tests set SW_BLE_CMD; device uses real scan.
+_sw_ble_records() {
+  if [ -n "${SW_BLE_CMD:-}" ]; then eval "$SW_BLE_CMD" | sw_btmon_parse
+  else sw_ble_scan "$SW_BLE_SECONDS" "$SW_BLE_IFACE"; fi
+}
+
+# Emit one detection under the lap's screen cap (spec 2026-09-23 §5). Called ONLY from
+# sw_scan_once's lap loop: it updates that loop's per-lap arrays (bash dynamic scope).
+# Counters are keyed by CATEGORY AND CONFIDENCE ("<cat>|<conf>"), not category alone (I1): a
+# real high-confidence device gets its own allowance and its own "...and N more" line, so it
+# can never be folded behind an unrelated med/low flood of the same category (e.g. a real
+# Flipper behind a BLE-Spam name-only flood), and vice versa.
+_sw_emit_capped() {
+  local c="${1%%|*}" r="${1#*|}" lab conf tc cap="${SW_LOG_PER_KIND:-0}" key
+  lab="${r%%|*}"; r="${r#*|}"
+  conf="${r%%|*}"; r="${r#*|}"
+  tc="${r%%|*}"
+  key="$c|$conf"
+  case "$cap" in ''|*[!0-9]*) cap=0 ;; esac
+  if [ -z "${_lap_shown[$key]+x}" ]; then
+    _lap_order+=("$key"); _lap_shown[$key]=0; _lap_hidden[$key]=0; _lap_label[$key]="$lab"; _lap_class[$key]="$tc"
+  fi
+  if [ "$cap" -gt 0 ] && [ "${_lap_shown[$key]}" -ge "$cap" ]; then
+    _lap_hidden[$key]=$(( ${_lap_hidden[$key]} + 1 ))
+    SW_EMIT_NOLOG=1 sw_emit "$@"
+  else
+    _lap_shown[$key]=$(( ${_lap_shown[$key]} + 1 ))
+    sw_emit "$@"
+  fi
+}
+
+sw_scan_once() {
+  local now; now="$(date +%s)"
+  { sw_wifi_records "$SW_RECON_DB"; _sw_ble_records; } \
+    | sw_match_stream "$SW_SIGS" \
+    | {
+        # Per-lap screen counters (spec 2026-09-23 §5). They live in this pipeline subshell,
+        # so they reset every lap.
+        local -A _lap_shown=() _lap_hidden=() _lap_label=() _lap_class=()
+        local -a _lap_order=()
+        local det fdet key
+        while IFS= read -r det; do
+          [ -n "$det" ] || continue
+          sw_ignored "$det" "$SW_IGNORE_SET" && continue
+          _sw_emit_capped "$det" "$now" "$SW_COOLDOWN" "$SW_SEEN_FILE" "$SW_LOOT_DIR"
+          # A tracker that has stayed with us escalates to its own high-confidence detection.
+          fdet="$(sw_follow_update "$det" "$now" "$SW_TRACK_FILE" "$SW_FOLLOW_SECS" "$SW_FOLLOW_GAP")"
+          [ -n "$fdet" ] && _sw_emit_capped "$fdet" "$now" "$SW_COOLDOWN" "$SW_SEEN_FILE" "$SW_LOOT_DIR" \
+            "$SW_SNOOZE_FILE" "$SW_SNOOZE_AFTER" "$SW_SNOOZE_MARGIN_DB" "$SW_SNOOZE_RESET_SECS"
+        done
+        for key in "${_lap_order[@]}"; do
+          [ "${_lap_hidden[$key]}" -gt 0 ] || continue
+          LOG "$(sw_color_for "${_lap_class[$key]}")" "...and ${_lap_hidden[$key]} more ${_lap_label[$key]}" 2>/dev/null
+        done
+      }
+}
+
+# Kill the scanner's children AND remove their temp files: an orphaned btmon would keep
+# logging into RAM-backed /tmp, and a kill mid-scan used to leave /tmp/sw_ble.* behind.
+sw_cleanup() {
+  killall hcitool btmon 2>/dev/null
+  rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* 2>/dev/null
+  exit 0
+}
+
+# Drop cooldown-ledger lines too old to block anything (spec 2026-09-23 §7), keeping the
+# LONGER of the two windows that read the ledger. Called at startup and every SW_HEALTH_EVERY
+# laps, so seen.db stays at "what was reported in the last window" instead of growing forever.
+sw_prune_ledger() {
+  local keep="$SW_COOLDOWN" k="${SW_KIND_COOLDOWN:-0}"
+  case "$k" in ''|*[!0-9]*) k=0 ;; esac
+  [ "$k" -gt "$keep" ] && keep="$k"
+  sw_seen_prune "$SW_SEEN_FILE" "$(date +%s)" "$keep"
+}
+
+sw_main() {
+  sw_log_init "$SW_LOOT_DIR"
+  mkdir -p "$(dirname "$SW_SEEN_FILE")"; touch "$SW_SEEN_FILE"
+  sw_prune_ledger
+  trap sw_cleanup EXIT INT TERM
+  if sw_healthcheck; then
+    LOG green "SquachWatch armed — watching WiFi + BLE" 2>/dev/null
+  else
+    LOG yellow "SquachWatch running DEGRADED — some detection is OFF (see warnings above)" 2>/dev/null
+  fi
+  local lap=0
+  while true; do
+    sw_scan_once
+    lap=$((lap+1))
+    if [ "$SW_HEALTH_EVERY" -gt 0 ] && [ $((lap % SW_HEALTH_EVERY)) -eq 0 ]; then
+      sw_healthcheck || LOG yellow "SquachWatch DEGRADED — some detection is OFF" 2>/dev/null
+      sw_prune_ledger
+    fi
+    sleep "$SW_SLEEP"
+  done
+}
+
+# Auto-run unless sourced by a test.
+[ -n "${SW_TEST_SOURCE:-}" ] || sw_main

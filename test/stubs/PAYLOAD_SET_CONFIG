@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+echo "${0##*/} $*" >> "${SW_STUB_LOG:-/dev/null}"

@@ -1,0 +1,22 @@
+Bluetooth monitor ver 5.72
+btmon[1144]: = Note: Linux version 6.6.86 (mips)                       0.164431
+btmon[1144]: = Note: Bluetooth subsystem version 2.22                  0.164454
+= New Index: 00:13:37:BC:8F:94 (Primary,USB,hci0)               [hci0] 0.164460
+= Open Index: 00:13:37:BC:8F:94                                 [hci0] 0.164464
+= Index Info: 00:13:37:BC:8F:94 (MediaTek, Inc.)                [hci0] 0.164468
+bluetoothd[2941]: @ MGMT Open: b.. (privileged) version 1.22  {0x0001} 0.164475
+[1148]: @ RAW Open: hcitool (privileged) version 2.22         {0x0002} 0.931746
+[1148]: @ RAW Close: hcitool                                  {0x0002} 0.931827
+[1148]: @ RAW Open: hcitool (privileged) version 2.22         {0x0002} 0.931910
+[1148]: @ RAW Close: hcitool                                  {0x0002} 0.931927
+[1148]: @ RAW Open: hcitool (privileged) version 2.22  {0x0002} [hci0] 0.932051
+[1148]: < HCI Command: LE Set Scan P.. (0x08|0x000b) plen 7  #1 [hci0] 0.932221
+        Type: Active (0x01)
+        Interval: 10.000 msec (0x0010)
+        Window: 10.000 msec (0x0010)
+        Own address type: Public (0x00)
+        Filter policy: Accept all advertisement (0x00)
+> HCI Event: Command Complete (0x0e) plen 4                  #2 [hci0] 0.932721
+      LE Set Scan Parameters (0x08|0x000b) ncmd 1
+        Status: Command Disallowed (0x0c)
+[1148]: @ RAW Close: hcitool                                  {0x0002} [hci0] 0.933580

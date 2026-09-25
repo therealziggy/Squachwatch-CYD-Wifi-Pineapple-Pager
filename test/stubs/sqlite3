@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# test/stubs/sqlite3 — emulate the CLI forms the engine uses:
+#   sqlite3 DB ".tables" | "PRAGMA ..." | "SELECT ..." | piped SQL
+# Delegates to python3 stdlib sqlite3. Tab-separated output (like -separator).
+# stdin is freed for SQL input; supports both positional args and piped input.
+exec python3 -c 'import sqlite3, sys
+db = sys.argv[1]
+sql = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read()
+con = sqlite3.connect(db)
+try:
+    if sql.strip().startswith(".tables"):
+        cur = con.execute("SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name")
+        rows = cur.fetchall()
+        tables = [r[0] for r in rows]
+        print(" ".join(tables))
+    else:
+        cur = con.execute(sql)
+        rows = cur.fetchall()
+        for r in rows:
+            print("\t".join("" if v is None else str(v) for v in r))
+except sqlite3.OperationalError as e:
+    sys.stderr.write("Error: %s\n" % e); sys.exit(1)' "$@"

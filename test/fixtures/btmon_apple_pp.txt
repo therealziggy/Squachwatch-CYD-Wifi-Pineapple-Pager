@@ -1,0 +1,77 @@
+# SYNTHETIC btmon 5.72 capture: Apple Proximity Pairing (type 0x07) for the SquachWatch tests.
+# Layout copied from real captures (Company/Type/Data lines as in btmon_live_2026-09-22.txt).
+# Payload = prefix(1) model(2) status battery charging lid color suffix + 16 encrypted bytes
+# (furiousMAC continuity docs / Celosia & Cunche, PETS 2020). AirPods/Beats model codes are from
+# the furiousMAC dissector table + InfiShark: 0e20 AirPods Pro, 0a20 AirPods Max, 0620 Beats.
+# The AirTag-like 0055 is NOT source-verified: the rule under test flags ANY non-...20 model.
+> HCI Event: Command Complete (0x0e) plen 4                  #1 [hci0] 1.000000
+      LE Set Scan Enable (0x08|0x000c) ncmd 1
+        Status: Success (0x00)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #2 [hci0] 2.000000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:A1 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (7)
+          Data: 05005555888f3900009672711ae6a965737c80d805039773d1
+        RSSI: -60 dBm (0xc4)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #3 [hci0] 3.000000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:A2 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (7)
+          Data: 010e2055888f3900009672711ae6a965737c80d805039773d1
+        RSSI: -61 dBm (0xc3)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #4 [hci0] 4.000000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:A3 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (7)
+          Data: 010a2055888f3900009672711ae6a965737c80d805039773d1
+        RSSI: -62 dBm (0xc2)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #5 [hci0] 5.000000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:A4 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (7)
+          Data: 01062055888f3900009672711ae6a965737c80d805039773d1
+        RSSI: -63 dBm (0xc1)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #6 [hci0] 6.000000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:A5 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (7)
+          Data: 01ff
+        RSSI: -65 dBm (0xbf)
+> HCI Event: LE Meta Event (0x3e) plen 43                   #7 [hci0] 7.000000
+      LE Advertising Report (0x02)
+        Num reports: 1
+        Event type: Non connectable undirected - ADV_NONCONN_IND (0x03)
+        Address type: Random (0x01)
+        Address: AA:00:00:00:00:A6 (Static)
+        Data length: 31
+        Company: Apple, Inc. (76)
+          Type: Unknown (16)
+          Data: 361cee46d1
+          Type: Unknown (7)
+          Data: 05005555888f3900009672711ae6a965737c80d805039773d1
+        RSSI: -66 dBm (0xbe)

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# test/stubs/hciconfig — no-op. sw_ble_scan runs `hciconfig <iface> down/reset/up`; this
+# keeps the offline suite from ever touching the dev box's own Bluetooth adapter.
+exit 0
