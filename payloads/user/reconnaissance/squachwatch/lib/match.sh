@@ -49,6 +49,7 @@ _sw_uuid_hit() {
   local p="$1" t u lo hi
   case "$p" in
     *-*)
+      local -; set -f   # tokens are data, never file patterns ("uuid:*" must not expand)
       lo=$((16#${p%-*})); hi=$((16#${p#*-}))
       for t in $2; do
         case "$t" in

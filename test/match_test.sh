@@ -94,6 +94,13 @@ assert_contains "$_f1" "tracker_findmy|Apple Find My (separated)|med|tracker|ble
 assert_empty "$(printf '%s\n' "$_f1" | grep 'AA:00:00:00:00:66')" t3_bad_tokens_match_nothing
 # a good token next to a bad one still range-matches: the bad one is skipped, not fatal
 assert_contains "$(sw_match_record 'ble|AA:00:00:00:00:05||-84|sd::41 uuid:3100' "$_T3")" "surveillance_raven|" t3_good_token_after_bad_still_matches
+# a range rule's token loop must not glob either: in a folder holding a file named "uuid:3150", a
+# hostile "uuid:*" token must not turn into that file name and hit 3100-3500
+_rg="$(mktemp -d)"; : > "$_rg/uuid:3150"
+assert_empty "$(cd "$_rg" && sw_match_record 'ble|AA:00:00:00:00:70||-60|uuid:*' 'ble_uuid|3100-3500|x_range|Range|low|surveillance')" t3_range_tokens_never_glob
+# control: a real in-range token does hit the same rule from the same folder
+assert_contains "$(cd "$_rg" && sw_match_record 'ble|AA:00:00:00:00:70||-60|uuid:3150' 'ble_uuid|3100-3500|x_range|Range|low|surveillance')" "x_range|" t3_range_glob_control_real_token_hits
+rm -rf "$_rg"; unset _rg
 unset _T3 _f1
 
 # --- one detection per record per category: strongest wins (spec 2026-09-23 §3.1) ---
