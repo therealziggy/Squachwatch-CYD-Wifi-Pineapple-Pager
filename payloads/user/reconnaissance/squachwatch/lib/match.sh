@@ -148,7 +148,7 @@ sw_match_record() {
   # A stream must use sw_match_stream instead: on the Pager just handing a 6 KB signature text
   # to a function costs ~29 ms per call (measured 2026-09-26, see docs/superpowers/P0-findings.md),
   # so the text must not ride along with every record.
-  [ "${SW_SIGS_CACHE-}" = "$2" ] || sw_prepare_sigs "$2"
+  { [ -n "${SW_SIGS_CACHE+x}" ] && [ "$SW_SIGS_CACHE" = "$2" ]; } || sw_prepare_sigs "$2"
   _sw_match_prepared "$1"
 }
 
@@ -207,7 +207,7 @@ sw_match_stream() {
   # $1 = signatures text; reads records on stdin. Prepares ONCE, then matches each record
   # without passing the text again (see sw_match_record for why that matters on the Pager).
   local rec
-  [ "${SW_SIGS_CACHE-}" = "$1" ] || sw_prepare_sigs "$1"
+  { [ -n "${SW_SIGS_CACHE+x}" ] && [ "$SW_SIGS_CACHE" = "$1" ]; } || sw_prepare_sigs "$1"
   while IFS= read -r rec; do
     [ -n "$rec" ] && _sw_match_prepared "$rec"
   done

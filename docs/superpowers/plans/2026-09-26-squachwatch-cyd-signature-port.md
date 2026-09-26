@@ -1095,3 +1095,12 @@ time (printf '%s' "$recs" | sw_match_stream "$SIGS" > /dev/null)
 - [ ] **Step 1:** Final whole-branch review on the most capable model, with the review package `main..cyd-signature-port`, the spec, and the Minor-findings list from the ledger.
 - [ ] **Step 2:** One fix subagent for all Critical/Important findings, then a re-review.
 - [ ] **Step 3:** `git checkout main && git merge --ff-only cyd-signature-port`. No push. Remove the worktrees and their branches, then update the memory files.
+
+---
+
+## Notes after execution (2026-09-26)
+
+- **Task 2, Step 4:** the mutation line as written also dropped the `[ -z "$key" ]` guard, so it crashed on an empty key instead of silently dropping one. The meaningful mutation is `[ -z "$key" ] || [ "$mtype" = ble_uuid ] || SW_IX["$key"]+=" $n"`. It makes the three full-scan comparisons and the order test fail.
+- **Tasks 4b and 4c were added** after measuring on the Pager. Handing the signature text to a bash function costs ~4.5 µs per byte per call, so the stream now prepares once (`_sw_match_prepared`). `sw_prepare_sigs` records the prepared text itself, and an unset cache counts as "nothing prepared". Results: `docs/superpowers/P0-findings.md`.
+- **Task 5, Step 1:** `$( )` reseeds `RANDOM` in the subshell, so the committed `tools/bench_match.sh` builds its records with `printf -v` in the parent shell.
+- **After the final review,** the `axon` name rule became `med` (spec §4 item 7).

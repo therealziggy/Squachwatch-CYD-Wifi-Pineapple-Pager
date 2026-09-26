@@ -90,7 +90,7 @@ wifi_ssid_pre|ab2-|surveillance_axon|Axon body camera|high|surveillance
 wifi_ssid_pre|ab3-|surveillance_axon|Axon body camera|high|surveillance
 wifi_ssid_pre|ab4-|surveillance_axon|Axon body camera|high|surveillance
 wifi_ssid_pre|axon-|surveillance_axon|Axon device network|high|surveillance
-ble_name_sub|axon|surveillance_axon|Axon device|high|surveillance
+ble_name_sub|axon|surveillance_axon|Axon device|med|surveillance
 # ---- Plate readers (ALPR) ----
 wifi_oui|00:04:7D|surveillance_alpr|Motorola plate reader / police|high|surveillance
 wifi_oui|00:18:85|surveillance_alpr|Motorola plate reader / police|high|surveillance
@@ -236,6 +236,9 @@ Flock prefix, and both of its old rules move into this switched-off group).
 5. **Name rules are substrings** (CYD compares its Bluetooth-module names exactly). This is slightly
    broader, and it catches module defaults like `RN42-1A2B`.
 6. **All weak rows ship switched off** (CYD logs them and, by default, even alerts on them). §12.
+7. **The "axon" name rule is `med`** (CYD: high), decided after the final review: the substring also
+   matches everyday names (Jaxon, Saxony, Maxon, Taxonomy), each of which raised a full-screen alert.
+   Real Axon gear still alerts through `00:25:DF` and its `AB2-/AB3-/AB4-/AXON-` networks.
 
 ## 5. Behaviour changes the user will notice
 

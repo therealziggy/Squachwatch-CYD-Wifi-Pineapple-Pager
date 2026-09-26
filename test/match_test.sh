@@ -112,6 +112,13 @@ sw_prepare_sigs "$_cr_b"
 assert_contains "$(sw_match_record 'wifi|B4:1E:52:00:00:01||-50' "$_cr_a")" "flock_generic|" cache_follows_direct_prepare
 unset _cr_a _cr_b
 
+# an UNSET cache means "nothing prepared", not "the empty set is prepared": after a real set was
+# prepared and the cache unset, matching with an EMPTY set must not reuse the real set's arrays
+sw_prepare_sigs 'wifi_oui|B4:1E:52|flock_generic|Flock Safety device|high|surveillance'; unset SW_SIGS_CACHE
+assert_empty "$(sw_match_record 'wifi|B4:1E:52:00:00:01||-50' '')" cache_unset_is_not_empty_set
+# control: in the same state, the real set does match that record
+assert_contains "$(sw_match_record 'wifi|B4:1E:52:00:00:01||-50' 'wifi_oui|B4:1E:52|flock_generic|Flock Safety device|high|surveillance')" "flock_generic|" cache_unset_control_real_set_hits
+
 # --- one detection per record per category: strongest wins (spec 2026-09-23 §3.1) ---
 # A device matching two rules of ONE category used to print twice, and the first (maybe
 # weaker) hit took its cooldown slot: a med name hit would then swallow a high prefix alert.

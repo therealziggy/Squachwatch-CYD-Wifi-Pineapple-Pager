@@ -313,7 +313,7 @@ so ~40% of each record's time went on copying the rule file. It is why the first
 with the 42 weak rules switched on, although the index gave each record the same candidates. Fix: the stream
 prepares once and matches each record through `_sw_match_prepared`, which takes only the record.
 Guarded by `perf_text_size_independent` (dev box: 600 never-matching padding rules made a 500-record stream
-3.1x slower before, ~1.15x after).
+about 3x slower before, ~1.15x after).
 
 **Benchmark** (`tools/bench_match.sh`, 100 WiFi + 100 BLE records from a fixed seed, two runs each):
 
@@ -333,7 +333,7 @@ weak rules on costs under 1%.
 | Step | Expected | Observed |
 |---|---|---|
 | Backup | a full copy of the running install, outside `/root/payloads` (so the UI does not list it twice) | `/root/squachwatch-backup-2026-09-26/`, identical to the install (checksums) |
-| Install | device == branch head | all 10 payload files' `sha256sum` equal to `b12d9ea`; modes restored (payload.sh 755, the rest 644) |
+| Install | device == branch head | all 10 payload files' `sha256sum` equal to the repository's; modes restored (payload.sh 755, the rest 644) |
 | Launcher-faithful silent lap (the launcher's own header injected after line 1, only `PAYLOAD_HOME` in the environment, screen/sound/LED verbs shadowed, temp loot) | real folder found, 83 signatures, index loaded, healthy | `SW_HOME` = the real `/mmc/root/...` folder, 83 signatures, `_sw_candidates` present, health rc 0, lap 19 s, 0 stderr lines; one far separated Find My (-97 dBm) logged at med (no alert) |
 | Benchmark of the installed copy | as the shipped row above | 8.84 s (83 rules), 9.05 s (125 rules) |
 

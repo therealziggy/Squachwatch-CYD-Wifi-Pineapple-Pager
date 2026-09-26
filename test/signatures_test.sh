@@ -124,7 +124,8 @@ assert_eq "$(_pm 'ble|00:00:00:00:00:05|Flockhart|-60')" "flock_generic|Flock de
 assert_contains "$(_pm 'wifi|00:25:DF:00:00:01||-50')" "surveillance_axon|Axon / Taser device|high" port_axon_prefix
 assert_contains "$(_pm 'wifi|00:00:00:00:00:02|AB3-X7Q2|-50')" "surveillance_axon|Axon body camera|high" port_axon_bodycam_ssid
 assert_empty "$(_pm 'wifi|00:00:00:00:00:02|LAB2-GUEST|-50')" port_axon_ssid_prefix_only
-assert_contains "$(_pm 'ble|00:00:00:00:00:03|Axon Body 3|-60')" "surveillance_axon|Axon device|high" port_axon_name
+assert_contains "$(_pm 'ble|00:00:00:00:00:03|Axon Body 3|-60')" "surveillance_axon|Axon device|med" port_axon_name
+assert_eq "$(_pm "ble|00:00:00:00:00:03|Jaxon's Buds|-60")" "surveillance_axon|Axon device|med|surveillance|ble|00:00:00:00:00:03|Jaxon's Buds|-60" port_axon_word_inside_name_only_logs
 # plate readers
 assert_contains "$(_pm 'wifi|4C:CC:34:00:00:01||-50')" "surveillance_alpr|Motorola plate reader / police|high" port_alpr_motorola
 assert_contains "$(_pm 'wifi|0C:BF:15:00:00:01||-50')" "surveillance_alpr|Genetec plate reader|high" port_alpr_genetec
@@ -143,21 +144,25 @@ assert_empty "$(_pm 'wifi|00:00:00:00:00:02|Spring-5G|-50')" port_ring_ssid_pref
 assert_contains "$(_pm 'ble|00:00:00:00:00:03|HC-05|-60')" "surveillance_skimmer|Possible card skimmer (HC-05)|high" port_skimmer_hc05
 assert_contains "$(_pm 'ble|00:00:00:00:00:03|RN42-1A2B|-60')" "surveillance_skimmer|Possible card skimmer (RN42)|high" port_skimmer_rn42_default_name
 assert_contains "$(_pm 'ble|00:00:00:00:00:04||-60|uuid:1101')" "surveillance_skimmer|Possible card skimmer (serial port)|high" port_skimmer_serial_port
+assert_empty "$(_pm 'ble|00:00:00:00:00:03|HC-08|-60')" port_skimmer_near_miss_other_module
 # camera glasses
 assert_contains "$(_pm 'ble|00:00:00:00:00:04||-60|uuid:fd5f')" "surveillance_glasses|Ray-Ban Meta glasses|med" port_glasses_rayban
 assert_contains "$(_pm 'ble|00:00:00:00:00:04||-60|mfr:01ab:02:9')" "surveillance_glasses|Meta device (glasses or headset)|med" port_glasses_meta_company
 assert_contains "$(_pm 'ble|00:00:00:00:00:04||-60|mfr:03c2:00:4')" "surveillance_glasses|Snap Spectacles|med" port_glasses_snap
+assert_empty "$(_pm 'ble|00:00:00:00:00:04||-60|mfr:01ac:02:9')" port_glasses_near_miss_company
 # Raven: CYD's five exact IDs, no longer a range
 assert_contains "$(_pm 'ble|00:00:00:00:00:04||-60|uuid:3300')" "surveillance_raven|" port_raven_exact
 assert_empty "$(_pm 'ble|00:00:00:00:00:04||-60|uuid:3101')" port_raven_no_longer_a_range
 # drones
 assert_eq "$(_pm 'ble|00:00:00:00:00:04||-70|sd:fffa:0d')" "surveillance_drone|Drone (Remote ID)|med|surveillance|ble|00:00:00:00:00:04||-70" port_drone_remote_id
+assert_empty "$(_pm 'ble|00:00:00:00:00:04||-70|uuid:fffb')" port_drone_near_miss_uuid
 # Flipper's exact signatures (its name alone stays med)
 assert_contains "$(_pm 'ble|C1:00:00:00:00:01|MyTool|-60|uuid:3083')" "hacker_flipper|Flipper Zero|high" port_flipper_uuid
 assert_contains "$(_pm 'ble|C1:00:00:00:00:01||-60|mfr:0e29:01:4')" "hacker_flipper|Flipper Zero|high" port_flipper_company
 assert_empty "$(_pm 'ble|C1:00:00:00:00:01||-60|mfr:0fba:01:4')" port_flipper_not_the_copied_wrong_id
 assert_empty "$(_pm 'ble|C1:00:00:00:00:01||-60|uuid:3084')" port_flipper_uuid_exact
 assert_contains "$(_pm 'wifi|0C:FA:22:00:00:01||-50')" "hacker_flipper|Flipper Devices hardware|high" port_flipper_registered_prefix
+assert_empty "$(_pm 'ble|00:00:00:00:00:04||-70|mfr:004d:12:25')" port_apple_near_miss_company
 # hacker WiFi
 assert_eq "$(_pm 'wifi|00:00:00:00:00:02|Pineapple_1A2B|-50')" "hacker_pineapple|WiFi Pineapple setup network|med|attacker|wifi|00:00:00:00:00:02|Pineapple_1A2B|-50" port_pineapple_setup_med
 assert_empty "$(_pm 'wifi|00:00:00:00:00:02|MyPineappleNet|-50')" port_pineapple_substring_no_longer_matches

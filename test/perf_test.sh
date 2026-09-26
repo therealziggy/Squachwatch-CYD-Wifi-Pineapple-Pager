@@ -66,7 +66,7 @@ if [ "$_sw_el_ble" -lt 5 ]; then pass; else fail "perf_ble_budget: 500 token rec
 # 6) TEXT-SIZE INDEPENDENCE. On the Pager, handing the signature text to a function costs ~4.5 us per
 #    BYTE per call (2026-09-26: 29 ms per record for the shipped 6 KB set), so the stream must prepare
 #    ONCE and never pass the text per record. Padding the set with 600 keyed rules that never match
-#    must therefore not slow the stream down (before the fix it made it 3.3x slower on the dev box).
+#    must therefore not slow the stream down (before the fix it made it about 3x slower on the dev box).
 _sw_pad="$_sw_sigs"
 for (( _i = 0; _i < 600; _i++ )); do
   printf -v _l 'wifi_oui|F%01X:%02X:%02X|pad|Pad|low|surveillance' $((_i % 16)) $((_i / 16)) $((_i % 251))

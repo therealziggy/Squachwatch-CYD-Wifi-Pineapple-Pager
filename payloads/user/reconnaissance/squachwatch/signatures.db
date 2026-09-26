@@ -4,7 +4,8 @@
 # CSV row. Grades follow SquachWatch-CYD's rule (include/signatures.h, docs/DETECTIONS.md):
 #   high = the ID is registered to the company that makes the product, or is an exact
 #          self-identifying signature;
-#   med  = registered to a parent far broader than the product, or a name anyone can type;
+#   med  = registered to a parent far broader than the product, or a name too common or too easily
+#          faked to justify a buzz (a Flipper's name, "Pineapple_", "pwned", the words "flock", "axon");
 #   low  = a chip/module vendor inside everything, an unregistered block, or a locally
 #          administered (self-assigned) address.
 # Ported from SquachWatch-CYD at commit ecaff618 (GPL-3.0). Every MAC prefix was checked
@@ -74,7 +75,8 @@ wifi_ssid_pre|ab2-|surveillance_axon|Axon body camera|high|surveillance
 wifi_ssid_pre|ab3-|surveillance_axon|Axon body camera|high|surveillance
 wifi_ssid_pre|ab4-|surveillance_axon|Axon body camera|high|surveillance
 wifi_ssid_pre|axon-|surveillance_axon|Axon device network|high|surveillance
-ble_name_sub|axon|surveillance_axon|Axon device|high|surveillance
+# The bare word "axon" also sits inside everyday names (Jaxon, Saxony, Maxon), so a name match only logs (SquachWatch-CYD alerts on it).
+ble_name_sub|axon|surveillance_axon|Axon device|med|surveillance
 # Switched off: E4:05:40 is not in the IEEE registry; 28:24:FF is Wistron NeWeb, an ODM.
 #off wifi_oui|E4:05:40|surveillance_axon|Possible Axon (unregistered prefix)|low|surveillance
 #off wifi_oui|28:24:FF|surveillance_axon|Possible Axon (Wistron NeWeb chip)|low|surveillance
@@ -92,6 +94,7 @@ wifi_oui|00:BF:15|surveillance_alpr|Genetec plate reader|high|surveillance
 wifi_oui|0C:BF:15|surveillance_alpr|Genetec plate reader|high|surveillance
 
 # ---- Cameras (surveillance) ----
+# Camera makers' own registered blocks (IEEE registry, via CYD): Wyze, Hikvision, Verkada, Avigilon Alta (registered as Openpath), Axis.
 wifi_oui|2C:AA:8E|surveillance_camera|Wyze camera|high|surveillance
 wifi_oui|D0:3F:27|surveillance_camera|Wyze camera|high|surveillance
 wifi_oui|7C:78:B2|surveillance_camera|Wyze camera|high|surveillance
