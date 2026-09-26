@@ -105,6 +105,7 @@ sw_match_record() {
       wifi_oui)      [ "$radio" = wifi ] && [ "$norm" = "$oui" ] && hit=0 ;;
       ble_oui)       [ "$radio" = ble  ] && [ "$norm" = "$oui" ] && hit=0 ;;
       wifi_ssid_sub) if [ "$radio" = wifi ] && [ -n "$ident" ] && [ -n "$norm" ]; then case "$lident" in *"$norm"*) hit=0;; esac; fi ;;
+      wifi_ssid_pre) if [ "$radio" = wifi ] && [ -n "$ident" ] && [ -n "$norm" ]; then case "$lident" in "$norm"*) hit=0;; esac; fi ;;
       ble_name_sub)  if [ "$radio" = ble  ] && [ -n "$ident" ] && [ -n "$norm" ]; then case "$lident" in *"$norm"*) hit=0;; esac; fi ;;
       # Tier-3 (spec §4). ble_mfr is a WHOLE-SEGMENT prefix: equal, or followed by ':'.
       # A plain string prefix would let 004c:12:2 (near owner) match 004c:12:25 (separated).

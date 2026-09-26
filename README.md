@@ -57,7 +57,7 @@ It should say **`SquachWatch armed — watching WiFi + BLE`** in green. Yellow `
 match_type|pattern|category|label|confidence|threat_class
 ```
 
-- `match_type`: `wifi_oui` · `wifi_ssid_sub` · `ble_name_sub` · `ble_oui` · `ble_mfr` · `ble_uuid`
+- `match_type`: `wifi_oui` · `wifi_ssid_sub` · `wifi_ssid_pre` · `ble_name_sub` · `ble_oui` · `ble_mfr` · `ble_uuid` (`wifi_ssid_sub` matches anywhere in the network name, `wifi_ssid_pre` only at its start; both ignore case)
 - `pattern`: e.g. `70:C9:4E` (an OUI), `pineapple` (an SSID substring), `Penguin-` (a BLE name substring)
 - `category` / `label`: machine key / human name shown in the alert
 - `confidence`: `high` | `med` | `low` (only `high` raises a full-screen alert; others just log a colored line). This is a per-signature judgment call, not a blanket rule: a **Flipper Zero** matched by its advertised **BLE name alone** is `med`, because BLE names are trivial to fake (BLE Spam floods them), while a hardware match (e.g. the Flipper's `80:E1:26` prefix) makes it `high`. `wifi_ssid_sub|pineapple` still alerts `high` on the SSID alone, which is spoofable in the same way; that rule is revisited in the signature port. When one device matches several rules of the same category, only its strongest match counts.

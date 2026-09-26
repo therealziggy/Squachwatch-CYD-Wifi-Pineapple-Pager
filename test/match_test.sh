@@ -123,3 +123,19 @@ flock_generic|Flock device|med|surveillance|ble|80:E1:26:00:00:01|Flipper Bob|-6
 assert_eq "$(sw_match_record 'ble|C1:00:00:00:00:01|Flipper Al|-60' "$_SW2")" \
   "hacker_flipper|Flipper Zero (by name)|med|attacker|ble|C1:00:00:00:00:01|Flipper Al|-60" strongest_wins_name_only_control
 unset _SW2 _SW2r
+
+# --- wifi_ssid_pre: case-insensitive SSID PREFIX (spec 2026-09-26 §6.1) ---
+_PRE='wifi_ssid_pre|ab3-|surveillance_axon|Axon body camera|high|surveillance
+wifi_ssid_pre|Pineapple_|hacker_pineapple|WiFi Pineapple setup network|med|attacker'
+assert_eq "$(sw_match_record 'wifi|00:00:00:00:00:01|AB3-X7Q2|-50' "$_PRE")" \
+  "surveillance_axon|Axon body camera|high|surveillance|wifi|00:00:00:00:00:01|AB3-X7Q2|-50" pre_hit_case_insensitive
+assert_contains "$(sw_match_record 'wifi|00:00:00:00:00:02|pineapple_1A2B|-60' "$_PRE")" "hacker_pineapple|" pre_hit_pattern_case_folded
+assert_empty "$(sw_match_record 'wifi|00:00:00:00:00:01|LAB3-GUEST|-50' "$_PRE")" pre_not_a_substring_match
+assert_empty "$(sw_match_record 'wifi|00:00:00:00:00:02|MyPineapple_Net|-60' "$_PRE")" pre_not_mid_string
+assert_empty "$(sw_match_record 'wifi|00:00:00:00:00:03||-60' "$_PRE")" pre_empty_ssid_silent
+assert_empty "$(sw_match_record 'ble|00:00:00:00:00:04|AB3-X7Q2|-60' "$_PRE")" pre_wifi_only
+assert_empty "$(sw_match_record 'wifi|AA:BB:CC:00:11:22|anything|-50' 'wifi_ssid_pre||x|X|low|attacker')" pre_empty_pattern_guard
+# control: the same near-miss SSID DOES hit a substring rule, so the silence above comes from
+# the prefix rule and not from the record
+assert_contains "$(sw_match_record 'wifi|00:00:00:00:00:01|LAB3-GUEST|-50' 'wifi_ssid_sub|ab3-|x|X|low|attacker')" "x|X|low" pre_control_substring_does_hit
+unset _PRE

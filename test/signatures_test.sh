@@ -16,9 +16,10 @@ assert_contains "$(sw_match_record 'wifi|00:00:00:00:00:00|xPineapplex|' "$SIGS"
 
 # every match_type is one the matcher implements: a typo (ble_mrf) would otherwise be
 # silently ignored by sw_match_record's catch-all arm
-_types_awk='$1!="wifi_oui" && $1!="wifi_ssid_sub" && $1!="ble_name_sub" && $1!="ble_oui" && $1!="ble_mfr" && $1!="ble_uuid" {print}'
+_types_awk='$1!="wifi_oui" && $1!="wifi_ssid_sub" && $1!="wifi_ssid_pre" && $1!="ble_name_sub" && $1!="ble_oui" && $1!="ble_mfr" && $1!="ble_uuid" {print}'
 assert_empty "$(printf '%s\n' "$SIGS" | awk -F'|' "$_types_awk")" sig_match_types_known
 assert_contains "$(printf 'ble_mrf|004c|x|x|med|tracker\n' | awk -F'|' "$_types_awk")" "ble_mrf" sig_match_type_check_catches_typo
+assert_empty "$(printf 'wifi_ssid_pre|ab3-|x|x|high|surveillance\n' | awk -F'|' "$_types_awk")" sig_match_type_pre_known
 
 # Tier-3 seeds against the REAL 2026-09-22 capture, through the real parser
 _live="$(sw_btmon_parse < "$_FIX/btmon_live_2026-09-22.txt" | sw_match_stream "$SIGS")"
