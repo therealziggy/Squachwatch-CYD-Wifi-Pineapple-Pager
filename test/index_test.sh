@@ -52,6 +52,8 @@ _ix_recs="$(for _f in "$_IFIX"/btmon_*.txt; do sw_btmon_parse < "$_f"; done
     'ble|80:e1:26:00:00:0a|lower mac|-60|uuid:FD5A mfr:004C:12:25' \
     'zzz|70:C9:4E:11:22:33|x|1')"
 unset _f
+# the differential really sees the fixtures (not just the 19 hand-made records)
+assert_eq "$([ "$(printf '%s\n' "$_ix_recs" | grep -c .)" -gt 600 ] && echo y)" "y" index_records_floor
 
 _ix_run() {  # $1 = signature text -> every record's detections, in record order
   local _r
@@ -72,6 +74,7 @@ _ix_compare() {  # $1 = signature text, $2 = test name: the indexed output must 
 
 _ix_real="$(sw_load_signatures "$SW_ROOT/signatures.db")"
 _ix_all="$(sed 's/^#off //' "$SW_ROOT/signatures.db" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$')"
+assert_eq "$(printf '%s\n' "$_ix_all" | grep -c .)" "125" index_all_rule_count
 _ix_compare "$_IX_SYN" index_equals_fullscan_synthetic
 # non-vacuity: the synthetic comparison exercised keyed, scanned, range and unkeyable rules
 assert_contains "$_IX_LAST" "x_mfr_full|Find My separated|high" index_syn_keyed_mfr_hit
@@ -81,6 +84,8 @@ assert_contains "$_IX_LAST" "x_uuid_bad|Bad UUID|low" index_syn_unkeyed_uuid_hit
 _ix_compare "$_ix_real" index_equals_fullscan_real
 assert_contains "$_IX_LAST" "hacker_flipper|Flipper Zero|high" index_real_nonvacuous
 _ix_compare "$_ix_all" index_equals_fullscan_real_with_off_rules
+# non-vacuity: a switched-off rule really took part (70:C9:4E is a Lite-On #off prefix)
+assert_contains "$_IX_LAST" "flock_chip|Possible Flock (Lite-On chip)|low" index_all_nonvacuous
 
 # POSITIVE CONTROL: the comparison can fail. Drop one key from a prepared index and the
 # indexed matcher loses the Apple rules, so it must now DIFFER from the full scan.
@@ -92,7 +97,8 @@ assert_eq "$([ "$_ix_broken" != "$_ix_ok" ] && echo differs)" "differs" index_co
 unset SW_SIGS_CACHE    # the index above is broken: force the next caller to re-prepare
 
 # Candidate counts: the speed property, deterministic and machine-independent. The synthetic
-# set scans rules 3,4,5 (WiFi) and 6,10,11,14,15,16,17 (BLE); everything else is keyed.
+# set scans rules 3,4,5 (WiFi) and 6,10,11,14,15,16,17 (BLE); rule 18 (an unknown type) is
+# neither scanned nor keyed; every other rule is keyed.
 sw_prepare_sigs "$_IX_SYN"; SW_SIGS_CACHE="$_IX_SYN"
 _sw_candidates wifi "12:34:56" "";  assert_eq "${#SW_CAND[@]}" "3" index_wifi_scans_ssid_rules_only
 _sw_candidates wifi "AA:BB:CC" "";  assert_eq "${#SW_CAND[@]}" "4" index_wifi_adds_its_oui_rule
@@ -109,6 +115,21 @@ _ixg="$(mktemp -d)"; : > "$_ixg/uuid:fd5a"
 assert_eq "$(cd "$_ixg" && set -- uuid:*; echo "$1")" "uuid:fd5a" index_glob_control_would_expand
 assert_eq "$(cd "$_ixg" && _sw_candidates ble "12:34:56" "uuid:*" && echo "${#SW_CAND[@]}")" "7" index_tokens_never_glob
 rm -rf "$_ixg"
+
+# with the SHIPPED rule set, a record meets only the rules that could fit it (spec §6.3):
+# 9 WiFi prefix/substring rules, 13 BLE name rules, plus whatever its OUI and tokens key
+sw_prepare_sigs "$_ix_real"; SW_SIGS_CACHE="$_ix_real"
+assert_eq "${#SW_SIG_TYPE[@]}" "83" index_real_rule_count
+_sw_candidates wifi "12:34:56" "";  assert_eq "${#SW_CAND[@]}" "9" index_real_wifi_candidates
+_sw_candidates wifi "B4:1E:52" "";  assert_eq "${#SW_CAND[@]}" "10" index_real_wifi_oui_candidates
+_sw_candidates ble "12:34:56" "";   assert_eq "${#SW_CAND[@]}" "13" index_real_ble_candidates
+_sw_candidates ble "80:E1:26" "uuid:3082 mfr:004c:12:25"; assert_eq "${#SW_CAND[@]}" "17" index_real_flipper_candidates
+# The top-level `declare -gA SW_IX` in lib/match.sh is load-bearing: with NO signatures loaded
+# (payload.sh's degraded "no signatures loaded" lap) sw_match_record never prepares, so without
+# the declaration the first lookup evaluates "w:AA:BB:CC" as arithmetic and errors on EVERY record.
+assert_eq "$(bash -c 'set -u; source "$1/lib/match.sh"; sw_match_record "wifi|AA:BB:CC:00:00:01|Net|-50" ""; echo "rc=$?"' _ "$SW_ROOT" 2>&1)" "rc=0" index_empty_rules_clean_noop
+# control: the same fresh-shell probe does report a hit when there is one
+assert_contains "$(bash -c 'set -u; source "$1/lib/match.sh"; sw_match_record "wifi|AA:BB:CC:00:00:01|Net|-50" "wifi_oui|AA:BB:CC|x|X|low|attacker"' _ "$SW_ROOT" 2>&1)" "x|X|low" index_fresh_shell_control
 unset SW_SIGS_CACHE
 unset _IX_SYN _IX_LAST _ix_recs _ix_real _ix_all _ix_broken _ix_ok _ixg _IFIX
 unset -f _ix_run _ix_fullscan _ix_compare

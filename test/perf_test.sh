@@ -11,9 +11,13 @@ source "$SW_ROOT/lib/match.sh"; source "$SW_ROOT/lib/wifi.sh"
 _sw_body() { sed -n "/^$2()/,/^}/p" "$1" | grep -v '^[[:space:]]*#'; }
 
 # 1) Hot-path helpers must be fork-free.
+# (each check first proves the body was FOUND: a renamed or reformatted function would
+# otherwise extract nothing and pass vacuously)
 for _fn in sw_sanitize_ident sw_oui _sw_lower _sw_uuid_hit _sw_candidates; do
+  assert_contains "$(_sw_body "$SW_ROOT/lib/match.sh" "$_fn")" "$_fn()" "forkfree_found_$_fn"
   assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
 done
+assert_contains "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_colonize)" "sw_wifi_colonize()" forkfree_found_sw_wifi_colonize
 assert_empty "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_colonize | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" forkfree_sw_wifi_colonize
 
 # regex self-check: still catches a command substitution, does not flag arithmetic
@@ -21,8 +25,10 @@ assert_contains "$(printf 'x="$(date)"\n' | grep -E '\$\([^(]')" 'x=' perf_regex
 assert_empty "$(printf 'x=$((16#ff))\n' | grep -E '\$\([^(]')" perf_regex_allows_arithmetic
 
 # 2) The per-record producers must not fork to call those helpers either.
+assert_contains "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_row_to_record)" "sw_wifi_row_to_record()" forkfree_found_row_to_record
 assert_empty "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_row_to_record | grep -nE '\$\([^(]|`')" forkfree_row_to_record
 # 3) sw_match_record must not re-lower/re-upper the pattern inside the signature loop.
+assert_contains "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_record)" "sw_match_record()" forkfree_found_match_record
 assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_record | grep -nE '\$\([^(]|`')" forkfree_match_record
 
 # 4) Helpers expose a fork-free result via REPLY (callers must not need $( )).
