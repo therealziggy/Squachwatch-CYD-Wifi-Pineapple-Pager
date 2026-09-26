@@ -5,6 +5,15 @@
 # and a real sweep is ~18k records on a 580MHz MIPS CPU. They must use bash builtins
 # only — no pipes, no $( ). The fork-based version measured ~1.04 s/record on the
 # Pager (~5.2 h per sweep). Helpers return via REPLY so callers need no subshell.
+#
+# THE INDEX (spec 2026-09-26 §6.2): even fork-free, each rule costs ~2 ms per record on the
+# Pager, so a record only meets the rules that could hit it. sw_prepare_sigs files each rule
+# under the key a record must carry for it to hit (SW_IX), and lists the rules no key can
+# narrow (substrings, prefixes, ranges, odd shapes) per radio; _sw_candidates combines them.
+
+# SW_IX exists from the moment the library loads, so a lookup is always an associative one
+# (on an undeclared name bash would evaluate the key "w:AA:BB:CC" as arithmetic).
+declare -gA SW_IX 2>/dev/null
 
 sw_load_signatures() {
   # $1 = signatures file. Strips comment/blank lines. Runs once at startup.
@@ -63,8 +72,14 @@ sw_prepare_sigs() {
   # $1 = signatures text. Parses ONCE into parallel arrays and pre-normalizes each
   # pattern to the case its matcher needs. Previously this normalization happened
   # per record PER signature (~40 forks/record) — the dominant cost of a sweep.
+  # Also builds the index (header): SW_IX maps "w:<OUI>" (wifi_oui), "b:<OUI>" (ble_oui),
+  # "m:<company>" (ble_mfr) and "u:<uuid16>" (ble_uuid, exact or first-byte form) to the
+  # numbers of the rules filed there; SW_SCAN_WIFI / SW_SCAN_BLE list the rest. A pattern
+  # whose shape fits no key is scanned, so it still gets exactly the check it always got.
   SW_SIG_TYPE=(); SW_SIG_CAT=(); SW_SIG_LABEL=(); SW_SIG_CONF=(); SW_SIG_CLASS=(); SW_SIG_NORM=()
-  local mtype pat cat label conf tclass norm
+  unset SW_IX; declare -gA SW_IX=()
+  SW_SCAN_WIFI=""; SW_SCAN_BLE=""
+  local mtype pat cat label conf tclass norm key n=0
   while IFS='|' read -r mtype pat cat label conf tclass; do
     [ -n "$mtype" ] || continue
     case "$mtype" in
@@ -73,9 +88,54 @@ sw_prepare_sigs() {
     esac
     SW_SIG_TYPE+=("$mtype"); SW_SIG_CAT+=("$cat"); SW_SIG_LABEL+=("$label")
     SW_SIG_CONF+=("$conf"); SW_SIG_CLASS+=("$tclass"); SW_SIG_NORM+=("$norm")
+    key=""
+    case "$mtype" in
+      wifi_oui) key="w:$norm" ;;
+      ble_oui)  key="b:$norm" ;;
+      wifi_ssid_sub|wifi_ssid_pre) SW_SCAN_WIFI+=" $n" ;;
+      ble_name_sub) SW_SCAN_BLE+=" $n" ;;
+      ble_mfr)
+        case "${norm%%:*}" in
+          [0-9a-f][0-9a-f][0-9a-f][0-9a-f]) key="m:${norm%%:*}" ;;
+          *) SW_SCAN_BLE+=" $n" ;;
+        esac ;;
+      ble_uuid)
+        case "$norm" in
+          [0-9a-f][0-9a-f][0-9a-f][0-9a-f]|[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]) key="u:${norm:0:4}" ;;
+          *) SW_SCAN_BLE+=" $n" ;;
+        esac ;;
+    esac
+    [ -z "$key" ] || SW_IX["$key"]+=" $n"
+    n=$((n + 1))
   done <<HEREDOC
 $1
 HEREDOC
+}
+
+_sw_candidates() {
+  # $1 = radio, $2 = OUI (upper, "AA:BB:CC"), $3 = advertisement tokens -> SW_CAND, a sparse
+  # indexed array whose INDICES are the numbers of the rules worth checking (bash lists them
+  # in ascending, i.e. file, order). It holds every rule that could hit the record: an OUI
+  # rule can only hit its own OUI, a ble_mfr rule only a token of its company, and a ble_uuid
+  # rule only a token of its UUID. Fork-free (perf contract). Keys are namespaced, so none is
+  # ever empty (an empty subscript is a "bad array subscript" error). Globbing is off, so a
+  # hostile token such as "uuid:*" stays a string instead of becoming a file pattern.
+  local -
+  set -f
+  local IFS=$' \t\n' k t u
+  SW_CAND=()
+  case "$1" in
+    wifi) for k in ${SW_IX["w:$2"]-} ${SW_SCAN_WIFI-}; do SW_CAND[k]=1; done ;;
+    ble)
+      for k in ${SW_IX["b:$2"]-} ${SW_SCAN_BLE-}; do SW_CAND[k]=1; done
+      for t in $3; do
+        case "$t" in
+          mfr:*)  u="${t#mfr:}"; u="${u%%:*}"; for k in ${SW_IX["m:$u"]-}; do SW_CAND[k]=1; done ;;
+          uuid:*) u="${t#uuid:}";              for k in ${SW_IX["u:$u"]-}; do SW_CAND[k]=1; done ;;
+          sd:*)   u="${t#sd:}";  u="${u%%:*}"; for k in ${SW_IX["u:$u"]-}; do SW_CAND[k]=1; done ;;
+        esac
+      done ;;
+  esac
 }
 
 sw_match_record() {
@@ -99,7 +159,9 @@ sw_match_record() {
   local lident="${ident,,}"
   local i j hit mtype norm rank
   local -a best_cat=() best_rank=() best_i=()   # one slot per category hit, first-hit order
-  for (( i=0; i<${#SW_SIG_TYPE[@]}; i++ )); do
+  # Only the rules that could hit this record (spec 2026-09-26 §6.2), in file order.
+  _sw_candidates "$radio" "$oui" "$adv"
+  for i in "${!SW_CAND[@]}"; do
     hit=1; mtype="${SW_SIG_TYPE[i]}"; norm="${SW_SIG_NORM[i]}"
     case "$mtype" in
       wifi_oui)      [ "$radio" = wifi ] && [ "$norm" = "$oui" ] && hit=0 ;;

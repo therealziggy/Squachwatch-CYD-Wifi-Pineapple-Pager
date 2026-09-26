@@ -11,7 +11,7 @@ source "$SW_ROOT/lib/match.sh"; source "$SW_ROOT/lib/wifi.sh"
 _sw_body() { sed -n "/^$2()/,/^}/p" "$1" | grep -v '^[[:space:]]*#'; }
 
 # 1) Hot-path helpers must be fork-free.
-for _fn in sw_sanitize_ident sw_oui _sw_lower _sw_uuid_hit; do
+for _fn in sw_sanitize_ident sw_oui _sw_lower _sw_uuid_hit _sw_candidates; do
   assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
 done
 assert_empty "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_colonize | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" forkfree_sw_wifi_colonize
