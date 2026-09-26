@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a recon.db-shaped fixture. Usage: build_fixture_db.py OUT.db"""
-import sqlite3, sys, time
+import os, sqlite3, sys, time
 out = sys.argv[1]
 con = sqlite3.connect(out)
 con.executescript("""
@@ -10,10 +10,11 @@ CREATE TABLE wifi_device(hash TEXT PRIMARY KEY, mac TEXT, packets INT);
 CREATE TABLE ssid(bssid TEXT, ssid TEXT, type INT, channel INT, freq INT,
                   signal INT, encryption INT, hidden INT, time INT, wifi_device TEXT);
 """)
-now = int(time.time())
+now = int(os.environ.get("SW_FIXTURE_NOW") or time.time())  # fixed epoch = reproducible committed fixture
 con.execute("INSERT INTO scan VALUES(1,'fixture',?)", (now,))
 # wifi_device rows keyed by hash (bssid stored as 12 hex chars, no colons, like recon.db)
 devs = [("h_flock","70c94e112233",1200),
+        ("h_flocksafe","b41e52112233",900),
         ("h_old","001122334455",10),
         ("h_pine","aabbcc001122",300),
         ("h_home","1234569abcde",50),
@@ -21,7 +22,8 @@ devs = [("h_flock","70c94e112233",1200),
 con.executemany("INSERT INTO wifi_device VALUES(?,?,?)", devs)
 # ssid rows: type 8 = AP/beacon, 4 = client probe
 rows = [
- ("70c94e112233","",8,6,2437,-40,0,0,now,"h_flock"),          # Flock camera AP
+ ("70c94e112233","",8,6,2437,-40,0,0,now,"h_flock"),          # Lite-On chip prefix: a switched-off rule since 2026-09-26
+ ("b41e52112233","",8,6,2437,-45,0,0,now,"h_flocksafe"),      # Flock Safety's own registered block
  ("aabbcc001122","MyPineappleNet",8,11,2462,-55,8,0,now,"h_pine"), # pineapple SSID
  ("1234569abcde","HomeWiFi",8,1,2412,-60,8,0,now,"h_home"),    # clean AP
  ("","",4,0,2437,-70,0,0,now,"c_phone"),                       # client probe: bssid EMPTY (real schema) -> MAC only via wifi_device join

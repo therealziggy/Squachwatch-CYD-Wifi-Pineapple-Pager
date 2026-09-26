@@ -20,7 +20,10 @@ assert_contains "$SW_TRACK_FILE" "${SW_TMP_DIR:-unset}/" payload_track_file_in_t
 sw_log_init "$SW_LOOT_DIR"
 sw_scan_once
 assert_contains "$(cat "$SW_STUB_LOG")" "ALERT " payload_alerts
-assert_contains "$(tail -n +2 "$SW_LOOT_DIR/detections.csv")" "flock_alpr" payload_logs_flock
+assert_contains "$(tail -n +2 "$SW_LOOT_DIR/detections.csv")" "flock_generic" payload_logs_flock
+# the fixture's Lite-On chip prefix has been a switched-off rule since 2026-09-26: no row for it
+# (payload_logs_flock above is the positive control: the same lap wrote the Flock row)
+assert_empty "$(grep -F '70:C9:4E' "$SW_LOOT_DIR/detections.csv")" payload_chip_prefix_not_logged
 assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" "hacker_flipper" payload_logs_flipper
 
 # health signal: an unreadable recon DB must warn + report degraded (not silently run WiFi-off)

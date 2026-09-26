@@ -36,12 +36,12 @@ sw_wifi_colonize '70c94e112233';     assert_eq "$REPLY" "70:C9:4E:11:22:33" repl
 #    5 s on any dev box; the fork-based version needs ~20 s+ for the same work.
 _sw_sigs="$(sw_load_signatures "$SW_ROOT/signatures.db")"
 _sw_bulk="$(i=0; while [ $i -lt 499 ]; do printf 'wifi|AA:BB:CC:00:11:%02X|HomeNet%d|-60\n' $((i%256)) $i; i=$((i+1)); done
-            printf 'wifi|70:C9:4E:11:22:33|FlockCam|-40\n')"   # POSITIVE CONTROL row
+            printf 'wifi|B4:1E:52:11:22:33|FlockCam|-40\n')"   # POSITIVE CONTROL row (Flock Safety's own block)
 SECONDS=0
 _sw_out="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_sigs")"
 _sw_elapsed=$SECONDS
 # positive control first: if this is 0 the matcher did no work and the timing is vacuous.
-assert_eq "$(printf '%s\n' "$_sw_out" | grep -c 'flock_alpr')" "1" perf_positive_control
+assert_eq "$(printf '%s\n' "$_sw_out" | grep -c 'flock_generic')" "1" perf_positive_control
 if [ "$_sw_elapsed" -lt 5 ]; then pass; else fail "perf_budget: 500 records took ${_sw_elapsed}s (budget 5s)"; fi
 
 # LATENCY BUDGET for token records: 500 BLE records carrying tokens x a rule set that

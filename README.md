@@ -58,19 +58,19 @@ match_type|pattern|category|label|confidence|threat_class
 ```
 
 - `match_type`: `wifi_oui` · `wifi_ssid_sub` · `wifi_ssid_pre` · `ble_name_sub` · `ble_oui` · `ble_mfr` · `ble_uuid` (`wifi_ssid_sub` matches anywhere in the network name, `wifi_ssid_pre` only at its start; both ignore case)
-- `pattern`: e.g. `70:C9:4E` (an OUI), `pineapple` (an SSID substring), `Penguin-` (a BLE name substring)
+- `pattern`: e.g. `B4:1E:52` (an OUI), `pineapple_` (an SSID prefix), `Penguin` (a BLE name substring)
 - `category` / `label`: machine key / human name shown in the alert
-- `confidence`: `high` | `med` | `low` (only `high` raises a full-screen alert; others just log a colored line). This is a per-signature judgment call, not a blanket rule: a **Flipper Zero** matched by its advertised **BLE name alone** is `med`, because BLE names are trivial to fake (BLE Spam floods them), while a hardware match (e.g. the Flipper's `80:E1:26` prefix) makes it `high`. `wifi_ssid_sub|pineapple` still alerts `high` on the SSID alone, which is spoofable in the same way; that rule is revisited in the signature port. When one device matches several rules of the same category, only its strongest match counts.
+- `confidence`: `high` | `med` | `low` (only `high` raises a full-screen alert; others just log a colored line). Grades follow SquachWatch-CYD's rule, checked against the IEEE MAC registry and the Bluetooth SIG lists: **high** when the ID is registered to the company that makes the product (or is an exact self-identifying signature), **med** when it belongs to a much broader parent (Amazon's blocks also cover Echo and Kindle) or is a name anyone can type, **low** for chips inside everything (ESP32, Lite-On, Realtek…), unregistered blocks and self-assigned addresses. So a **Flipper Zero** matched by its advertised name alone is `med` (BLE Spam floods fake that name), while its hardware signatures make it `high`. When one device matches several rules of the same category, only its strongest match counts.
 - `threat_class`: `surveillance` (magenta) | `tracker` (yellow) | `attacker` (cyan)
 
-Add a detection by adding a line — no code changes. Lines starting with `#` are comments. Signatures never contain `|`; observed device names have `|` and control characters stripped before matching, so a device can't split a token to evade a signature.
+Add a detection by adding a line — no code changes. Lines starting with `#` are comments. **Switched-off rules:** a line starting `#off ` is a complete rule shipped disabled: weak, generic-chip evidence that would log every nearby gadget built on that chip. Delete the `#off ` to switch it on. Signatures never contain `|`; observed device names have `|` and control characters stripped before matching, so a device can't split a token to evade a signature.
 
 **Raw-advertisement matchers (Tier 3).** Every BLE device seen in a lap gets a list of tokens decoded from its advertisement by `btmon`: `mfr:<company>:<type>:<length>` for manufacturer data (Apple Find My separated from its owner = `mfr:004c:12:25`), plus for Apple's pairing broadcast (type `0x07`) `mfr:004c:07:audio:<model>` for AirPods/Beats (every published model code ends in `20`) or `mfr:004c:07:other:<model>` for anything else, `uuid:<16-bit>` for service UUIDs, and `sd:<16-bit>:<first byte>` for service data. Match them with:
 
 - `ble_mfr|004c:12:25`: a whole-segment prefix, so `004c` = any Apple, `004c:12` = any Find My, and `004c:12:25` = separated Find My only.
 - `ble_uuid|fd5a` (the UUID as a service UUID or under service data), `ble_uuid|feaa:41` (service data whose first byte is `41`), and `ble_uuid|3100-3500` (a range).
 
-The seed set covers Tier-1 targets (Flock ALPR cameras + batteries, Flipper Zero, WiFi Pineapple/Pager) plus Tier-2 starters (Ring, Tile). Grow it freely.
+**What it detects** (83 active rules, 42 switched off): Flock Safety devices, Axon body cameras, Motorola and Genetec plate readers, Wyze/Hikvision/Verkada/Avigilon/Axis cameras and Amazon devices, Ring doorbells, Bluetooth card-skimmer modules, camera glasses (Ray-Ban Meta, Snap), Raven gunshot sensors, drones broadcasting Remote ID, personal trackers (Apple Find My and AirTags in setup mode, Samsung SmartTag, Tile, Google Find My) and hacker tools (Flipper Zero, WiFi Pineapple and Pager, ESP deauthers). Each family's comment in `signatures.db` names its source.
 
 ## Tests
 
@@ -92,13 +92,15 @@ This is **core v1**: WiFi + name-based BLE detection, native alerts, offline-tes
 
 **Noise control** (2026-09-23/24, built after a real BLE Spam field test raised 9 full-screen alerts in one lap): a Flipper matched by its advertised name alone only logs (hardware-matched ones still alert); each kind of device buzzes at most once per `SW_KIND_COOLDOWN` (a flood of new devices of one kind interrupts once); the screen shows at most `SW_LOG_PER_KIND` lines per kind and confidence per lap plus "...and N more", so a real device is never buried under spoofed ones; trackers weaker than `SW_FOLLOW_MIN_RSSI` never count toward "following you"; and the cooldown ledger is pruned (future-dated, torn or malformed entries fail open, never silence a lap). Every device still gets its CSV row. A real 15-second BLE Spam capture (607 addresses) is pinned as a regression fixture.
 
+**Signature port** (2026-09-26): SquachWatch-CYD's current fingerprints, graded the way CYD grades them, by who the ID is registered to. That audit also demoted eight of our own "Flock" prefixes that turned out to belong to chip makers (Lite-On, USI, Silicon Labs), so they no longer raise alerts. Weak generic-chip rules ship switched off. The matcher now indexes its rules, so each device is only checked against the rules that could fit it.
+
 Deferred to their own phases:
 - **Drone Remote-ID over WiFi** — needs monitor-mode (`wlan1mon`) frame parsing, its own subsystem.
 - **Framebuffer "vaporwave" skin + mascot** — a custom `/dev/fb0` UI on top of the native-widget alerts.
 
 ## Credits
 
-Homage to **SquachWatch-CYD** by skizzophrenic (https://github.com/skizzophrenic/SquachWatch-CYD, GPL-3.0): this project ports ideas, rules and logic from it, such as AUTO SNOOZE and rating a hacker tool matched by name alone as medium. Detection patterns and data adapted from Hak5 community payloads: Flock_Detect (colonelpanichacks et al.), flipper_detector (nemanjan00), find_hackers (NULLFaceNoCase), SkimmerScanner (Adam Glenn), device_profiler (z3r0l1nk), recondb_reporting (Digs). Native alert event schemas from the official Hak5 example payloads.
+Homage to **SquachWatch-CYD** by skizzophrenic (https://github.com/skizzophrenic/SquachWatch-CYD, GPL-3.0): this project ports ideas, rules and logic from it, such as AUTO SNOOZE, rating a hacker tool matched by name alone as medium, and its signature set and grading (ported at commit `ecaff61`; CYD credits colonelpanichacks/flock-you, ESP32 Marauder, Eye Spy, the SparkFun Skimmer Scanner and others). MAC prefixes checked against the IEEE registry, Bluetooth IDs against the Bluetooth SIG assigned numbers. Detection patterns and data adapted from Hak5 community payloads: Flock_Detect (colonelpanichacks et al.), flipper_detector (nemanjan00), find_hackers (NULLFaceNoCase), SkimmerScanner (Adam Glenn), device_profiler (z3r0l1nk), recondb_reporting (Digs). Native alert event schemas from the official Hak5 example payloads.
 
 ## License
 

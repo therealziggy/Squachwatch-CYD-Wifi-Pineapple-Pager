@@ -1,39 +1,180 @@
 # SquachWatch-Pager signatures — match_type|pattern|category|label|confidence|threat_class
-# ---- Tier 1: Flock (WiFi OUIs verified via WiGLE, from Flock_Detect) ----
-wifi_oui|70:C9:4E|flock_alpr|Flock Falcon camera|high|surveillance
-wifi_oui|3C:91:80|flock_alpr|Flock Falcon camera|high|surveillance
-wifi_oui|D8:F3:BC|flock_alpr|Flock Falcon camera|high|surveillance
-wifi_oui|08:3A:88|flock_alpr|Flock Falcon camera|high|surveillance
-wifi_oui|14:5A:FC|flock_alpr|Flock Falcon camera|high|surveillance
-wifi_oui|58:8E:81|flock_battery|Flock external battery|high|surveillance
-wifi_oui|EC:1B:BD|flock_battery|Flock external battery|high|surveillance
-wifi_oui|90:35:EA|flock_battery|Flock external battery|high|surveillance
-# Lite-On chipset used by Flock Falcon V2 — broad vendor, LOW confidence
-wifi_oui|74:4C:A1|flock_liteon|Possible Flock (Lite-On chipset)|low|surveillance
-wifi_oui|80:30:49|flock_liteon|Possible Flock (Lite-On chipset)|low|surveillance
-# ---- Tier 1: Flock BLE names ----
+#
+# Only "high" raises the full-screen alert + buzz; "med" and "low" log a colored line and a
+# CSV row. Grades follow SquachWatch-CYD's rule (include/signatures.h, docs/DETECTIONS.md):
+#   high = the ID is registered to the company that makes the product, or is an exact
+#          self-identifying signature;
+#   med  = registered to a parent far broader than the product, or a name anyone can type;
+#   low  = a chip/module vendor inside everything, an unregistered block, or a locally
+#          administered (self-assigned) address.
+# Ported from SquachWatch-CYD at commit ecaff618 (GPL-3.0). Every MAC prefix was checked
+# against the IEEE MA-L registry, every company ID and service UUID against the Bluetooth SIG.
+#
+# SWITCHED-OFF RULES: a line starting "#off " is a complete rule that ships disabled: weak,
+# generic-chip evidence that, switched on, would log every nearby gadget built on that chip
+# (one row per device every SW_COOLDOWN). To switch one on, delete the leading "#off ".
+# test/signatures_test.sh keeps every #off line valid.
+
+# ---- Flock Safety (surveillance) ----
+# B4:1E:52 is the only MAC block registered to Flock Safety. Flock builds on commodity chips,
+# so the other prefixes seen on Flock hardware belong to the chip makers; they are listed
+# below, switched off.
+wifi_oui|B4:1E:52|flock_generic|Flock Safety device|high|surveillance
+wifi_ssid_pre|flock-|flock_generic|Flock setup network|high|surveillance
 ble_name_sub|penguin|flock_battery|Flock Penguin battery|high|surveillance
 ble_name_sub|pigvision|flock_alpr|Flock Pigvision device|high|surveillance
 ble_name_sub|fs ext battery|flock_battery|Flock external battery|high|surveillance
+ble_name_sub|flock_setup|flock_generic|Flock setup|high|surveillance
+# The bare word "flock" is too common for a full alert (SquachWatch-CYD grades it high).
 ble_name_sub|flock|flock_generic|Flock device|med|surveillance
-# ---- Tier 1: hacker tools ----
-# A Flipper matched by its NAME ALONE is med, as in SquachWatch-CYD (src/detection.cpp:
-# matchedByName ? MED_CONF : HIGH_CONF; "the owner can change it"). On 2026-09-23 a BLE Spam
-# flood of random MACs named "Flipper 🐬" hit this rule 9 times in one lap. The hardware
-# prefix below still makes a real Flipper high (strongest match wins, lib/match.sh).
-ble_name_sub|flipper|hacker_flipper|Flipper Zero|med|attacker
-ble_oui|80:E1:26|hacker_flipper|Flipper Zero|high|attacker
-wifi_ssid_sub|pineapple|hacker_pineapple|WiFi Pineapple|high|attacker
-wifi_ssid_sub|pager_open|hacker_pager|WiFi Pineapple Pager|med|attacker
-# ---- Tier 2 starters ----
-ble_name_sub|tile|tracker_tile|Tile tracker|med|tracker
-wifi_ssid_sub|ring-|surveillance_ring|Ring doorbell|med|surveillance
-# ---- Tier 3: raw BLE advertisements via btmon (spec 2026-09-22) ----
+# 0x09C8 (XUNTONG) is the Bluetooth radio supplier in Flock hardware (flock-you, via CYD). It
+# names a module supplier, so drop it to med if it ever false-alarms.
+ble_mfr|09c8|flock_generic|Flock device (XUNTONG radio)|high|surveillance
+# Switched off: chip-vendor prefixes seen on Flock hardware (15 Espressif ESP32 blocks, 10
+# Lite-On, and others). Until 2026-09-26 eight of these were "high" Flock rules here.
+#off wifi_oui|24:0A:C4|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|30:AE:A4|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|24:6F:28|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|CC:50:E3|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|DC:54:75|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|E8:9F:6D|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|8C:AA:B5|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|34:85:18|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|AC:67:B2|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|84:F3:EB|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|B4:E6:2D|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|CC:DB:A7|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|94:B9:7E|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|A4:CF:12|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|C0:49:EF|flock_chip|Possible Flock (ESP32 chip)|low|surveillance
+#off wifi_oui|70:C9:4E|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|3C:91:80|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|D8:F3:BC|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|14:5A:FC|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|80:30:49|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|74:4C:A1|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|24:B2:B9|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|D0:39:57|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|00:F4:8D|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|E0:0A:F6|flock_chip|Possible Flock (Lite-On chip)|low|surveillance
+#off wifi_oui|D4:AD:FC|flock_chip|Possible Flock (Intellirocks chip)|low|surveillance
+#off wifi_oui|08:3A:88|flock_chip|Possible Flock (USI chip)|low|surveillance
+#off wifi_oui|58:8E:81|flock_chip|Possible Flock battery (Silicon Labs chip)|low|surveillance
+#off wifi_oui|EC:1B:BD|flock_chip|Possible Flock battery (Silicon Labs chip)|low|surveillance
+#off wifi_oui|90:35:EA|flock_chip|Possible Flock battery (Silicon Labs chip)|low|surveillance
+#off wifi_oui|00:A0:D8|flock_chip|Possible Flock (Spectra-Tek prefix)|low|surveillance
+#off wifi_oui|B8:35:32|flock_chip|Possible Flock (unregistered prefix)|low|surveillance
+#off wifi_oui|82:6B:F2|flock_chip|Possible Flock (self-assigned MAC)|low|surveillance
+
+# ---- Axon body cameras / Taser (surveillance) ----
+# 00:25:DF is Taser International (Axon's former name). Body cameras put up an AB2-/AB3-/AB4-
+# network while pairing (Axon's admin documentation).
+wifi_oui|00:25:DF|surveillance_axon|Axon / Taser device|high|surveillance
+wifi_ssid_pre|ab2-|surveillance_axon|Axon body camera|high|surveillance
+wifi_ssid_pre|ab3-|surveillance_axon|Axon body camera|high|surveillance
+wifi_ssid_pre|ab4-|surveillance_axon|Axon body camera|high|surveillance
+wifi_ssid_pre|axon-|surveillance_axon|Axon device network|high|surveillance
+ble_name_sub|axon|surveillance_axon|Axon device|high|surveillance
+# Switched off: E4:05:40 is not in the IEEE registry; 28:24:FF is Wistron NeWeb, an ODM.
+#off wifi_oui|E4:05:40|surveillance_axon|Possible Axon (unregistered prefix)|low|surveillance
+#off wifi_oui|28:24:FF|surveillance_axon|Possible Axon (Wistron NeWeb chip)|low|surveillance
+
+# ---- Licence-plate readers (surveillance) ----
+# Motorola Solutions (owns Vigilant) and Genetec (AutoVu) blocks, read from the IEEE registry.
+# CYD dropped its old "Vigilant" entry 00:0E:58: that block is Sonos's, so every Sonos speaker
+# had been logged as a plate reader.
+wifi_oui|00:04:7D|surveillance_alpr|Motorola plate reader / police|high|surveillance
+wifi_oui|00:18:85|surveillance_alpr|Motorola plate reader / police|high|surveillance
+wifi_oui|00:1F:92|surveillance_alpr|Motorola plate reader / police|high|surveillance
+wifi_oui|4C:CC:34|surveillance_alpr|Motorola plate reader / police|high|surveillance
+wifi_oui|B8:E2:8C|surveillance_alpr|Motorola plate reader / police|high|surveillance
+wifi_oui|00:BF:15|surveillance_alpr|Genetec plate reader|high|surveillance
+wifi_oui|0C:BF:15|surveillance_alpr|Genetec plate reader|high|surveillance
+
+# ---- Cameras (surveillance) ----
+wifi_oui|2C:AA:8E|surveillance_camera|Wyze camera|high|surveillance
+wifi_oui|D0:3F:27|surveillance_camera|Wyze camera|high|surveillance
+wifi_oui|7C:78:B2|surveillance_camera|Wyze camera|high|surveillance
+wifi_oui|C0:56:E3|surveillance_camera|Hikvision camera|high|surveillance
+wifi_oui|44:19:B6|surveillance_camera|Hikvision camera|high|surveillance
+wifi_oui|28:57:BE|surveillance_camera|Hikvision camera|high|surveillance
+wifi_oui|E0:A7:00|surveillance_camera|Verkada camera|high|surveillance
+wifi_oui|70:1A:D5|surveillance_camera|Avigilon Alta device|high|surveillance
+wifi_oui|00:40:8C|surveillance_camera|Axis camera|high|surveillance
+wifi_oui|B8:A4:4F|surveillance_camera|Axis camera|high|surveillance
+# Amazon Technologies blocks are shared with Echo, Fire TV and Kindle, hence med.
+wifi_oui|34:D2:70|surveillance_camera|Amazon device (possible camera)|med|surveillance
+wifi_oui|F0:27:2D|surveillance_camera|Amazon device (possible camera)|med|surveillance
+# Switched off: chips inside every kind of gadget, or unregistered blocks.
+#off wifi_oui|B8:D7:AF|surveillance_camera|Possible Wyze camera (Murata chip)|low|surveillance
+#off wifi_oui|00:E0:4C|surveillance_camera|Possible camera (Realtek chip)|low|surveillance
+#off wifi_oui|BC:DD:C2|surveillance_camera|Possible Arlo camera (ESP32 chip)|low|surveillance
+#off wifi_oui|4C:69:05|surveillance_camera|Possible Blink camera (unregistered prefix)|low|surveillance
+#off wifi_oui|A4:C1:38|surveillance_camera|Possible camera (Telink chip)|low|surveillance
+
+# ---- Ring doorbells / cameras (surveillance) ----
+# Ring LLC's registered blocks (high), two Amazon Technologies blocks Ring also uses (med), and
+# the network a Ring device puts up while it is being installed ("Ring-...").
+wifi_oui|AC:9F:C3|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|18:7F:88|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|34:3E:A4|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|54:E0:19|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|5C:47:5E|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|64:9A:63|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|90:48:6C|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|9C:76:13|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|CC:3B:FB|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|C4:DB:AD|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|24:2B:D6|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|00:B4:63|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|50:E4:67|surveillance_ring|Ring doorbell / camera|high|surveillance
+wifi_oui|FC:65:DE|surveillance_ring|Amazon / Ring device|med|surveillance
+wifi_oui|68:37:E9|surveillance_ring|Amazon / Ring device|med|surveillance
+wifi_ssid_pre|ring-|surveillance_ring|Ring setup network|med|surveillance
+
+# ---- Card skimmers (surveillance) ----
+# Serial-Bluetooth modules that skimmers are built from, by their default names, plus the
+# serial-port service ID (SparkFun Skimmer Scanner, ESP32 Marauder, via CYD). Most of these
+# modules are Bluetooth Classic, which a BLE scan cannot hear; this catches the BLE-capable ones.
+ble_name_sub|hc-03|surveillance_skimmer|Possible card skimmer (HC-03)|high|surveillance
+ble_name_sub|hc-05|surveillance_skimmer|Possible card skimmer (HC-05)|high|surveillance
+ble_name_sub|hc-06|surveillance_skimmer|Possible card skimmer (HC-06)|high|surveillance
+ble_name_sub|rn42|surveillance_skimmer|Possible card skimmer (RN42)|high|surveillance
+ble_name_sub|bt04-a|surveillance_skimmer|Possible card skimmer (BT04-A)|high|surveillance
+ble_uuid|1101|surveillance_skimmer|Possible card skimmer (serial port)|high|surveillance
+
+# ---- Camera glasses (surveillance) ----
+# 0xFD5F is Ray-Ban Meta's own service ID. The company IDs are Meta, Meta Platforms
+# Technologies, Luxottica (who make Ray-Ban) and Snap (Spectacles). Meta's IDs also ship on
+# Quest headsets, so a hit means "a Meta radio", hence med.
+ble_uuid|fd5f|surveillance_glasses|Ray-Ban Meta glasses|med|surveillance
+ble_mfr|01ab|surveillance_glasses|Meta device (glasses or headset)|med|surveillance
+ble_mfr|058e|surveillance_glasses|Meta device (glasses or headset)|med|surveillance
+ble_mfr|0d53|surveillance_glasses|Luxottica (Ray-Ban) device|med|surveillance
+ble_mfr|03c2|surveillance_glasses|Snap Spectacles|med|surveillance
+
+# ---- Raven gunshot sensors (surveillance) ----
+# SquachWatch-CYD's five exact service IDs (flock-you's datasets). They are not verified on a
+# real Raven, hence low (log only), and they replace our earlier 3100-3500 range. Hobby devices
+# live nearby: a Flipper advertises 0x3081-0x3083.
+ble_uuid|3100|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
+ble_uuid|3200|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
+ble_uuid|3300|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
+ble_uuid|3400|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
+ble_uuid|3500|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
+
+# ---- Drones (surveillance) ----
+# ASTM F3411 Remote ID over Bluetooth (legacy advertising). Presence only: decoding the drone's
+# serial and the pilot's position belongs with Remote ID over WiFi, a later phase.
+ble_uuid|fffa|surveillance_drone|Drone (Remote ID)|med|surveillance
+
+# ---- Trackers (Tier 3: raw BLE advertisements via btmon, spec 2026-09-22) ----
 # Trackers log at med (colored line + CSV row). lib/follow.sh escalates one that STAYS
 # with you to a high "<category>_follow" alert. Your own devices: loot dir ignore.txt.
 # Only Find My (004c:12:25) and Google Find My (feaa:41) are separation-aware. The SmartTag
 # and Tile rules match EVERY SmartTag/Tile, owner nearby or not, so a companion's tag that
 # stays with you escalates too: silence a known companion's tag via ignore.txt.
+ble_name_sub|tile|tracker_tile|Tile tracker|med|tracker
 # Apple Find My, separated from its owner: type 0x12, 25-byte payload (seen live
 # 2026-09-22). The near-owner form (2-byte payload) deliberately does NOT match.
 ble_mfr|004c:12:25|tracker_findmy|Apple Find My (separated)|med|tracker
@@ -49,6 +190,30 @@ ble_uuid|feec|tracker_tile|Tile|med|tracker
 # Google Find My: service data 0xFEAA with frame 0x41 = separated (inferred from Google's
 # spec). The first-byte check keeps Eddystone beacons (also 0xFEAA) out.
 ble_uuid|feaa:41|tracker_gfmd|Google Find My (separated)|med|tracker
-# Raven gunshot sensors: UUID range from SquachWatch-CYD, not device-verified, hence low
-# (log only). Hobby devices live nearby: a Flipper advertises 0x3081.
-ble_uuid|3100-3500|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
+
+# ---- Hacker tools (attacker) ----
+# A Flipper matched by its NAME ALONE is med, as in SquachWatch-CYD (src/detection.cpp:
+# matchedByName ? MED_CONF : HIGH_CONF; "the owner can change it"). On 2026-09-23 a BLE Spam
+# flood of random MACs named "Flipper 🐬" hit this rule 9 times in one lap. The exact
+# signatures below still make a real Flipper high (strongest match wins, lib/match.sh).
+ble_name_sub|flipper|hacker_flipper|Flipper Zero|med|attacker
+# 80:E1:26 is not an IEEE registration (CYD leaves it out for that reason): Flipper firmware
+# builds its BLE address from the STM32's device ID (0x26) and ST's company-ID bytes (E1, 80),
+# see furi_hal_version.c, so every Flipper Zero's address starts 80:E1:26. Seen on real hardware.
+ble_oui|80:E1:26|hacker_flipper|Flipper Zero|high|attacker
+# Flipper's three service IDs (one per case colour) and its Bluetooth SIG company ID 0x0E29.
+# The 0x0FBA that other projects copied belongs to a headset maker.
+ble_uuid|3081|hacker_flipper|Flipper Zero|high|attacker
+ble_uuid|3082|hacker_flipper|Flipper Zero|high|attacker
+ble_uuid|3083|hacker_flipper|Flipper Zero|high|attacker
+ble_mfr|0e29|hacker_flipper|Flipper Zero|high|attacker
+# 0C:FA:22 is Flipper Devices' own registered block.
+wifi_oui|0C:FA:22|hacker_flipper|Flipper Devices hardware|high|attacker
+# Default setup networks: a WiFi Pineapple's management AP ("Pineapple_XXXX") and the
+# ESP8266/ESP32 deauther family's control AP ("pwned"). Anyone can name their WiFi this: med.
+wifi_ssid_pre|pineapple_|hacker_pineapple|WiFi Pineapple setup network|med|attacker
+wifi_ssid_pre|pwned|hacker_deauther|ESP deauther network|med|attacker
+wifi_ssid_sub|pager_open|hacker_pager|WiFi Pineapple Pager|med|attacker
+# Switched off: Hak5's locally administered (self-assigned) MACs, which anyone can set.
+#off wifi_oui|02:C0:CA|hacker_pineapple|Possible Hak5 device (self-assigned MAC)|low|attacker
+#off wifi_oui|02:13:37|hacker_pineapple|Possible Hak5 device (self-assigned MAC)|low|attacker
