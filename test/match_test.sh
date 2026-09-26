@@ -103,6 +103,15 @@ assert_contains "$(cd "$_rg" && sw_match_record 'ble|AA:00:00:00:00:70||-60|uuid
 rm -rf "$_rg"; unset _rg
 unset _T3 _f1
 
+# the prepare cache always names the set actually prepared: after a direct sw_prepare_sigs of
+# another set, matching with the first set must re-prepare it (it used to reuse the other arrays)
+_cr_a='wifi_oui|B4:1E:52|flock_generic|Flock Safety device|high|surveillance'
+_cr_b='wifi_oui|00:25:DF|surveillance_axon|Axon / Taser device|high|surveillance'
+sw_match_stream "$_cr_a" < /dev/null
+sw_prepare_sigs "$_cr_b"
+assert_contains "$(sw_match_record 'wifi|B4:1E:52:00:00:01||-50' "$_cr_a")" "flock_generic|" cache_follows_direct_prepare
+unset _cr_a _cr_b
+
 # --- one detection per record per category: strongest wins (spec 2026-09-23 §3.1) ---
 # A device matching two rules of ONE category used to print twice, and the first (maybe
 # weaker) hit took its cooldown slot: a med name hit would then swallow a high prefix alert.

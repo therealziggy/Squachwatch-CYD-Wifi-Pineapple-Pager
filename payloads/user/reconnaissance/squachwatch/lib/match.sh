@@ -77,6 +77,8 @@ sw_prepare_sigs() {
   # "m:<company>" (ble_mfr) and "u:<uuid16>" (ble_uuid, exact or first-byte form) to the
   # numbers of the rules filed there; SW_SCAN_WIFI / SW_SCAN_BLE list the rest. A pattern
   # whose shape fits no key is scanned, so it still gets exactly the check it always got.
+  # It records the text it prepared in SW_SIGS_CACHE, so the cache can never name a
+  # different set than the arrays hold.
   SW_SIG_TYPE=(); SW_SIG_CAT=(); SW_SIG_LABEL=(); SW_SIG_CONF=(); SW_SIG_CLASS=(); SW_SIG_NORM=()
   unset SW_IX; declare -gA SW_IX=()
   SW_SCAN_WIFI=""; SW_SCAN_BLE=""
@@ -111,6 +113,7 @@ sw_prepare_sigs() {
   done <<HEREDOC
 $1
 HEREDOC
+  SW_SIGS_CACHE="$1"   # the arrays and the index now belong to THIS text
 }
 
 _sw_candidates() {
@@ -143,9 +146,9 @@ sw_match_record() {
   # $1 = record "radio|mac|ident|rssi[|tokens]"  $2 = signatures text. The public one-record
   # entry: prepares the set when it changed (a plain string compare, no fork), then matches.
   # A stream must use sw_match_stream instead: on the Pager just handing a 6 KB signature text
-  # to a function costs ~29 ms per call (spec 2026-09-26), so the text must not ride along with
-  # every record.
-  [ "${SW_SIGS_CACHE-}" = "$2" ] || { sw_prepare_sigs "$2"; SW_SIGS_CACHE="$2"; }
+  # to a function costs ~29 ms per call (measured 2026-09-26, see docs/superpowers/P0-findings.md),
+  # so the text must not ride along with every record.
+  [ "${SW_SIGS_CACHE-}" = "$2" ] || sw_prepare_sigs "$2"
   _sw_match_prepared "$1"
 }
 
@@ -204,7 +207,7 @@ sw_match_stream() {
   # $1 = signatures text; reads records on stdin. Prepares ONCE, then matches each record
   # without passing the text again (see sw_match_record for why that matters on the Pager).
   local rec
-  [ "${SW_SIGS_CACHE-}" = "$1" ] || { sw_prepare_sigs "$1"; SW_SIGS_CACHE="$1"; }
+  [ "${SW_SIGS_CACHE-}" = "$1" ] || sw_prepare_sigs "$1"
   while IFS= read -r rec; do
     [ -n "$rec" ] && _sw_match_prepared "$rec"
   done

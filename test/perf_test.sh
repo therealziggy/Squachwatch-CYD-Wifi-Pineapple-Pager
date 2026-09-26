@@ -27,7 +27,7 @@ assert_empty "$(printf 'x=$((16#ff))\n' | grep -E '\$\([^(]')" perf_regex_allows
 # 2) The per-record producers must not fork to call those helpers either.
 assert_contains "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_row_to_record)" "sw_wifi_row_to_record()" forkfree_found_row_to_record
 assert_empty "$(_sw_body "$SW_ROOT/lib/wifi.sh" sw_wifi_row_to_record | grep -nE '\$\([^(]|`')" forkfree_row_to_record
-# 3) sw_match_record must not re-lower/re-upper the pattern inside the signature loop.
+# 3) The one-record wrapper sw_match_record must not fork either (the per-rule loop itself lives in _sw_match_prepared, checked in 1).
 assert_contains "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_record)" "sw_match_record()" forkfree_found_match_record
 assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_record | grep -nE '\$\([^(]|`')" forkfree_match_record
 
@@ -72,11 +72,14 @@ for (( _i = 0; _i < 600; _i++ )); do
   printf -v _l 'wifi_oui|F%01X:%02X:%02X|pad|Pad|low|surveillance' $((_i % 16)) $((_i / 16)) $((_i % 251))
   _sw_pad+=$'\n'"$_l"
 done
-_t0=${EPOCHREALTIME/./}; _sw_o1="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_sigs")"
-_t1=${EPOCHREALTIME/./}; _sw_o2="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_pad")"
-_t2=${EPOCHREALTIME/./}
+_t0=${EPOCHREALTIME//[!0-9]/}; _sw_o1="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_sigs")"
+_t1=${EPOCHREALTIME//[!0-9]/}; _sw_o2="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_pad")"
+_t2=${EPOCHREALTIME//[!0-9]/}
 assert_eq "$_sw_o2" "$_sw_o1" perf_padding_changes_no_result
 assert_contains "$_sw_o1" "flock_generic" perf_padding_control_nonempty
+# control: the padded set really was loaded (a stream that ignored its text would pass the two
+# checks above): a device on a pad prefix must hit a pad rule
+assert_contains "$(printf 'wifi|F0:00:00:00:00:01|x|-1\n' | sw_match_stream "$_sw_pad")" "pad|Pad|low" perf_padding_rules_loaded
 _plain=$(( _t1 - _t0 )); _padded=$(( _t2 - _t1 ))
 if [ "$_padded" -le $(( _plain * 3 / 2 + 100000 )) ]; then pass; else fail "perf_text_size_independent: padded ${_padded}us vs plain ${_plain}us"; fi
 # ...by construction: the stream matches prepared records and never re-passes the text
