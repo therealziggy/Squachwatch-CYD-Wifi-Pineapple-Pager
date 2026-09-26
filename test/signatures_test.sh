@@ -94,13 +94,20 @@ assert_empty "$_miss" port_off_rules_each_hit_when_enabled
 assert_empty "$(_pm 'wifi|70:C9:4E:11:22:33||-40')" port_off_chip_prefix_silent
 # CYD's rule: a locally administered (self-assigned) address names no vendor, so no ACTIVE
 # prefix rule with bit 0x02 of its first octet set may be graded above low
-_la=""
-while IFS='|' read -r _t _pat _c _l _cf _tc; do
-  case "$_t" in wifi_oui|ble_oui) ;; *) continue ;; esac
-  [ $(( 16#${_pat:0:2} & 2 )) -ne 0 ] && [ "$_cf" != low ] && _la="$_la $_pat"
-done <<< "$_P"
-assert_empty "$_la" port_no_active_locally_administered_prefix_above_low
-_pat=02:13:37; assert_eq "$(( 16#${_pat:0:2} & 2 ))" "2" port_la_bit_check_control
+_la_scan() {  # $1 = rule lines -> the prefixes of locally administered OUI rules graded above low
+  local _t _pat _c _l _cf _tc _o=""
+  while IFS='|' read -r _t _pat _c _l _cf _tc; do
+    case "$_t" in wifi_oui|ble_oui) ;; *) continue ;; esac
+    [ $(( 16#${_pat:0:2} & 2 )) -ne 0 ] && [ "$_cf" != low ] && _o="$_o $_pat"
+  done <<< "$1"
+  printf '%s' "$_o"
+}
+assert_empty "$(_la_scan "$_P")" port_no_active_locally_administered_prefix_above_low
+# control: the same scan flags a self-assigned prefix graded above low, and lets a vendor
+# (universally administered) prefix and a self-assigned one graded low through
+assert_eq "$(_la_scan 'wifi_oui|02:13:37|x|X|med|attacker
+wifi_oui|00:13:37|y|Y|high|attacker
+ble_oui|02:C0:CA|z|Z|low|attacker')" " 02:13:37" port_la_scan_control
 # the eight chip-vendor prefixes that were "high" Flock rules until 2026-09-26 (Lite-On, USI,
 # Silicon Labs blocks, not Flock's) are not active any more
 for _o in 70:C9:4E 3C:91:80 D8:F3:BC 14:5A:FC 08:3A:88 58:8E:81 EC:1B:BD 90:35:EA; do
@@ -181,4 +188,4 @@ assert_eq "$(_sum btmon_synthetic)" "1 flock_battery|high
 assert_eq "$(_sum btmon_hostile)" "1 tracker_findmy|med
 1 tracker_tile|med" port_hostile_unchanged
 unset _P _PFX _ptypes _off _miss _t _pat _c _l _cf _tc _la _o
-unset -f _pm _sum
+unset -f _pm _sum _la_scan

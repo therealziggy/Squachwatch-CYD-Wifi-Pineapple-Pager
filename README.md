@@ -80,7 +80,7 @@ A zero-dependency offline harness runs the whole detection engine on a normal Li
 bash test/run.sh
 ```
 
-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **426 assertions, all passing** (also as root).
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **535 assertions, all passing** (also as root).
 
 ## Status & roadmap
 
@@ -100,7 +100,7 @@ Deferred to their own phases:
 
 ## Credits
 
-Homage to **SquachWatch-CYD** by skizzophrenic (https://github.com/skizzophrenic/SquachWatch-CYD, GPL-3.0): this project ports ideas, rules and logic from it, such as AUTO SNOOZE, rating a hacker tool matched by name alone as medium, and its signature set and grading (ported at commit `ecaff61`; CYD credits colonelpanichacks/flock-you, ESP32 Marauder, Eye Spy, the SparkFun Skimmer Scanner and others). MAC prefixes checked against the IEEE registry, Bluetooth IDs against the Bluetooth SIG assigned numbers. Detection patterns and data adapted from Hak5 community payloads: Flock_Detect (colonelpanichacks et al.), flipper_detector (nemanjan00), find_hackers (NULLFaceNoCase), SkimmerScanner (Adam Glenn), device_profiler (z3r0l1nk), recondb_reporting (Digs). Native alert event schemas from the official Hak5 example payloads.
+Homage to **SquachWatch-CYD** by skizzophrenic (https://github.com/skizzophrenic/SquachWatch-CYD, GPL-3.0): this project ports ideas, rules and logic from it, such as AUTO SNOOZE, rating a hacker tool matched by name alone as medium, and its signature set and grading (ported at commit `ecaff618`; CYD credits colonelpanichacks/flock-you, ESP32 Marauder, Eye Spy, the SparkFun Skimmer Scanner and others). MAC prefixes checked against the IEEE registry, Bluetooth IDs against the Bluetooth SIG assigned numbers. Detection patterns and data adapted from Hak5 community payloads: Flock_Detect (colonelpanichacks et al.), flipper_detector (nemanjan00), find_hackers (NULLFaceNoCase), SkimmerScanner (Adam Glenn), device_profiler (z3r0l1nk), recondb_reporting (Digs). Native alert event schemas from the official Hak5 example payloads.
 
 ## License
 
