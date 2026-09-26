@@ -13,7 +13,7 @@ _sw_body() { sed -n "/^$2()/,/^}/p" "$1" | grep -v '^[[:space:]]*#'; }
 # 1) Hot-path helpers must be fork-free.
 # (each check first proves the body was FOUND: a renamed or reformatted function would
 # otherwise extract nothing and pass vacuously)
-for _fn in sw_sanitize_ident sw_oui _sw_lower _sw_uuid_hit _sw_candidates; do
+for _fn in sw_sanitize_ident sw_oui _sw_lower _sw_uuid_hit _sw_candidates _sw_match_prepared; do
   assert_contains "$(_sw_body "$SW_ROOT/lib/match.sh" "$_fn")" "$_fn()" "forkfree_found_$_fn"
   assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
 done
@@ -63,4 +63,23 @@ _sw_out_ble="$(printf '%s\n' "$_sw_bulk_ble" | sw_match_stream "$_sw_t3sigs")"
 _sw_el_ble=$SECONDS
 assert_eq "$(printf '%s\n' "$_sw_out_ble" | grep -c 'tracker_findmy')" "1" perf_ble_positive_control
 if [ "$_sw_el_ble" -lt 5 ]; then pass; else fail "perf_ble_budget: 500 token records took ${_sw_el_ble}s (budget 5s)"; fi
-unset _fn _sw_body _sw_sigs _sw_bulk _sw_out _sw_elapsed _sw_t3sigs _sw_bulk_ble _sw_out_ble _sw_el_ble
+# 6) TEXT-SIZE INDEPENDENCE. On the Pager, handing the signature text to a function costs ~4.5 us per
+#    BYTE per call (2026-09-26: 29 ms per record for the shipped 6 KB set), so the stream must prepare
+#    ONCE and never pass the text per record. Padding the set with 600 keyed rules that never match
+#    must therefore not slow the stream down (before the fix it made it 3.3x slower on the dev box).
+_sw_pad="$_sw_sigs"
+for (( _i = 0; _i < 600; _i++ )); do
+  printf -v _l 'wifi_oui|F%01X:%02X:%02X|pad|Pad|low|surveillance' $((_i % 16)) $((_i / 16)) $((_i % 251))
+  _sw_pad+=$'\n'"$_l"
+done
+_t0=${EPOCHREALTIME/./}; _sw_o1="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_sigs")"
+_t1=${EPOCHREALTIME/./}; _sw_o2="$(printf '%s\n' "$_sw_bulk" | sw_match_stream "$_sw_pad")"
+_t2=${EPOCHREALTIME/./}
+assert_eq "$_sw_o2" "$_sw_o1" perf_padding_changes_no_result
+assert_contains "$_sw_o1" "flock_generic" perf_padding_control_nonempty
+_plain=$(( _t1 - _t0 )); _padded=$(( _t2 - _t1 ))
+if [ "$_padded" -le $(( _plain * 3 / 2 + 100000 )) ]; then pass; else fail "perf_text_size_independent: padded ${_padded}us vs plain ${_plain}us"; fi
+# ...by construction: the stream matches prepared records and never re-passes the text
+assert_contains "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_stream)" "_sw_match_prepared" perf_stream_uses_prepared
+assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_stream | grep -n 'sw_match_record')" perf_stream_never_repasses_text
+unset _fn _sw_body _sw_sigs _sw_bulk _sw_out _sw_elapsed _sw_t3sigs _sw_bulk_ble _sw_out_ble _sw_el_ble _sw_pad _i _l _t0 _t1 _t2 _sw_o1 _sw_o2 _plain _padded

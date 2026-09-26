@@ -140,15 +140,22 @@ _sw_candidates() {
 }
 
 sw_match_record() {
-  # $1 = record "radio|mac|ident|rssi"  $2 = signatures text
+  # $1 = record "radio|mac|ident|rssi[|tokens]"  $2 = signatures text. The public one-record
+  # entry: prepares the set when it changed (a plain string compare, no fork), then matches.
+  # A stream must use sw_match_stream instead: on the Pager just handing a 6 KB signature text
+  # to a function costs ~29 ms per call (spec 2026-09-26), so the text must not ride along with
+  # every record.
+  [ "${SW_SIGS_CACHE-}" = "$2" ] || { sw_prepare_sigs "$2"; SW_SIGS_CACHE="$2"; }
+  _sw_match_prepared "$1"
+}
+
+_sw_match_prepared() {
+  # $1 = record "radio|mac|ident|rssi[|tokens]", matched against the PREPARED set (sw_prepare_sigs).
   # Prints at most ONE detection per category: the hit with the strongest confidence
   # (high > med > low); on a tie, the rule listed first. Two rules of one category used to
   # print twice, and the first (maybe weaker) hit took the device's cooldown slot, so a med
   # name match could swallow a high hardware-prefix alert (spec 2026-09-23 §3.1).
-  local rec="$1" sigs="$2"
-  # Re-prepare only when the signature set actually changes (a plain string compare,
-  # no fork), so a stream of records prepares once no matter which caller drives it.
-  [ "${SW_SIGS_CACHE-}" = "$sigs" ] || { sw_prepare_sigs "$sigs"; SW_SIGS_CACHE="$sigs"; }
+  local rec="$1"
   # Split the fields with parameter expansion (ident is sanitized, so it holds no '|').
   # BLE records carry an optional 5th field of advertisement tokens (lib/ble.sh).
   local radio="${rec%%|*}" _r="${rec#*|}"
@@ -194,9 +201,11 @@ sw_match_record() {
 }
 
 sw_match_stream() {
-  # $1 = signatures text; reads records on stdin
-  local sigs="$1" rec
+  # $1 = signatures text; reads records on stdin. Prepares ONCE, then matches each record
+  # without passing the text again (see sw_match_record for why that matters on the Pager).
+  local rec
+  [ "${SW_SIGS_CACHE-}" = "$1" ] || { sw_prepare_sigs "$1"; SW_SIGS_CACHE="$1"; }
   while IFS= read -r rec; do
-    [ -n "$rec" ] && sw_match_record "$rec" "$sigs"
+    [ -n "$rec" ] && _sw_match_prepared "$rec"
   done
 }

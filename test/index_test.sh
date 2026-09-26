@@ -83,6 +83,9 @@ assert_contains "$_IX_LAST" "x_pre|SSID prefix|med" index_syn_prefix_hit
 assert_contains "$_IX_LAST" "x_uuid_bad|Bad UUID|low" index_syn_unkeyed_uuid_hit
 _ix_compare "$_ix_real" index_equals_fullscan_real
 assert_contains "$_IX_LAST" "hacker_flipper|Flipper Zero|high" index_real_nonvacuous
+# the stream path (prepare once, then _sw_match_prepared per record) gives exactly what
+# sw_match_record gives record by record
+assert_eq "$(printf '%s\n' "$_ix_recs" | sw_match_stream "$_ix_real")" "$(_ix_run "$_ix_real")" index_stream_equals_per_record
 _ix_compare "$_ix_all" index_equals_fullscan_real_with_off_rules
 # non-vacuity: a switched-off rule really took part (70:C9:4E is a Lite-On #off prefix)
 assert_contains "$_IX_LAST" "flock_chip|Possible Flock (Lite-On chip)|low" index_all_nonvacuous
