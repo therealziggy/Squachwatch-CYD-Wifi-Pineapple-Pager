@@ -305,8 +305,8 @@ unchanged.
 
 - `payloads/user/reconnaissance/squachwatch/lib/match.sh`: `wifi_ssid_pre`, index, `_sw_candidates`.
 - `payloads/user/reconnaissance/squachwatch/signatures.db`: §3.
-- `test/match_test.sh`, `test/signatures_test.sh`, `test/perf_test.sh`, `test/payload_test.sh`,
-  `test/e2e_test.sh` (only where §5 changes an expectation), new `test/helpers/match_ref.sh`.
+- `test/match_test.sh`, `test/signatures_test.sh`, `test/perf_test.sh`, `test/payload_test.sh`
+  (only where §5 changes an expectation), new `test/index_test.sh`.
 - `test/fixtures/recon.db` + `tools/build_fixture_db.py` only if a payload test needs an active Flock
   prefix instead of the switched-off `70:C9:4E` (synthetic rows only; rebuild into a fresh file).
 - `README.md` (Signatures, Status & roadmap, Credits), `docs/superpowers/P0-findings.md` (Pager timings).
@@ -317,15 +317,18 @@ unchanged.
   label, confidence) and a near miss that must not hit: `LAB2-GUEST` vs `ab2-`, `Spring-5G` vs `ring-`,
   `MyPineappleNet` vs `pineapple_`, `uuid:3101` vs Raven, `mfr:004d:…` vs Apple rules, `uuid:3084` vs
   Flipper, company `0fba` (the wrong Flipper ID other projects copied) vs Flipper.
-- **Differential test (the index proof):** `test/helpers/match_ref.sh` holds the pre-change
-  `sw_match_record` verbatim (renamed `sw_match_record_ref`, taken from `git show 756ac91`). For every
-  record parsed from every fixture (`btmon_*.txt` via `sw_btmon_parse`, `recon.db` via
-  `sw_wifi_records`), plus hostile records (empty fields, `sd::41`, empty/odd MACs, unknown radio,
-  tokens with uppercase or wrong length), the new `sw_match_record` output must equal the reference's,
-  byte for byte, under three signature sets: the real active set, the real set with every `#off` rule
-  enabled, and a synthetic set with every match type including ranges, first-byte UUIDs and malformed
-  patterns. A positive control proves the harness can fail: a deliberately broken index (drop one key)
-  makes it fail.
+- **Differential test (the index proof), `test/index_test.sh`:** the test temporarily swaps
+  `_sw_candidates` for a full scan (every rule a candidate, exactly the pre-index behaviour; re-sourcing
+  `lib/match.sh` restores it). For every record parsed from every fixture (`btmon_*.txt` via
+  `sw_btmon_parse`, `recon.db` via `sw_wifi_records`), plus hostile records (empty fields, `sd::41`,
+  empty/odd MACs, unknown radio, uppercase tokens, `uuid:*`), the indexed output must equal the
+  full-scan output, byte for byte, under three signature sets: the real active set, the real set with
+  every `#off` rule enabled, and a synthetic set with every match type including ranges, first-byte
+  UUIDs and malformed patterns. A positive control proves the harness can fail: a deliberately broken
+  index (one key dropped) must make it differ. No test seam is added to the library.
+- **One-time independent check (integration, recorded in the SDD ledger):** the matcher as of the
+  `wifi_ssid_pre` commit (independent full-scan code) and the final matcher produce identical output
+  over the same records and rule sets.
 - **Switched-off rules stay valid:** every `#off ` line, once uncommented, passes the format/type
   checks and hits a synthetic record built from its own prefix. Exactly 83 rules load, exactly 42 `#off`
   lines exist.
