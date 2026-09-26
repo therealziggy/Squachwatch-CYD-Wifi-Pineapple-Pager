@@ -298,3 +298,44 @@ Branch `squachwatch-noise-control` at `0a4ba65` (426/426 tests, as the normal us
 
 Not verifiable from logs: the `...and N more` screen line (LOG output goes to the screen only). It is covered by the offline tests and the real-capture fixture.
 Device clock: `/dev/rtc0` present and ntpd running, so the backward-clock case (fail-open) is unlikely but handled.
+
+## CYD signature port on-device (2026-09-26)
+
+**Matcher cost on the Pager** (MT7628AN, bash 5.2.32, measured in a bare `env -i` shell like the launcher's):
+
+| Measurement | Result |
+|---|---|
+| Each rule, per record, before the index | ~2.15 ms (plus ~23 ms fixed per record): 200 records took 16.0 s with 27 rules and 56.6 s with 124 |
+| Handing the signature TEXT to a bash function (`f(){ local r="$1" s="$2"; [ "${C-}" = "$s" ]…; }`, 200 calls) | 1 byte: 1.4 ms/call · 6,153 bytes (the 83 shipped rules): 28.9 ms/call · 9,493 bytes (all 125): 43.2 ms/call, i.e. ~4.5 µs per byte per call |
+
+The second row was a surprise: `sw_match_stream` passed the whole text to `sw_match_record` for every record,
+so ~40% of each record's time went on copying the rule file. It is why the first indexed build got 23% slower
+with the 42 weak rules switched on, although the index gave each record the same candidates. Fix: the stream
+prepares once and matches each record through `_sw_match_prepared`, which takes only the record.
+Guarded by `perf_text_size_independent` (dev box: 600 never-matching padding rules made a 500-record stream
+3.1x slower before, ~1.15x after).
+
+**Benchmark** (`tools/bench_match.sh`, 100 WiFi + 100 BLE records from a fixed seed, two runs each):
+
+| Code | Rules | Time |
+|---|---|---|
+| before the port (the installed 2026-09-24 build) | 27 | 16.30 s / 16.31 s |
+| index only (first build) | 83 | 14.46 s / 14.18 s / 14.43 s |
+| index only (first build), every `#off` rule enabled | 125 | 17.75 s / 17.71 s / 17.55 s |
+| index + prepare-once (shipped) | 83 | 8.94 s / 9.08 s |
+| index + prepare-once, every `#off` rule enabled | 125 | 9.02 s / 8.98 s |
+
+So the shipped matcher is ~1.8x faster than before the port while checking 3x the rules, and switching the
+weak rules on costs under 1%.
+
+**Install + verify (2026-09-26):**
+
+| Step | Expected | Observed |
+|---|---|---|
+| Backup | a full copy of the running install, outside `/root/payloads` (so the UI does not list it twice) | `/root/squachwatch-backup-2026-09-26/`, identical to the install (checksums) |
+| Install | device == branch head | all 10 payload files' `sha256sum` equal to `b12d9ea`; modes restored (payload.sh 755, the rest 644) |
+| Launcher-faithful silent lap (the launcher's own header injected after line 1, only `PAYLOAD_HOME` in the environment, screen/sound/LED verbs shadowed, temp loot) | real folder found, 83 signatures, index loaded, healthy | `SW_HOME` = the real `/mmc/root/...` folder, 83 signatures, `_sw_candidates` present, health rc 0, lap 19 s, 0 stderr lines; one far separated Find My (-97 dBm) logged at med (no alert) |
+| Benchmark of the installed copy | as the shipped row above | 8.84 s (83 rules), 9.05 s (125 rules) |
+
+To roll back: `rm -rf /root/payloads/user/reconnaissance/squachwatch && cp -a /root/squachwatch-backup-2026-09-26 /root/payloads/user/reconnaissance/squachwatch`.
+Still to do by hand: a launch from the Pager's menu with the user present.
