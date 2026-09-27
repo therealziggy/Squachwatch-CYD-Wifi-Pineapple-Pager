@@ -38,9 +38,10 @@ assert_eq "$(grep -cF "$_cf_msg" "$SW_STUB_LOG")" "1" ble_capture_failed_warns
 _recs="$(SW_TMP_DIR="$_cf_tmp" SW_BLE_STATE_FILE="$_cf_state" sw_ble_scan 1 hci0 2>/dev/null)"
 assert_eq "$(grep -cF "$_cf_msg" "$SW_STUB_LOG")" "1" ble_capture_failed_warns_once
 
-# The Pager's Stop kills the payload outright, so no trap of ours can stop the scan's helpers
-# (and payload.sh kills nothing by name). Each helper must end on its OWN within the scan's
-# bound. Run a scan in its own shell, SIGKILL that shell mid-scan, and watch the helpers' PIDs.
+# The Pager's Stop ends the payload without running its trap, so nothing of ours stops the
+# scan's helpers (and payload.sh kills nothing by name). Each helper must end on its OWN within
+# the scan's bound. Run a scan in its own shell, SIGKILL that shell mid-scan, and watch the
+# helpers' PIDs.
 _pids="$SW_TMP_DIR/stub.pids"; : > "$_pids"
 SW_STUB_PIDS="$_pids" bash -c 'source "$1/lib/match.sh"; source "$1/lib/ble.sh"; sw_ble_scan 1 hci0 >/dev/null' _ "$SW_ROOT" 2>/dev/null &
 _sp=$!

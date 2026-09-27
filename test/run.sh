@@ -3,6 +3,7 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export SW_STUB_LOG="$(mktemp)"
+trap 'rm -f "$SW_STUB_LOG"' EXIT
 export PATH="$ROOT/test/stubs:$PATH"
 PASS=0; FAIL=0
 pass(){ PASS=$((PASS+1)); }

@@ -339,3 +339,57 @@ weak rules on costs under 1%.
 
 To roll back: `rm -rf /root/payloads/user/reconnaissance/squachwatch && cp -a /root/squachwatch-backup-2026-09-26 /root/payloads/user/reconnaissance/squachwatch`.
 Still to do by hand: a launch from the Pager's menu with the user present.
+
+## Stopping the payload (2026-09-27)
+
+**The menu's Stop ends the payload without running its exit handler.** In a real menu run (launched, then
+stopped about a minute later) the launcher logged `[PAYLOAD] Payload process <pid> killed` and then
+`Error in payload …: exited with -1`. Go reports -1 for a process that ended by a signal; had the
+`trap sw_cleanup EXIT INT TERM` run, the payload would have exited 0. `/tmp/sw_ble.state`, which `sw_cleanup`
+deletes, was still there 16 minutes later. Not observed: which signal Stop sends, and whether it reaches only
+the main process or its whole process group. A SIGKILL fits, and so does a TERM followed by a KILL after a
+grace period shorter than bash's trap deferral (a trap runs only after the lap's pipeline ends: ~14 s in case
+A below).
+
+So `sw_cleanup` never ran on the usual way the scanner is stopped. When it did run (Ctrl-C or a TERM over
+SSH) its `killall hcitool btmon` stopped every btmon/hcitool on the device, including another payload's own
+monitor. Fixed in `1820d3d` and its review follow-ups: nothing is found or killed by name
+(`no_kill_by_name_in_payloads`, which also rejects `pidof`/`pgrep`), `sw_cleanup` only removes the temp
+files, `sw_main` also removes them at startup (`sw_clear_tmp`, checked name-agnostically by
+`sweep_clears_every_temp_file_a_lap_leaves`), and the recon DB copy now lives in `${SW_TMP_DIR:-/tmp}` next
+to the BLE capture. The helpers' own `timeout`s are now the only thing that ends an orphaned helper
+(`ble_orphans_end_by_themselves`, mutation-proven for both helpers).
+
+**On-device probe** (staging copies of `3cc7432` = old and `1820d3d` = new, the screen/sound/LED verbs
+shadowed, separate temp and loot dirs; the installed payload, the real loot and the real `/tmp` state were
+untouched and verified so afterwards):
+
+| Case | Old | New |
+|---|---|---|
+| A. TERM to the payload (the trap runs) while ANOTHER program's `btmon` runs | the other `btmon` was killed | the other `btmon` kept running |
+| A. TERM to exit | ~14 s: bash runs a trap only after the lap's pipeline ends | ~14 s |
+| B. SIGKILL to the whole process group, mid-scan of lap 2: our orphaned helpers | ended by their own `timeout` within 12 s | the same |
+| B. What the killed run left in its temp dir | the capture `sw_ble.XXXXXX` + `sw_ble.state` | the same |
+| B. After a relaunch | the capture, the stale state and a stranded DB copy all still there | all three cleared at startup |
+| C (what-if). SIGKILL to the MAIN shell only, mid-scan | not run | the lap's subshells ran on for ~11 s, finished the scan, and fired ALERT + VIBRATE and wrote 2 CSV rows AFTER the kill |
+
+**Open: what exactly Stop sends.** The user's real stop left exactly what case C leaves (`sw_ble.state` and
+no capture), which fits C, but it also fits a group kill that landed outside the BLE scan (about a third of
+each lap). Settle it with a throwaway payload launched from the menu that logs every signal it receives, with
+timestamps, while a child subshell heartbeats like a lap: that gives the signals, their order, the grace
+period, and main-only vs group. Only then pick the fix:
+- **If Stop kills only the main shell:** the running lap still alerts and buzzes after Stop (case C). And a
+  relaunch within ~15 s sweeps that lap's in-flight capture, so the lap reports "WARN: BLE scan failed to
+  start" on the NEW run's screen, and the new run then logs "BLE scan recovered" (reproduced offline in
+  review; new with the startup sweep). The fix must cover the lap's BLE health note as well as the emit loop.
+- **If TERM comes first with a usable grace period:** a trap that runs promptly (each lap in the background
+  plus `wait`, stopping our own lap by PID) fixes case C, the false WARN and the stranded files together.
+  Keep the startup sweep as a backstop.
+- **Either way (reasoned from BlueZ, not measured):** an orphaned `hcitool lescan` switches LE scanning off
+  when its own `timeout` sends INT, which can cut a quick relaunch's first scan short with no WARN, since the
+  reply to that disable also matches the health check's success pattern.
+
+Known residue: a Stop that lands in the middle of a follow/snooze state rewrite or a cooldown-ledger rewrite
+can strand a tiny `sw_track.db.XXXXXX` / `sw_snooze.db.XXXXXX` (in `/tmp`) or `seen.db.XXXXXX` (in the loot
+dir). They are not swept (bytes each, a window of milliseconds per lap). Scope: SquachWatch no longer kills
+other programs' Bluetooth tools, but its per-lap `hciconfig down/reset/up` still interrupts their scans.

@@ -148,7 +148,7 @@ effect on the next launch. A missing file means an empty list.
 | scan never started (e.g. `Command Disallowed`) | no `LE Set Scan Enable` … `Status: Success` in the lap's capture | `WARN: BLE scan failed to start` logged **on state change** (ok→failed and failed→ok), state kept in `/tmp/sw_ble.state` |
 | btmon's text format changed (parser no longer understands it) | the capture contains `Advertising Report` lines but `sw_btmon_parse` produced **zero** records | `WARN: BLE capture not understood — BLE detection OFF`, logged on state change like the row above |
 | btmon orphaned by a SIGKILLed payload | btmon runs under its own `timeout -k` | dies within `secs+5` s |
-| temp files left by a kill | `sw_cleanup` | kills `hcitool` **and** `btmon`, removes `/tmp/sw_ble.*` (also closes the v1 temp-file leak) |
+| temp files left by a kill | `sw_cleanup` | kills `hcitool` **and** `btmon`, removes `/tmp/sw_ble.*` (also closes the v1 temp-file leak). *Superseded 2026-09-27: the Pager's Stop never runs `sw_cleanup`; nothing is killed by name, and the next start clears the temp files (P0-findings, "Stopping the payload").* |
 
 ## 8. Testing (offline; positive control on every negative)
 

@@ -15,7 +15,7 @@ assert_contains "$recs" "wifi|70:C9:4E:11:22:33||-40" wifi_flock_record
 assert_contains "$recs" "wifi|AA:BB:CC:00:11:22|MyPineappleNet|-55" wifi_pine_record
 assert_contains "$recs" "wifi|F0:F5:A5:44:55:66||-70" wifi_client_record
 # The DB copy lives in ${SW_TMP_DIR:-/tmp}, like the BLE capture: payload.sh clears a copy that
-# the Pager's Stop stranded there (4.8 MB each on a real Pager), and the suite keeps its copies
+# the Pager's Stop stranded there (4.8 MB each on a real Pager), and a test can keep its copies
 # out of the dev box's /tmp.
 SW_TMPC="$(mktemp -d)"
 # control: a sweep with a usable temp dir returns records, and leaves no copy behind

@@ -176,9 +176,10 @@ sw_prune_ledger() {
 }
 
 sw_main() {
-  # The Pager's Stop kills the payload outright, so sw_cleanup never runs for a run stopped
-  # from the menu: clear its leftovers here. A stale capture or DB copy would stay in RAM, and
-  # a stale BLE health state would hide the WARN for a scan that is still failing.
+  # The Pager's Stop ends the payload without running its trap (seen 2026-09-27), so sw_cleanup
+  # never runs for a run stopped from the menu: clear its leftovers here. A stale capture or DB
+  # copy would stay in RAM, and a stale BLE health state would hide the WARN for a scan that is
+  # still failing.
   sw_clear_tmp
   sw_log_init "$SW_LOOT_DIR"
   mkdir -p "$(dirname "$SW_SEEN_FILE")"; touch "$SW_SEEN_FILE"
