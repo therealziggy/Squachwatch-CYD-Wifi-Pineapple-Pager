@@ -1,0 +1,11 @@
+SquachWatch Pager theme: credits
+
+Squachy, the synthwave sunset and the alert card design are rendered from SquachWatch-CYD's own
+drawing code (https://github.com/skizzophrenic/SquachWatch-CYD, commit 9e41660, GPL-3.0). Squachy
+comes from talkingsasquach.com's drawSquachy(). The original's FAQ says its author runs Talking
+Sasquach and that the vaporwave look belongs to that brand. This theme is an unofficial port.
+
+The "HEADS UP!" lettering is rendered with the Bangers font (Copyright 2010 The Bangers Project
+Authors, SIL Open Font License 1.1). The font itself is not included.
+
+The Pager's stock theme is not included: install.sh copies it on the Pager itself.

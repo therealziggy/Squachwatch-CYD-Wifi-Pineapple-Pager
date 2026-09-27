@@ -51,6 +51,27 @@ Then launch **SquachWatch** from the Pager UI (Payloads → reconnaissance).
 
 It should say **`SquachWatch armed — watching WiFi + BLE`** in green. Yellow `WARN` / `DEGRADED` lines name what is switched off; a red **`ERROR: can't load … NOT running`** means it can't find its own `lib/` folder, so copy the whole `squachwatch` folder again.
 
+## SquachWatch theme (optional)
+
+A Pager theme that gives SquachWatch's screen and the alert pop-up the original SquachWatch-CYD look: the synthwave sunset with Squachy, and the CYD's alert card. Pictures and layouts stay stock everywhere except two: SquachWatch's own payload screen background, and the alert pop-up. Two things do reach further, because the theme system itself is Pager-wide: the four text colours it patches (magenta, yellow, cyan, green) become those same neon values everywhere in the Pager's UI — menus, dashboards, dialogs, settings, icon recolours — not just on SquachWatch's screen, and every payload's log text wraps at 36 characters, not just SquachWatch's. Themes apply to the whole Pager, so other payloads' screens get the same background. SquachWatch works the same with or without it.
+
+Install (from this folder on your PC):
+
+```bash
+scp -r themes/SquachWatch root@172.16.52.1:/tmp/
+ssh root@172.16.52.1 'sh /tmp/SquachWatch/install.sh; rc=$?; rm -rf /tmp/SquachWatch; exit $rc'
+```
+
+Then pick **SquachWatch** in the Pager's theme setting. If it says the theme is already applied (after a reinstall), switch to another theme and back to reload it. The installer copies the Pager's own stock theme and changes a few of its files: the payload screen's background and text width, the alert pop-up's picture, text box and time colour, and four text colours. Nothing of Hak5's is stored in this repository. To regenerate the pictures, run `tools/theme/render_assets.sh` (PC only: git, make, g++, python3 + Pillow).
+
+If the Pager's screen ever fails with this theme, go back to the stock one over SSH:
+
+```bash
+ssh root@172.16.52.1 "uci set system.@pager[0].theme_path='/rom/lib/pager/themes/wargames'; uci set system.@pager[0].theme_name='[wargames]'; uci commit system; service pineapplepager restart"
+```
+
+Credits: see `themes/SquachWatch/CREDITS`. This is an unofficial port of the original's look.
+
 ## Signatures
 
 `signatures.db` is a plain text file, one fingerprint per line:
@@ -82,7 +103,7 @@ A zero-dependency offline harness runs the whole detection engine on a normal Li
 bash test/run.sh
 ```
 
-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **600 assertions, all passing** (also as root).
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **638 assertions, all passing** (also as root).
 
 ## Status & roadmap
 
@@ -98,7 +119,7 @@ This is **core v1**: WiFi + name-based BLE detection, native alerts, offline-tes
 
 Deferred to their own phases:
 - **Drone Remote-ID over WiFi** — needs monitor-mode (`wlan1mon`) frame parsing, its own subsystem.
-- **Framebuffer "vaporwave" skin + mascot** — a custom `/dev/fb0` UI on top of the native-widget alerts.
+- **An in-app skin** — the CYD look now ships as the optional theme above. Showing it only inside SquachWatch isn't possible with the Pager's theme system today, which applies one theme to the whole device.
 
 ## Credits
 

@@ -1,0 +1,27 @@
+diff --git a/src/ui_clear.cpp b/src/ui_clear.cpp
+index a8a0ca5..11e5b56 100644
+--- a/src/ui_clear.cpp
++++ b/src/ui_clear.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ // SquachWatch-CYD — clear (idle) screen implementation
+ #include "ui_clear.h"
+ #include "clock.h"      // the watch's corner clock
+@@ -2886,7 +2887,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
+         CrowdBench::draw(t, now, titleBottom, squachyBottom);
+     else
+ #endif
+-    if (!Settings::boringMode()) {
++    if (!Settings::boringMode() && !getenv("SIM_NO_SQUACHY")) {
+         // The last argument is the SIZE row in Settings. CLEAR is the only
+         // screen that passes it: everywhere else he is a cameo in a box
+         // somebody sized deliberately, and shrinking him there would just
+@@ -2974,7 +2975,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
+     Theme::drawBackgroundOverlay(t, now);
+
+     // Title bar at the top
+-    if (DrawBand::has(0, titleBottom)) Theme::drawTitleBar(t, ">> SQUACHWATCH <<  SCANNING");
++    if (DrawBand::has(0, titleBottom) && !getenv("SIM_NO_CHROME")) Theme::drawTitleBar(t, ">> SQUACHWATCH <<  SCANNING");
+
+     // The watch/hunt indicator, in the title bar's empty middle. AFTER the bar
+     // itself, which repaints that whole band -- see drawWatchPill()'s comment
