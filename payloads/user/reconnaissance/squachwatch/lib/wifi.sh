@@ -23,7 +23,7 @@ sw_wifi_stale_db() {
   # silently dead. A zero-row sweep must never be reported as "all clear".
   case "${SW_RECENCY_SECS:-0}" in ''|*[!0-9]*) return 1 ;; 0) return 1 ;; esac
   local db="${1:-$SW_RECON_DB}" tmp now total fresh
-  tmp="$(mktemp /tmp/sw_recon.XXXXXX)" || return 1
+  tmp="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_recon.XXXXXX")" || return 1
   cp "$db" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   now="$(date +%s)"
   total="$(sqlite3 "$tmp" "SELECT count(*) FROM ssid;" 2>/dev/null)"
@@ -51,9 +51,10 @@ sw_wifi_row_to_record() {
 }
 
 sw_wifi_records() {
-  # $1 = db path (default SW_RECON_DB). Copies to /tmp first (lock-safe).
+  # $1 = db path (default SW_RECON_DB). Copies to ${SW_TMP_DIR:-/tmp} first (lock-safe); a copy
+  # stranded by the Pager's Stop is cleared by payload.sh at the next start (sw_clear_tmp).
   local db="${1:-$SW_RECON_DB}" tmp
-  tmp="$(mktemp /tmp/sw_recon.XXXXXX)" || return 1   # trailing X's only — BusyBox mktemp rejects a suffix after XXXXXX
+  tmp="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_recon.XXXXXX")" || return 1   # trailing X's only — BusyBox mktemp rejects a suffix after XXXXXX
   cp "$db" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   # P0-confirmed schema: join wifi_device for the canonical MAC (clients have EMPTY
   # ssid.bssid; the MAC is only in wifi_device.mac). ssid is a BLOB -> CAST to TEXT.

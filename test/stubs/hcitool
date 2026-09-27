@@ -4,6 +4,8 @@
 # Tier-3 (btmon is the data source). SW_FAKE_LESCAN_IGNORE_INT=1 models an hcitool that
 # never honours SIGINT, the hang risk that `timeout -k` backstops.
 case " $* " in *" lescan "*) : ;; *) exit 0 ;; esac
+# SW_STUB_PIDS: append this process's PID, so a test can watch an orphaned lescan end.
+[ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
 echo "LE Scan ..."
 if [ -n "${SW_FAKE_LESCAN_IGNORE_INT:-}" ]; then trap '' INT; else trap 'exit 0' INT; fi
 trap 'exit 143' TERM

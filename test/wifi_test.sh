@@ -14,6 +14,16 @@ recs="$(sw_wifi_records "$FIX/recon.db")"
 assert_contains "$recs" "wifi|70:C9:4E:11:22:33||-40" wifi_flock_record
 assert_contains "$recs" "wifi|AA:BB:CC:00:11:22|MyPineappleNet|-55" wifi_pine_record
 assert_contains "$recs" "wifi|F0:F5:A5:44:55:66||-70" wifi_client_record
+# The DB copy lives in ${SW_TMP_DIR:-/tmp}, like the BLE capture: payload.sh clears a copy that
+# the Pager's Stop stranded there (4.8 MB each on a real Pager), and the suite keeps its copies
+# out of the dev box's /tmp.
+SW_TMPC="$(mktemp -d)"
+# control: a sweep with a usable temp dir returns records, and leaves no copy behind
+assert_contains "$(SW_TMP_DIR="$SW_TMPC" sw_wifi_records "$FIX/recon.db")" "wifi|70:C9:4E:11:22:33||-40" wifi_copy_tmp_dir_control
+assert_empty "$(ls "$SW_TMPC")" wifi_copy_removed_after_sweep
+# no usable temp dir -> no copy -> no records (the copy used to go to /tmp regardless)
+assert_empty "$(SW_TMP_DIR="$SW_TMPC/missing" sw_wifi_records "$FIX/recon.db" 2>/dev/null)" wifi_copy_uses_sw_tmp_dir
+rm -rf "$SW_TMPC"; unset SW_TMPC
 
 # --- recency window (SW_RECENCY_SECS) ---
 # recon.db keeps months of history (20,294 rows on the real Pager, only 222 of them

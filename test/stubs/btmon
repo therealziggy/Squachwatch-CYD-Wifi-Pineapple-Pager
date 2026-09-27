@@ -3,5 +3,7 @@
 # until TERM/INT and exits cleanly (btmon flushes on TERM). Self-limiting (30s) if orphaned.
 fix="${SW_FAKE_BTMON:?test must set SW_FAKE_BTMON to a btmon capture}"
 trap 'exit 0' TERM INT
+# SW_STUB_PIDS: append this process's PID, so a test can watch an orphaned btmon end.
+[ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
 cat "$fix"
 end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done

@@ -52,14 +52,27 @@ SW_RECON_DB="$SW_STALED/recon.db" SW_RECENCY_SECS=0 sw_healthcheck; assert_eq "$
 assert_empty "$(grep WARN "$SW_STUB_LOG")" health_stale_control_silent
 rm -rf "$SW_STALED"; unset SW_STALED
 
-# sw_cleanup kills BOTH scanner children and removes their temp files (killall is a stub:
-# the suite never kills real processes on the dev box)
+# sw_cleanup removes the scanner's temp files and kills NOTHING by name: `killall btmon` would
+# also stop another program's btmon or hcitool (another payload, an SSH session). The scan's
+# own helpers end by themselves (ble_test.sh: ble_orphans_end_by_themselves). killall and
+# pkill are stubs that record calls, so the suite never kills real processes on the dev box.
 _ct="$(mktemp -d)"; : > "$_ct/sw_ble.AbC123"; : > "$_ct/sw_ble.state"; : > "$_ct/keep.me"; : > "$SW_STUB_LOG"
+# control: a killall/pkill made from here IS recorded, so an empty record below means "never
+# called", not "called but not seen"
+killall probe-control; pkill probe-control
+assert_eq "$(grep -cE '^(killall|pkill) probe-control$' "$SW_STUB_LOG")" "2" cleanup_kill_stubs_record_calls
+: > "$SW_STUB_LOG"
 ( SW_TMP_DIR="$_ct" sw_cleanup )
-assert_contains "$(cat "$SW_STUB_LOG")" "killall hcitool btmon" cleanup_kills_hcitool_and_btmon
+assert_empty "$(grep -E '^(killall|pkill) ' "$SW_STUB_LOG")" cleanup_kills_nothing_by_name
 assert_empty "$(ls "$_ct" | grep '^sw_ble\.')" cleanup_removes_ble_temp
 assert_eq "$(ls "$_ct")" "keep.me" cleanup_leaves_other_files   # control: it is not rm -rf
 rm -rf "$_ct"; unset _ct
+# ...and nothing in the payloads kills by name at all (a startup "kill the orphans" would be
+# the same bug). Comment lines are skipped; the pattern is proven to bite on a code line.
+_kn='(^|[^A-Za-z0-9_-])(killall|pkill)([^A-Za-z0-9_-]|$)'
+assert_eq "$(printf '%s\n' '  killall hcitool btmon 2>/dev/null' | grep -cE "$_kn")" "1" no_kill_by_name_pattern_bites
+assert_empty "$(grep -rnE "$_kn" "$(cd "$SW_ROOT/../../.." && pwd)" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')" no_kill_by_name_in_payloads
+unset _kn
 
 # --- Tier-3 wiring ---
 # follow is wired into the lap: with SW_FOLLOW_SECS=0 a tracker escalates on first sight
@@ -222,6 +235,34 @@ SW_TEST_SOURCE= SW_SEEN_FILE="$_mt/seen.db" SW_LOOT_DIR="$_mt/loot" SW_TMP_DIR="
   SW_COOLDOWN=2 SW_KIND_COOLDOWN=0 SW_BLE_CMD=true SW_RECON_DB=/nonexistent/recon.db timeout 5 bash "$SW_ROOT/payload.sh" >/dev/null 2>&1
 assert_empty "$(grep '|aging|' "$_mt/seen.db")" noise_main_prunes_periodically
 rm -rf "$_mt"; unset _mt _pn
+# The Pager's Stop kills the payload outright: its EXIT/INT/TERM trap never runs (seen on the
+# device 2026-09-27: the launcher logged the stop as a kill, and sw_ble.state was still in /tmp
+# afterwards), so a stopped run's temp files stay in RAM. sw_main clears them at startup.
+# `timeout -s KILL` stops each run below the way the Pager does; a TERM would run the trap,
+# and the trap would remove the files itself.
+_kt="$(mktemp -d)"; : > "$_kt/sw_ble.AbC123"; echo scan_failed > "$_kt/sw_ble.state"; : > "$_kt/sw_recon.AbC123"; : > "$_kt/keep.me"
+SW_TEST_SOURCE= SW_SEEN_FILE="$_kt/seen.db" SW_LOOT_DIR="$_kt/loot" SW_TMP_DIR="$_kt" SW_SLEEP=1 SW_HEALTH_EVERY=0 \
+  SW_BLE_CMD=true SW_RECON_DB=/nonexistent/recon.db timeout -s KILL 2 bash "$SW_ROOT/payload.sh" >/dev/null 2>&1
+# control: the run got as far as creating its log in this dir, so it did start here
+assert_eq "$([ -f "$_kt/loot/detections.csv" ] && echo started)" "started" main_killed_run_control_started
+assert_empty "$(ls "$_kt" | grep '^sw_ble\.')" main_clears_killed_runs_ble_temp
+assert_empty "$(ls "$_kt" | grep '^sw_recon\.')" main_clears_killed_runs_recon_copy
+assert_contains "$(ls "$_kt")" "keep.me" main_clear_leaves_other_files   # control: not rm -rf
+# A restart after such a stop must WARN again about a BLE scan that is still failing. The old
+# run's "scan_failed" state would mark that WARN as already shown: the new run would say
+# "armed" and never mention BLE. Real scan path (SW_BLE_CMD empty) through the stubs.
+_kw='WARN: BLE scan failed to start'
+_sw_run_failing_scan() {
+  SW_TEST_SOURCE= SW_SEEN_FILE="$_kt/seen.db" SW_LOOT_DIR="$_kt/loot" SW_TMP_DIR="$_kt" SW_SLEEP=1 SW_HEALTH_EVERY=0 \
+    SW_BLE_CMD= SW_BLE_SECONDS=1 SW_FAKE_BTMON="$FIX/btmon_scan_failed.txt" SW_RECON_DB=/nonexistent/recon.db \
+    timeout -s KILL 5 bash "$SW_ROOT/payload.sh" >/dev/null 2>&1
+}
+# control: with no leftover state the same run WARNs, once (the fixture and path produce it)
+rm -rf "${_kt:?}"/*; : > "$SW_STUB_LOG"; _sw_run_failing_scan
+assert_eq "$(grep -cF "$_kw" "$SW_STUB_LOG")" "1" main_scan_failed_control_warns
+rm -rf "${_kt:?}"/*; echo scan_failed > "$_kt/sw_ble.state"; : > "$SW_STUB_LOG"; _sw_run_failing_scan
+assert_eq "$(grep -cF "$_kw" "$SW_STUB_LOG")" "1" main_rewarns_after_killed_run
+rm -rf "$_kt"; unset -f _sw_run_failing_scan; unset _kt _kw
 # REAL Flipper BLE Spam capture: name-only "Flipper" adverts from random MACs. Counts come from
 # the matcher, so the test pins behaviour, not today's numbers. _nf counts EVERY Flipper-kind
 # device (the user's real Flipper, if captured, is the same kind for the screen cap and CSV);

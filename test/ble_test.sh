@@ -38,5 +38,21 @@ assert_eq "$(grep -cF "$_cf_msg" "$SW_STUB_LOG")" "1" ble_capture_failed_warns
 _recs="$(SW_TMP_DIR="$_cf_tmp" SW_BLE_STATE_FILE="$_cf_state" sw_ble_scan 1 hci0 2>/dev/null)"
 assert_eq "$(grep -cF "$_cf_msg" "$SW_STUB_LOG")" "1" ble_capture_failed_warns_once
 
+# The Pager's Stop kills the payload outright, so no trap of ours can stop the scan's helpers
+# (and payload.sh kills nothing by name). Each helper must end on its OWN within the scan's
+# bound. Run a scan in its own shell, SIGKILL that shell mid-scan, and watch the helpers' PIDs.
+_pids="$SW_TMP_DIR/stub.pids"; : > "$_pids"
+SW_STUB_PIDS="$_pids" bash -c 'source "$1/lib/match.sh"; source "$1/lib/ble.sh"; sw_ble_scan 1 hci0 >/dev/null' _ "$SW_ROOT" 2>/dev/null &
+_sp=$!
+sleep 1.5                     # btmon starts at ~0 s and hcitool at ~1 s (secs=1): both mid-scan
+kill -9 "$_sp" 2>/dev/null; wait "$_sp" 2>/dev/null
+_sw_alive() { local p n=0; while read -r p; do kill -0 "$p" 2>/dev/null && n=$((n + 1)); done < "$_pids"; echo "$n"; }
+# control: both helpers were alive when their shell died, so "none left" below is not vacuous
+assert_eq "$(_sw_alive)" "2" ble_orphans_alive_after_kill
+# bound for secs=1: hcitool gets INT at 1 s (+2 s kill-after), btmon TERM at 4 s (+2 s)
+SECONDS=0; while [ "$(_sw_alive)" != 0 ] && [ "$SECONDS" -lt 10 ]; do sleep 0.2; done
+assert_eq "$(_sw_alive)" "0" ble_orphans_end_by_themselves
+unset -f _sw_alive; unset _pids _sp
+
 rm -rf "$SW_TMP_DIR"
 unset SW_TMP_DIR SW_FAKE_BTMON _FIX _recs _rc _el _cf_tmp _cf_state _cf_msg
