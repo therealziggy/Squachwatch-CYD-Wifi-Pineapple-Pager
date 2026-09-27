@@ -28,7 +28,7 @@ Two settings keep a lap cheap and the loot file bounded:
 
 If the recon DB stops updating, every sweep would return zero rows and look exactly like "all clear" — so the scanner detects that case explicitly and logs a warning instead, re-checking every `SW_HEALTH_EVERY` laps.
 
-Stopping it with the Pager's cancel button ends the payload before it can tidy up, so every launch first clears what the previous run left in `/tmp` (a Bluetooth capture, a copy of the recon DB, the Bluetooth health state). A Bluetooth scan that is still failing therefore warns again after a restart instead of starting silently. The Bluetooth helpers each run under their own time limit and end by themselves within 17 seconds. SquachWatch never kills another program's `btmon` or `hcitool`, but it resets the Bluetooth adapter every lap, which interrupts another program's scan, so don't run a second Bluetooth scanner alongside it.
+The Pager's cancel button sends the payload an interrupt and, about a second later, a hard kill. SquachWatch tidies up inside that second, and a scan that was under way when you pressed it winds down silently: no new alert, buzz, screen line or log row after you pressed cancel. As a backstop, every launch also clears anything an earlier run left in `/tmp` (a Bluetooth capture, a copy of the recon DB, the Bluetooth health state), so a Bluetooth scan that is still failing warns again after a restart instead of starting silently. The Bluetooth helpers each run under their own time limit and end by themselves within 17 seconds. SquachWatch never kills another program's `btmon` or `hcitool`, but it resets the Bluetooth adapter every lap, which interrupts another program's scan, so don't run a second Bluetooth scanner alongside it.
 
 **2. Four native alert payloads** at `payloads/alerts/` — tiny scripts the Pager fires for free on its built-in events: `deauth_flood_detected`, `handshake_captured`, `pineapple_client_connected` (with OUI→vendor lookup), and `pineapple_auth_captured`.
 
@@ -82,7 +82,7 @@ A zero-dependency offline harness runs the whole detection engine on a normal Li
 bash test/run.sh
 ```
 
-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **572 assertions, all passing** (also as root).
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **600 assertions, all passing** (also as root).
 
 ## Status & roadmap
 

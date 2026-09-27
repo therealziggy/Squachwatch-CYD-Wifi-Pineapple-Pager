@@ -342,54 +342,78 @@ Still to do by hand: a launch from the Pager's menu with the user present.
 
 ## Stopping the payload (2026-09-27)
 
-**The menu's Stop ends the payload without running its exit handler.** In a real menu run (launched, then
-stopped about a minute later) the launcher logged `[PAYLOAD] Payload process <pid> killed` and then
-`Error in payload …: exited with -1`. Go reports -1 for a process that ended by a signal; had the
-`trap sw_cleanup EXIT INT TERM` run, the payload would have exited 0. `/tmp/sw_ble.state`, which `sw_cleanup`
-deletes, was still there 16 minutes later. Not observed: which signal Stop sends, and whether it reaches only
-the main process or its whole process group. A SIGKILL fits, and so does a TERM followed by a KILL after a
-grace period shorter than bash's trap deferral (a trap runs only after the lap's pipeline ends: ~14 s in case
-A below).
+**First sign: the exit handler did not run.** In a real menu run (launched, then stopped about a minute later)
+the launcher logged `[PAYLOAD] Payload process <pid> killed` and then `Error in payload …: exited with -1`
+(Go's code for a process that ended by a signal; had `trap sw_cleanup EXIT INT TERM` run, the payload would
+have exited 0), and `/tmp/sw_ble.state`, which `sw_cleanup` deletes, was still there 16 minutes later.
 
-So `sw_cleanup` never ran on the usual way the scanner is stopped. When it did run (Ctrl-C or a TERM over
-SSH) its `killall hcitool btmon` stopped every btmon/hcitool on the device, including another payload's own
-monitor. Fixed in `1820d3d` and its review follow-ups: nothing is found or killed by name
-(`no_kill_by_name_in_payloads`, which also rejects `pidof`/`pgrep`), `sw_cleanup` only removes the temp
-files, `sw_main` also removes them at startup (`sw_clear_tmp`, checked name-agnostically by
-`sweep_clears_every_temp_file_a_lap_leaves`), and the recon DB copy now lives in `${SW_TMP_DIR:-/tmp}` next
-to the BLE capture. The helpers' own `timeout`s are now the only thing that ends an orphaned helper
-(`ble_orphans_end_by_themselves`, mutation-proven for both helpers).
+**Measured with a probe payload launched from the menu** (it logged every signal it received, with
+microsecond timestamps, while a child subshell heartbeated like a lap): Stop sends **SIGINT to the payload's
+main shell only, then SIGKILL about 1 s later** (SIGINT 11.13 s after launch, last heartbeat 11.96 s, no EXIT
+trap). The child got no signal at all and ran on until its own 20 s bound. The payload runs in the launcher's
+own process group (pgrp 1, sid 1), with only SIGQUIT ignored (`SigIgn` 0x4). The launcher logs
+`Payload completed` for an exit 0 and `exited with -1` for a death by signal.
 
-**On-device probe** (staging copies of `3cc7432` = old and `1820d3d` = new, the screen/sound/LED verbs
-shadowed, separate temp and loot dirs; the installed payload, the real loot and the real `/tmp` state were
-untouched and verified so afterwards):
+**What that meant before `e8af38a`:**
+- The INT trap waited behind the foreground lap, so the SIGKILL usually came first and nothing was cleaned up
+  (the trap won only when Stop landed near the end of a lap or pause; one real stop was logged `Payload completed`).
+- The lap that was running went on in its subshells for up to ~15 s after Stop, and could still alert, buzz,
+  log and write CSV rows. On-device what-if: after a main-shell-only SIGKILL mid-scan, the lap ran on for ~11 s
+  and fired ALERT + VIBRATE and wrote 2 CSV rows.
+- A relaunch within that window swept the running lap's capture, and that lap then put a false
+  "WARN: BLE scan failed to start" on the new run's screen (reproduced offline in review).
+- `killall hcitool btmon` in `sw_cleanup` (when the trap did run: Ctrl-C or TERM over SSH) stopped every
+  btmon/hcitool on the device, including another payload's own monitor.
 
-| Case | Old | New |
+**Fixes:**
+- `1820d3d` and its review follow-ups (`845b482`): nothing is found or killed by name
+  (`no_kill_by_name_in_payloads`, which also rejects `pidof`/`pgrep`); `sw_cleanup` only removes the temp
+  files; `sw_main` also clears them at startup (`sw_clear_tmp`, checked name-agnostically by
+  `sweep_clears_every_temp_file_a_lap_leaves`); the recon DB copy lives in `${SW_TMP_DIR:-/tmp}` next to the
+  BLE capture. The helpers' own `timeout`s end an orphaned helper (`ble_orphans_end_by_themselves`).
+- `e8af38a`: the lap and the pause between laps run in the background under `wait`, so the trap runs at once
+  on the SIGINT and the payload exits 0 inside the grace. `sw_stopped` (true once the main shell is gone,
+  counting a not-yet-reaped zombie as gone; `sw_main` sets the PID it checks, so an inherited
+  `SW_MAIN_PID` cannot silence a run) makes a lap still running go quiet: it never starts a scan or resets
+  the adapter, drops its capture without reporting scan health (checked after the scan and after the
+  parse), and emits nothing more, including the "following you" escalation of the detection it was on.
+  The exit trap removes the health state and DB copies but leaves BLE captures to the lap that owns them.
+  The startup sweep stays as the backstop. An independent review of the first version found the zombie
+  window, the trap deleting a live lap's capture, the inherited `SW_MAIN_PID` and the unguarded follow
+  escalation; each is fixed with a test. Stand-in commands kill a stand-in main shell at the exact moment
+  under test, so the tests do not depend on timing. Each part is mutation-proven
+  (`stop_trap_runs_within_the_grace`, `stop_during_pause_runs_trap_within_the_grace`,
+  `stopped_lap_emits_nothing`, `follow_stopped_mid_report_no_escalation`, `ble_stopped_payload_starts_no_scan`,
+  `ble_stopped_mid_scan_*`, `ble_stopped_mid_parse_*`, `ble_stopped_zombie_main_counts_as_gone`,
+  `cleanup_leaves_a_live_laps_capture`, `main_ignores_inherited_main_pid`).
+
+**On-device probes of the fixes** (staging copies, the launcher's own header, the screen/sound/LED verbs
+shadowed, separate temp and loot dirs; the installed payload, the real loot and the real `/tmp` were untouched):
+
+| Case | Before (`3cc7432`) | After (`1820d3d` / `e8af38a`) |
 |---|---|---|
-| A. TERM to the payload (the trap runs) while ANOTHER program's `btmon` runs | the other `btmon` was killed | the other `btmon` kept running |
-| A. TERM to exit | ~14 s: bash runs a trap only after the lap's pipeline ends | ~14 s |
-| B. SIGKILL to the whole process group, mid-scan of lap 2: our orphaned helpers | ended by their own `timeout` within 12 s | the same |
-| B. What the killed run left in its temp dir | the capture `sw_ble.XXXXXX` + `sw_ble.state` | the same |
-| B. After a relaunch | the capture, the stale state and a stranded DB copy all still there | all three cleared at startup |
-| C (what-if). SIGKILL to the MAIN shell only, mid-scan | not run | the lap's subshells ran on for ~11 s, finished the scan, and fired ALERT + VIBRATE and wrote 2 CSV rows AFTER the kill |
+| TERM to the payload while ANOTHER program's `btmon` runs | the other `btmon` was killed | the other `btmon` kept running |
+| SIGKILL to the whole process group mid-scan, then a relaunch | the capture, the stale state and a stranded DB copy all still there | all three cleared at startup; our orphaned helpers ended by their own `timeout` within 12 s |
+| The measured Stop (SIGINT, SIGKILL 1 s later) in the middle of lap 2's scan (lap 1 healthy) | — | exit 0 **104 ms** after SIGINT, no SIGKILL needed; **0** verb calls after SIGINT; the lap's helpers ended 10 s later; no temp files |
+| The measured Stop during the pause between laps | — | exit 0 **45 ms** after SIGINT; 0 verb calls after; no temp files |
+| `timeout -s INT … hcitool lescan` from a background job, like the lap's | — | rc 124: stopped by the INT (the scan is switched off cleanly), not by the `-k` KILL |
 
-**Open: what exactly Stop sends.** The user's real stop left exactly what case C leaves (`sw_ble.state` and
-no capture), which fits C, but it also fits a group kill that landed outside the BLE scan (about a third of
-each lap). Settle it with a throwaway payload launched from the menu that logs every signal it receives, with
-timestamps, while a child subshell heartbeats like a lap: that gives the signals, their order, the grace
-period, and main-only vs group. Only then pick the fix:
-- **If Stop kills only the main shell:** the running lap still alerts and buzzes after Stop (case C). And a
-  relaunch within ~15 s sweeps that lap's in-flight capture, so the lap reports "WARN: BLE scan failed to
-  start" on the NEW run's screen, and the new run then logs "BLE scan recovered" (reproduced offline in
-  review; new with the startup sweep). The fix must cover the lap's BLE health note as well as the emit loop.
-- **If TERM comes first with a usable grace period:** a trap that runs promptly (each lap in the background
-  plus `wait`, stopping our own lap by PID) fixes case C, the false WARN and the stranded files together.
-  Keep the startup sweep as a backstop.
-- **Either way (reasoned from BlueZ, not measured):** an orphaned `hcitool lescan` switches LE scanning off
-  when its own `timeout` sends INT, which can cut a quick relaunch's first scan short with no WARN, since the
-  reply to that disable also matches the health check's success pattern.
+Menu launch of the `845b482` build: armed, the real Flipper on the first lap (one CSV row), the old
+`sw_ble.state` cleared at startup, and the stop logged `Payload completed` with `/tmp` left clean.
 
-Known residue: a Stop that lands in the middle of a follow/snooze state rewrite or a cooldown-ledger rewrite
-can strand a tiny `sw_track.db.XXXXXX` / `sw_snooze.db.XXXXXX` (in `/tmp`) or `seen.db.XXXXXX` (in the loot
-dir). They are not swept (bytes each, a window of milliseconds per lap). Scope: SquachWatch no longer kills
-other programs' Bluetooth tools, but its per-lap `hciconfig down/reset/up` still interrupts their scans.
+**Remaining:**
+- After a Stop mid-lap, the lap that goes on holds the payload's stdout/stderr until it winds down (up to
+  one scan). The launcher removed its `payload_log` receiver 18 s after the probe's stop, when the probe's
+  heartbeating child finally exited, so it waits for end-of-file there. Whether a relaunch inside that window
+  works has not been tried (SIGKILLed laps on the older builds held it the same way).
+- A Stop inside a long foreground command (the health check's `cp` of the 4.8 MB DB and two `sqlite3`
+  counts, at startup and every `SW_HEALTH_EVERY` laps) can still miss the ~1 s grace; the startup sweep
+  covers what it leaves.
+- After a Stop mid-scan, the lap's `hcitool` runs out its `timeout` (up to 12 s) and then switches LE scanning
+  off. A relaunch inside that window could lose part of its first scan with no WARN (reasoned from BlueZ, not
+  measured).
+- A power cut or crash in the middle of a follow/snooze/ledger rewrite can strand a tiny
+  `sw_track.db.XXXXXX` / `sw_snooze.db.XXXXXX` (in `/tmp`) or `seen.db.XXXXXX` (in the loot dir). These are not
+  swept. A Stop no longer does this, because the lap finishes the detection it is on before going quiet.
+- Scope: SquachWatch no longer kills other programs' Bluetooth tools, but its per-lap
+  `hciconfig down/reset/up` still interrupts their scans.
