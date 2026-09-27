@@ -6,6 +6,9 @@
 case " $* " in *" lescan "*) : ;; *) exit 0 ;; esac
 # SW_STUB_PIDS: append this process's PID, so a test can watch an orphaned lescan end.
 [ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
+# SW_STUB_STOP_ON_LESCAN=<pid>: kill that stand-in "main shell" as the scan starts (a Stop
+# mid-scan); the lap only looks again after the scan, by which time it is long gone.
+[ -n "${SW_STUB_STOP_ON_LESCAN:-}" ] && kill "$SW_STUB_STOP_ON_LESCAN" 2>/dev/null
 echo "LE Scan ..."
 if [ -n "${SW_FAKE_LESCAN_IGNORE_INT:-}" ]; then trap '' INT; else trap 'exit 0' INT; fi
 trap 'exit 143' TERM

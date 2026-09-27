@@ -139,13 +139,18 @@ sw_scan_once() {
         local det fdet key
         while IFS= read -r det; do
           [ -n "$det" ] || continue
+          # the payload was stopped mid-lap: nothing more on screen, in the CSV, or buzzing
+          sw_stopped && exit 0
           sw_ignored "$det" "$SW_IGNORE_SET" && continue
           _sw_emit_capped "$det" "$now" "$SW_COOLDOWN" "$SW_SEEN_FILE" "$SW_LOOT_DIR"
+          # a Stop that landed during that report: no follow escalation either
+          sw_stopped && exit 0
           # A tracker that has stayed with us escalates to its own high-confidence detection.
           fdet="$(sw_follow_update "$det" "$now" "$SW_TRACK_FILE" "$SW_FOLLOW_SECS" "$SW_FOLLOW_GAP")"
           [ -n "$fdet" ] && _sw_emit_capped "$fdet" "$now" "$SW_COOLDOWN" "$SW_SEEN_FILE" "$SW_LOOT_DIR" \
             "$SW_SNOOZE_FILE" "$SW_SNOOZE_AFTER" "$SW_SNOOZE_MARGIN_DB" "$SW_SNOOZE_RESET_SECS"
         done
+        sw_stopped && exit 0
         for key in "${_lap_order[@]}"; do
           [ "${_lap_hidden[$key]}" -gt 0 ] || continue
           LOG "$(sw_color_for "${_lap_class[$key]}")" "...and ${_lap_hidden[$key]} more ${_lap_label[$key]}" 2>/dev/null
@@ -157,11 +162,15 @@ sw_scan_once() {
 # and the recon DB copies (sw_recon.XXXXXX, 4.8 MB each on a real Pager). All in RAM on the Pager.
 sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_recon.* 2>/dev/null; }
 
-# On exit, remove the temp files. Nothing is killed here: btmon and hcitool each run under
-# their own `timeout` (lib/ble.sh), so an orphan ends within seconds by itself, while killing
-# by NAME would also stop another program's btmon or hcitool (another payload, an SSH session).
+# On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE health state and any recon DB copy,
+# but leave BLE captures to the lap that owns them. A lap still running reads its capture again
+# for the health check, and it removes the capture itself on every path (sw_stopped); the next
+# start sweeps whatever a lap could not. Nothing is killed here: btmon and hcitool each run
+# under their own `timeout` (lib/ble.sh), so an orphan ends within seconds by itself, while
+# killing by NAME would also stop another program's btmon or hcitool (another payload, an SSH
+# session).
 sw_cleanup() {
-  sw_clear_tmp
+  rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.state "${SW_TMP_DIR:-/tmp}"/sw_recon.* 2>/dev/null
   exit 0
 }
 
@@ -176,10 +185,13 @@ sw_prune_ledger() {
 }
 
 sw_main() {
-  # The Pager's Stop ends the payload without running its trap (seen 2026-09-27), so sw_cleanup
-  # never runs for a run stopped from the menu: clear its leftovers here. A stale capture or DB
-  # copy would stay in RAM, and a stale BLE health state would hide the WARN for a scan that is
-  # still failing.
+  # sw_stopped's "main shell": always this one. An inherited value (a leftover export in an SSH
+  # shell) would otherwise make every lap think the payload had been stopped.
+  SW_MAIN_PID=$$
+  # Backstop for a run that ended without its trap (a Stop that landed in a long foreground
+  # command such as the health check, a crash, a power cut): clear its leftovers here. A stale
+  # capture or DB copy would stay in RAM, and a stale BLE health state would hide the WARN for
+  # a scan that is still failing.
   sw_clear_tmp
   sw_log_init "$SW_LOOT_DIR"
   mkdir -p "$(dirname "$SW_SEEN_FILE")"; touch "$SW_SEEN_FILE"
@@ -192,13 +204,17 @@ sw_main() {
   fi
   local lap=0
   while true; do
-    sw_scan_once
+    # The lap and the pause run in the background, under `wait`: the Pager's Stop (SIGINT, then
+    # SIGKILL ~1 s later, to this shell only) then runs sw_cleanup at once. Behind a foreground
+    # command the trap waited for the whole lap, so the SIGKILL usually came first. The lap that
+    # was running winds down by itself without reporting anything (sw_stopped).
+    sw_scan_once & wait $!
     lap=$((lap+1))
     if [ "$SW_HEALTH_EVERY" -gt 0 ] && [ $((lap % SW_HEALTH_EVERY)) -eq 0 ]; then
       sw_healthcheck || LOG yellow "SquachWatch DEGRADED — some detection is OFF" 2>/dev/null
       sw_prune_ledger
     fi
-    sleep "$SW_SLEEP"
+    sleep "$SW_SLEEP" & wait $!
   done
 }
 

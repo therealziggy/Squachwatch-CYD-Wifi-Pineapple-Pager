@@ -131,9 +131,25 @@ sw_ble_health_note() {
   return 0
 }
 
+sw_stopped() {
+  # True once the payload's main shell is gone. The Pager's Stop (measured 2026-09-27) sends
+  # SIGINT and then SIGKILL, ~1 s later, to the main shell ONLY, so a lap that was running lives
+  # on in its subshells: it must not scan or report anything more. $$ is the main shell's PID in
+  # every subshell; SW_MAIN_PID is set by sw_main (and is a test seam). Builtins only.
+  local pid="${SW_MAIN_PID:-$$}" st
+  kill -0 "$pid" 2>/dev/null || return 0
+  # exited but not yet reaped by the launcher: a zombie, which kill -0 still finds
+  { read -r st < "/proc/$pid/stat"; } 2>/dev/null || return 1
+  st="${st##*) }"
+  case "${st%% *}" in Z|X|x) return 0 ;; esac
+  return 1
+}
+
 sw_ble_scan() {
   # $1 = seconds (default 12), $2 = iface (default hci0). Writes ble records to stdout.
   local secs="${1:-12}" iface="${2:-hci0}" cap bpid recs n=0
+  # a stopped payload's lap must not reset the adapter: a relaunched payload may be scanning
+  sw_stopped && return 0
   hciconfig "$iface" down 2>/dev/null; hciconfig "$iface" reset 2>/dev/null; hciconfig "$iface" up 2>/dev/null
   # a full RAM-backed /tmp must be loud (once), not an empty lap forever
   cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_ble.XXXXXX")" || { sw_ble_health_note capture_failed; return 1; }
@@ -148,7 +164,12 @@ sw_ble_scan() {
   # scan cleanly; -k 2 so an hcitool that ignored SIGINT can't hang the lap.
   timeout -s INT -k 2 "$secs" hcitool -i "$iface" lescan --duplicates > /dev/null 2>&1
   kill "$bpid" 2>/dev/null; wait "$bpid" 2>/dev/null
+  # stopped during the scan: drop the capture unread and report no health. A relaunch's startup
+  # sweep may already have deleted the capture, which read as "scan failed" on the NEW run's screen.
+  if sw_stopped; then rm -f "$cap"; return 0; fi
   recs="$(sw_btmon_parse < "$cap")"
+  # ...or while it parsed (the health check below reads the capture again)
+  if sw_stopped; then rm -f "$cap"; return 0; fi
   [ -n "$recs" ] && n="$(printf '%s\n' "$recs" | grep -c .)"
   sw_btmon_health "$cap" "$n"; sw_ble_health_note "$REPLY"
   rm -f "$cap"

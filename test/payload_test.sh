@@ -56,7 +56,7 @@ rm -rf "$SW_STALED"; unset SW_STALED
 # also stop another program's btmon or hcitool (another payload, an SSH session). The scan's
 # own helpers end by themselves (ble_test.sh: ble_orphans_end_by_themselves). killall and
 # pkill are stubs that record calls, so the suite never kills real processes on the dev box.
-_ct="$(mktemp -d)"; : > "$_ct/sw_ble.AbC123"; : > "$_ct/sw_ble.state"; : > "$_ct/keep.me"; : > "$SW_STUB_LOG"
+_ct="$(mktemp -d)"; : > "$_ct/sw_ble.AbC123"; : > "$_ct/sw_ble.state"; : > "$_ct/sw_recon.AbC123"; : > "$_ct/keep.me"; : > "$SW_STUB_LOG"
 # precondition: here these names resolve to the recording stubs, never to the real tools
 _kst="$(command -v killall pkill | sed 's|.*/test/stubs/||' | tr '\n' ' ')"
 assert_eq "$_kst" "killall pkill " cleanup_kill_tools_are_stubs
@@ -67,8 +67,12 @@ assert_eq "$(grep -cE '^(killall|pkill) probe-control$' "$SW_STUB_LOG")" "2" cle
 : > "$SW_STUB_LOG"
 ( SW_TMP_DIR="$_ct" sw_cleanup )
 assert_empty "$(grep -E '^(killall|pkill) ' "$SW_STUB_LOG")" cleanup_kills_nothing_by_name
-assert_empty "$(ls "$_ct" | grep '^sw_ble\.')" cleanup_removes_ble_temp
-assert_eq "$(ls "$_ct")" "keep.me" cleanup_leaves_other_files   # control: it is not rm -rf
+# It removes the BLE health state and any recon DB copy, but leaves a BLE capture to the lap that
+# owns it: a lap still running when Stop came reads its capture again (the health check), and
+# removes it itself on every path. The next start sweeps anything a lap could not.
+assert_empty "$(ls "$_ct" | grep -E '^(sw_ble\.state|sw_recon\.)')" cleanup_removes_state_and_db_copy
+assert_eq "$(ls "$_ct" | grep -c '^sw_ble\.AbC123$')" "1" cleanup_leaves_a_live_laps_capture
+assert_contains "$(ls "$_ct")" "keep.me" cleanup_leaves_other_files   # control: it is not rm -rf
 rm -rf "$_ct"; unset _ct _kst
 # ...and nothing in the payloads finds or kills processes by name at all: a startup "kill the
 # orphans" would be the same bug, and on BusyBox it is often written `kill $(pidof btmon)`.
@@ -295,6 +299,93 @@ assert_eq "$(ls -A "$_lt" | wc -l | tr -d ' ')" "3" sweep_lap_leaves_three_temp_
 ( SW_TMP_DIR="$_lt" sw_clear_tmp )
 assert_empty "$(ls -A "$_lt")" sweep_clears_every_temp_file_a_lap_leaves
 rm -rf "$_lt"; unset _lt
+# --- the Pager's Stop (measured 2026-09-27 with a probe payload launched from the menu) ---
+# Stop sends SIGINT and then SIGKILL, ~1 s later, to the payload's MAIN shell only; the lap's
+# subshells get no signal at all. So the trap must run at once, not after the lap, and a lap
+# already running must finish without alerting, buzzing, logging or writing CSV rows.
+bash -c 'exit 0' & _dead=$!; wait "$_dead"
+rm -f "$SW_LOOT_DIR/detections.csv"; : > "$SW_SEEN_FILE"; sw_log_init "$SW_LOOT_DIR"; : > "$SW_STUB_LOG"
+SW_MAIN_PID="$_dead" sw_scan_once
+assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE|LOG) ' "$SW_STUB_LOG")" stopped_lap_emits_nothing
+assert_eq "$(wc -l < "$SW_LOOT_DIR/detections.csv" | tr -d ' ')" "1" stopped_lap_writes_no_csv_row
+# control: the same lap with the main shell alive does alert (fresh cooldown ledger, so this does
+# not depend on what the lap above wrote)
+: > "$SW_SEEN_FILE"; : > "$SW_STUB_LOG"; sw_scan_once
+assert_contains "$(grep '^ALERT ' "$SW_STUB_LOG")" "Flipper" stopped_lap_control_alerts
+# A SW_MAIN_PID inherited from the environment (a leftover export in an SSH shell) must not
+# silence a real run: sw_main sets it to its own PID. Before, a dead one turned all detection off.
+_it="$(mktemp -d)"; : > "$SW_STUB_LOG"
+{ SW_MAIN_PID="$_dead" SW_TEST_SOURCE= SW_SEEN_FILE="$_it/seen.db" SW_LOOT_DIR="$_it/loot" SW_TMP_DIR="$_it" SW_SLEEP=1 SW_HEALTH_EVERY=0 \
+  timeout 3 bash "$SW_ROOT/payload.sh" >/dev/null 2>&1; } 2>/dev/null
+assert_contains "$(grep '^ALERT ' "$SW_STUB_LOG")" "Flipper" main_ignores_inherited_main_pid
+rm -rf "$_it"; unset _dead _it
+# A Stop that lands inside one detection's report must not let that detection's "following you"
+# escalation fire. The LOG stub kills the stand-in main shell during the tracker's own screen
+# line; SW_FOLLOW_SECS=0 escalates a tracker on first sight. Input: one SmartTag at -80 dBm.
+_tag="$(mktemp)"; sed -n 43,52p "$FIX/btmon_synthetic.txt" > "$_tag"
+_ft="$(mktemp -d)"
+_sw_follow_lap() {   # $1 = the PID the LOG stub kills ("" = none)
+  rm -f "$_ft"/* "$SW_LOOT_DIR/detections.csv"; : > "$SW_SEEN_FILE"; sw_log_init "$SW_LOOT_DIR"; : > "$SW_STUB_LOG"
+  SW_MAIN_PID="$_fm" SW_STUB_STOP_ON_LOG="$1" SW_FOLLOW_SECS=0 SW_TRACK_FILE="$_ft/track.db" SW_SNOOZE_FILE="$_ft/snooze.db" \
+    SW_RECON_DB=/nonexistent/recon.db SW_BLE_CMD="cat '$_tag'" sw_scan_once
+}
+# control: with the main shell alive, the SmartTag escalates to a full "following" alert
+sleep 30 & _fm=$!; _sw_follow_lap ""
+assert_contains "$(grep -A1 '^ALERT ' "$SW_STUB_LOG")" "AA:00:00:00:00:01" follow_control_escalates
+kill "$_fm" 2>/dev/null; wait "$_fm" 2>/dev/null
+sleep 30 & _fm=$!; _sw_follow_lap "$_fm"; wait "$_fm" 2>/dev/null
+assert_contains "$(cat "$SW_STUB_LOG")" "Samsung SmartTag" follow_stopped_control_presence_logged
+assert_empty "$(grep -E '^(ALERT|VIBRATE) ' "$SW_STUB_LOG")" follow_stopped_mid_report_no_escalation
+rm -rf "$_ft" "$_tag"; unset -f _sw_follow_lap; unset _ft _tag _fm
+# End to end, the way the Pager does it. python3 restores the default SIGINT before exec'ing the
+# payload: a background job of this script starts with SIGINT ignored, and bash can never trap a
+# signal ignored at entry. It also restores SIGPIPE and SIGXFSZ, which python itself ignores, so
+# the payload starts the way the launcher starts it (only SIGQUIT ignored).
+_st="$(mktemp -d)"; _sc="$(mktemp -d)"
+_sw_start_real() {   # $1 = the run's dir -> _sp = the payload's main shell
+  SW_TEST_SOURCE= SW_SEEN_FILE="$1/seen.db" SW_LOOT_DIR="$1/loot" SW_TMP_DIR="$1" SW_SLEEP=1 SW_HEALTH_EVERY=0 \
+    SW_BLE_CMD= SW_BLE_SECONDS=1 SW_FAKE_BTMON="$FIX/btmon_synthetic.txt" SW_RECON_DB=/nonexistent/recon.db \
+    python3 -c 'import os, signal as s, sys; [s.signal(n, s.SIG_DFL) for n in (s.SIGINT, s.SIGPIPE, s.SIGXFSZ)]; os.execvp("bash", ["bash"] + sys.argv[1:])' \
+    "$SW_ROOT/payload.sh" >/dev/null 2>&1 &
+  _sp=$!
+}
+# control: left alone, the first lap alerts on the fixture's Flipper (through the real scan path)
+: > "$SW_STUB_LOG"; _sw_start_real "$_sc"
+for _i in $(seq 80); do grep -q '^ALERT Flipper' "$SW_STUB_LOG" && break; sleep 0.1; done
+{ kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null
+assert_contains "$(grep '^ALERT ' "$SW_STUB_LOG")" "Flipper" stop_control_first_lap_alerts
+sleep 1.5                                 # whatever that run's lap still had to do, it has done
+# the Pager's Stop, in the middle of the first lap's BLE scan
+: > "$SW_STUB_LOG"; _sw_start_real "$_st"
+for _i in $(seq 50); do ls "$_st" | grep -qE '^sw_ble\.[A-Za-z0-9]{6}$' && break; sleep 0.1; done
+kill -INT "$_sp"
+for _i in $(seq 20); do kill -0 "$_sp" 2>/dev/null || break; sleep 0.05; done    # the ~1 s grace
+_alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
+{ kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
+assert_eq "$_alive/$_rc" "no/0" stop_trap_runs_within_the_grace
+sleep 3                                   # the lap that was running: its 1 s scan runs out
+assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_lap_in_progress_never_alerts
+assert_empty "$(grep -F 'Flipper' "$SW_STUB_LOG")" stop_lap_in_progress_logs_nothing
+assert_empty "$(ls "$_st" | grep -E '^sw_(ble|recon)\.')" stop_leaves_no_temp_files
+# ...and a Stop during the pause between laps (the Pager waits SW_SLEEP=3 s of every ~20 s cycle)
+# must not wait for the pause either. A 5 s pause and no scan: poll for the pause's `sleep`, a
+# child of the main shell, then Stop.
+rm -rf "${_st:?}"/*
+SW_TEST_SOURCE= SW_SEEN_FILE="$_st/seen.db" SW_LOOT_DIR="$_st/loot" SW_TMP_DIR="$_st" SW_SLEEP=5 SW_HEALTH_EVERY=0 \
+  SW_BLE_CMD=true SW_RECON_DB=/nonexistent/recon.db \
+  python3 -c 'import os, signal as s, sys; [s.signal(n, s.SIG_DFL) for n in (s.SIGINT, s.SIGPIPE, s.SIGXFSZ)]; os.execvp("bash", ["bash"] + sys.argv[1:])' \
+  "$SW_ROOT/payload.sh" >/dev/null 2>&1 &
+_sp=$!
+for _i in $(seq 50); do pgrep -P "$_sp" -x sleep >/dev/null && break; sleep 0.1; done
+_pz="$(pgrep -P "$_sp" -x sleep)"; _inpause="$([ -n "$_pz" ] && echo yes || echo no)"
+kill -INT "$_sp"
+for _i in $(seq 20); do kill -0 "$_sp" 2>/dev/null || break; sleep 0.05; done
+_alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
+{ kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
+assert_eq "$_inpause" "yes" stop_pause_control_was_in_the_pause
+assert_eq "$_alive/$_rc" "no/0" stop_during_pause_runs_trap_within_the_grace
+[ -n "$_pz" ] && kill $_pz 2>/dev/null     # the pause's own sleep, orphaned when the payload exited
+rm -rf "$_st" "$_sc"; unset -f _sw_start_real; unset _st _sc _sp _i _alive _rc _inpause _pz
 # REAL Flipper BLE Spam capture: name-only "Flipper" adverts from random MACs. Counts come from
 # the matcher, so the test pins behaviour, not today's numbers. _nf counts EVERY Flipper-kind
 # device (the user's real Flipper, if captured, is the same kind for the screen cap and CSV);

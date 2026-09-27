@@ -1,2 +1,11 @@
 #!/usr/bin/env bash
 echo "${0##*/} $*" >> "${SW_STUB_LOG:-/dev/null}"
+# SW_STUB_STOP_ON_LOG=<pid>: kill that stand-in "main shell" during this line, as a Stop landing
+# right now would, and return only once it is gone (dead or a zombie), so the test is deterministic.
+if [ -n "${SW_STUB_STOP_ON_LOG:-}" ]; then
+  kill "$SW_STUB_STOP_ON_LOG" 2>/dev/null
+  for _ in $(seq 100); do
+    st="$(cut -d' ' -f3 "/proc/$SW_STUB_STOP_ON_LOG/stat" 2>/dev/null)"
+    case "$st" in ''|Z|X) break ;; esac; sleep 0.01
+  done
+fi
