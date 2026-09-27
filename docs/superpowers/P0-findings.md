@@ -386,6 +386,27 @@ own process group (pgrp 1, sid 1), with only SIGQUIT ignored (`SigIgn` 0x4). The
   `stopped_lap_emits_nothing`, `follow_stopped_mid_report_no_escalation`, `ble_stopped_payload_starts_no_scan`,
   `ble_stopped_mid_scan_*`, `ble_stopped_mid_parse_*`, `ble_stopped_zombie_main_counts_as_gone`,
   `cleanup_leaves_a_live_laps_capture`, `main_ignores_inherited_main_pid`).
+- The health check (review item M5 of `e8af38a`): at startup and every `SW_HEALTH_EVERY` laps it copies
+  the recon DB and counts its rows twice, and it ran in the foreground, so a Stop there waited for the step
+  under way. On the Pager (33.6k rows, 2026-09-27) the check took 0.43–0.56 s, its longest step 0.24–0.36 s,
+  well inside the grace. But each count reads every row, and the DB grew from about 20k rows (09-22) to
+  33.6k (09-27), so a step would in time outlast the grace; the SIGKILL would then leave the DB copy in
+  RAM until the next start. The check now runs in the background under `wait` as well. A check left running
+  by a Stop gets a wrong answer: the exit trap removes its DB copy, the sqlite3 CLI then creates an empty
+  file for the second count, and a healthy DB reads as "not updating" (reproduced offline with a fresh DB,
+  and on the Pager against its real DB). Two fixes, each enough for that case: every WARN of the check goes
+  through `sw_stopped` (`_sw_health_warn`; `health_warns_only_through_the_stop_guard` rejects a bare `LOG`
+  in the check), and `sw_wifi_stale_db` reads a copy that vanished or came back empty as "unknown", not
+  "stale" (`stale_db_vanished_copy_*`). A test-local `sqlite3` holds the check's first count for 3 s on a
+  chosen call, so the Stop lands inside the check, and each run's log is read only after the check left
+  running has ended. Each part is mutation-proven: either check back in the foreground fails its own
+  `stop_during_{startup,periodic}_health_check_*` tests; the guard ignoring `sw_stopped` fails
+  `health_warn_silent_once_stopped` (the Stop tests alone cannot show it: there the copy is always gone
+  before the check decides, so the empty-copy check already answers "unknown", and the guard is what
+  silences a WARN that needs no copy, such as "btmon missing"); the empty-copy check removed, or moved
+  between the two counts, fails `stale_db_vanished_copy_not_flagged`; with both removed, the Stop tests'
+  "reports nothing" fail as well. The ledger prune stays in the foreground: it is builtins apart from
+  `date`, `mktemp` and `mv`, so the trap never waits long for it.
 
 **On-device probes of the fixes** (staging copies, the launcher's own header, the screen/sound/LED verbs
 shadowed, separate temp and loot dirs; the installed payload, the real loot and the real `/tmp` were untouched):
@@ -401,19 +422,32 @@ shadowed, separate temp and loot dirs; the installed payload, the real loot and 
 Menu launch of the `845b482` build: armed, the real Flipper on the first lap (one CSV row), the old
 `sw_ble.state` cleared at startup, and the stop logged `Payload completed` with `/tmp` left clean.
 
+The health-check fix on the Pager, the same way (no BLE scan, so the adapter of the payload running at
+the time was never touched; the check's first count held 3 s by a wrapper around the real `sqlite3`):
+
+| Case | Before (`e8af38a`) | After |
+|---|---|---|
+| The measured Stop inside the startup check | still alive 1 s after the SIGINT: SIGKILLed, the DB copy left in the temp dir | exit 0 **89 ms** after SIGINT; 0 verb calls after; no temp files |
+| The measured Stop inside a periodic check (`SW_HEALTH_EVERY=1`) | SIGKILLed after 1 s, the DB copy left behind | exit 0 **56 ms** after SIGINT; 0 verb calls after; no temp files |
+| The same Stop with either fix alone (the WARN guard, or the empty-copy check) | — | nothing after the Stop |
+| The same Stop with neither fix | — | a false "WARN: recon DB not updating" after the Stop (the real DB was fresh) |
+| The Stop inside the real startup check (nothing held) | exit 0 100 ms after SIGINT | exit 0 133 ms after SIGINT |
+
+The last row is one run each: both exit well inside the grace, and the figure depends on where in the
+check the Stop lands, so it does not mean the new code is slower.
+
 **Remaining:**
 - After a Stop mid-lap, the lap that goes on holds the payload's stdout/stderr until it winds down (up to
   one scan). The launcher removed its `payload_log` receiver 18 s after the probe's stop, when the probe's
   heartbeating child finally exited, so it waits for end-of-file there. Whether a relaunch inside that window
   works has not been tried (SIGKILLed laps on the older builds held it the same way).
-- A Stop inside a long foreground command (the health check's `cp` of the 4.8 MB DB and two `sqlite3`
-  counts, at startup and every `SW_HEALTH_EVERY` laps) can still miss the ~1 s grace; the startup sweep
-  covers what it leaves.
 - After a Stop mid-scan, the lap's `hcitool` runs out its `timeout` (up to 12 s) and then switches LE scanning
   off. A relaunch inside that window could lose part of its first scan with no WARN (reasoned from BlueZ, not
   measured).
 - A power cut or crash in the middle of a follow/snooze/ledger rewrite can strand a tiny
   `sw_track.db.XXXXXX` / `sw_snooze.db.XXXXXX` (in `/tmp`) or `seen.db.XXXXXX` (in the loot dir). These are not
-  swept. A Stop no longer does this, because the lap finishes the detection it is on before going quiet.
+  swept. A Stop no longer does this to the follow and snooze state, because the lap finishes the detection
+  it is on before going quiet. The ledger prune runs in the main shell, so a Stop in the milliseconds of its
+  rewrite can still leave a `seen.db.XXXXXX`.
 - Scope: SquachWatch no longer kills other programs' Bluetooth tools, but its per-lap
   `hciconfig down/reset/up` still interrupts their scans.

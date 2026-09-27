@@ -72,26 +72,32 @@ done
 SW_SIGS="$(sw_load_signatures "$SW_HOME/signatures.db")"
 SW_IGNORE_SET="$(sw_load_ignore "$SW_IGNORE_FILE")"
 
+# A health WARN, unless the payload has been stopped. sw_main runs the check in the background,
+# so a Stop can leave it running on its own, and what it finds then is wrong: the exit trap has
+# removed its recon DB copy, so a healthy DB reads as "not updating". Its lines would also land
+# on the next payload's screen.
+_sw_health_warn() { sw_stopped || LOG yellow "$1" 2>/dev/null; }
+
 # One-shot health signal. A silently dead source (missing sqlite3, unreadable recon DB,
 # or empty signatures) must NOT read as "all clear" — warn loudly. Returns nonzero if degraded.
 sw_healthcheck() {
   local degraded=0
   if ! command -v sqlite3 >/dev/null 2>&1; then
-    LOG yellow "WARN: sqlite3 missing — WiFi detection OFF (opkg install sqlite3-cli)" 2>/dev/null; degraded=1
+    _sw_health_warn "WARN: sqlite3 missing — WiFi detection OFF (opkg install sqlite3-cli)"; degraded=1
   elif [ ! -r "$SW_RECON_DB" ]; then
-    LOG yellow "WARN: recon DB unreadable ($SW_RECON_DB) — WiFi detection OFF" 2>/dev/null; degraded=1
+    _sw_health_warn "WARN: recon DB unreadable ($SW_RECON_DB) — WiFi detection OFF"; degraded=1
   fi
   if [ -z "$SW_SIGS" ]; then
-    LOG yellow "WARN: no signatures loaded — nothing will match" 2>/dev/null; degraded=1
+    _sw_health_warn "WARN: no signatures loaded — nothing will match"; degraded=1
   fi
   # A DB full of rows with none inside the recency window means recon stopped writing
   # (or the clock is wrong): every sweep would return zero and look like "all clear".
   if sw_wifi_stale_db "$SW_RECON_DB"; then
-    LOG yellow "WARN: recon DB not updating (no rows in last ${SW_RECENCY_SECS}s) — WiFi detection is blind" 2>/dev/null; degraded=1
+    _sw_health_warn "WARN: recon DB not updating (no rows in last ${SW_RECENCY_SECS}s) — WiFi detection is blind"; degraded=1
   fi
   # btmon is the only BLE data source (Tier-3): without it every BLE lap is empty.
   if ! command -v btmon >/dev/null 2>&1; then
-    LOG yellow "WARN: btmon missing — BLE detection OFF" 2>/dev/null; degraded=1
+    _sw_health_warn "WARN: btmon missing — BLE detection OFF"; degraded=1
   fi
   return $degraded
 }
@@ -159,7 +165,7 @@ sw_scan_once() {
 }
 
 # The scanner's temp files: BLE captures (sw_ble.XXXXXX), the BLE health state (sw_ble.state)
-# and the recon DB copies (sw_recon.XXXXXX, 4.8 MB each on a real Pager). All in RAM on the Pager.
+# and the recon DB copies (sw_recon.XXXXXX, 5.6 MB each on a real Pager, and growing). All in RAM on the Pager.
 sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_recon.* 2>/dev/null; }
 
 # On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE health state and any recon DB copy,
@@ -188,8 +194,8 @@ sw_main() {
   # sw_stopped's "main shell": always this one. An inherited value (a leftover export in an SSH
   # shell) would otherwise make every lap think the payload had been stopped.
   SW_MAIN_PID=$$
-  # Backstop for a run that ended without its trap (a Stop that landed in a long foreground
-  # command such as the health check, a crash, a power cut): clear its leftovers here. A stale
+  # Backstop for a run that ended without its trap (a crash, a power cut, a SIGKILL from
+  # something else, a Stop before the trap below was set): clear its leftovers here. A stale
   # capture or DB copy would stay in RAM, and a stale BLE health state would hide the WARN for
   # a scan that is still failing.
   sw_clear_tmp
@@ -197,21 +203,25 @@ sw_main() {
   mkdir -p "$(dirname "$SW_SEEN_FILE")"; touch "$SW_SEEN_FILE"
   sw_prune_ledger
   trap sw_cleanup EXIT INT TERM
-  if sw_healthcheck; then
+  sw_healthcheck &
+  if wait $!; then
     LOG green "SquachWatch armed — watching WiFi + BLE" 2>/dev/null
   else
     LOG yellow "SquachWatch running DEGRADED — some detection is OFF (see warnings above)" 2>/dev/null
   fi
   local lap=0
   while true; do
-    # The lap and the pause run in the background, under `wait`: the Pager's Stop (SIGINT, then
-    # SIGKILL ~1 s later, to this shell only) then runs sw_cleanup at once. Behind a foreground
-    # command the trap waited for the whole lap, so the SIGKILL usually came first. The lap that
-    # was running winds down by itself without reporting anything (sw_stopped).
+    # The lap, the health check and the pause run in the background, under `wait`: the Pager's
+    # Stop (SIGINT, then SIGKILL ~1 s later, to this shell only) then runs sw_cleanup at once.
+    # Behind a foreground command the trap waited for that command, so the SIGKILL usually came
+    # first. The step that was running winds down by itself without reporting anything (sw_stopped).
+    # The ledger prune stays in the foreground: it is builtins apart from date, mktemp and mv (rm
+    # and LOG on its failure paths), so the trap never waits more than milliseconds for it.
     sw_scan_once & wait $!
     lap=$((lap+1))
     if [ "$SW_HEALTH_EVERY" -gt 0 ] && [ $((lap % SW_HEALTH_EVERY)) -eq 0 ]; then
-      sw_healthcheck || LOG yellow "SquachWatch DEGRADED — some detection is OFF" 2>/dev/null
+      sw_healthcheck &
+      wait $! || LOG yellow "SquachWatch DEGRADED — some detection is OFF" 2>/dev/null
       sw_prune_ledger
     fi
     sleep "$SW_SLEEP" & wait $!

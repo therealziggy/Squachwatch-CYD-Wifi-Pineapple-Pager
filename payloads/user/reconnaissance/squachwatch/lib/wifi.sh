@@ -28,6 +28,9 @@ sw_wifi_stale_db() {
   now="$(date +%s)"
   total="$(sqlite3 "$tmp" "SELECT count(*) FROM ssid;" 2>/dev/null)"
   fresh="$(sqlite3 "$tmp" "SELECT count(*) FROM ssid WHERE time >= $(( now - SW_RECENCY_SECS ));" 2>/dev/null)"
+  # A copy that vanished mid-check (the exit trap after a Stop, a relaunch's startup sweep) left
+  # the counts an empty new file, which the sqlite3 CLI creates: that is "unknown", not "stale".
+  [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
   [ "${total:-0}" -gt 0 ] && [ "${fresh:-0}" -eq 0 ]
 }

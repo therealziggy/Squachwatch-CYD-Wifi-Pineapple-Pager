@@ -116,6 +116,22 @@ PATH="$_bin" sw_healthcheck; _hc=$?
 assert_eq "$_hc" "1" health_btmon_missing_rc
 assert_contains "$(cat "$SW_STUB_LOG")" "btmon missing" health_btmon_missing_warns
 rm -rf "$_bin"; unset _bin _stubs _hc
+# A health check left running by a Stop must stay silent (the Stop tests below), so every WARN it
+# prints goes through _sw_health_warn, never a bare LOG.
+assert_eq "$(declare -f sw_healthcheck | grep -cw LOG)" "0" health_warns_only_through_the_stop_guard
+# control: the same grep does see a LOG call in a function body
+assert_eq "$(declare -f _sw_health_warn | grep -cw LOG)" "1" health_guard_control_sees_log
+# ...and the guard itself: silent once the main shell is gone. The Stop tests below cannot show
+# this on their own: there the check's DB copy is always gone before it decides, so
+# sw_wifi_stale_db already answers "unknown". A WARN that needs no copy (btmon missing, say) is
+# decided by this guard alone.
+bash -c 'exit 0' & _hd=$!; wait "$_hd"
+: > "$SW_STUB_LOG"; SW_MAIN_PID="$_hd" _sw_health_warn "WARN: guard-probe"
+assert_empty "$(grep -F guard-probe "$SW_STUB_LOG")" health_warn_silent_once_stopped
+# control: the same call with the main shell alive does print
+SW_MAIN_PID=$$ _sw_health_warn "WARN: guard-probe"
+assert_contains "$(cat "$SW_STUB_LOG")" "guard-probe" health_warn_control_prints_while_running
+unset _hd
 
 # defaults, asserted in a CLEAN process (a lib-level := would otherwise shadow them)
 _defs="$(env -u SW_FOLLOW_SECS -u SW_FOLLOW_GAP -u SW_TRACK_FILE -u SW_IGNORE_FILE -u SW_LOOT_DIR -u SW_TMP_DIR \
@@ -386,6 +402,71 @@ assert_eq "$_inpause" "yes" stop_pause_control_was_in_the_pause
 assert_eq "$_alive/$_rc" "no/0" stop_during_pause_runs_trap_within_the_grace
 [ -n "$_pz" ] && kill $_pz 2>/dev/null     # the pause's own sleep, orphaned when the payload exited
 rm -rf "$_st" "$_sc"; unset -f _sw_start_real; unset _st _sc _sp _i _alive _rc _inpause _pz
+# ...and a Stop during the health check (review M5), at startup and every SW_HEALTH_EVERY laps. It
+# copies the recon DB and counts its rows twice: 0.43-0.56 s on the Pager (33.6k rows, 2026-09-27),
+# and each count reads every row, so it grows with the DB. In the foreground a Stop there waited
+# for the step under way, and a step longer than the grace ended in the SIGKILL, which left the
+# DB copy in RAM until the next start. A test-local sqlite3 answers the check's first count, then
+# marks the moment and holds its answer 3 s, on the call chosen by SW_SLOW_AT. The recon DB is
+# stale (rows, none in the window), so a check that runs on to its end warns.
+_hs="$(mktemp -d)"; mkdir "$_hs/bin"; _hsq="$(command -v sqlite3)"
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/tools/build_fixture_db.py" "$_hs/recon.db" >/dev/null
+python3 -c "import sqlite3,sys,time; c=sqlite3.connect(sys.argv[1]); c.execute('UPDATE ssid SET time=?',(int(time.time())-86400,)); c.commit()" "$_hs/recon.db"
+cat > "$_hs/bin/sqlite3" <<'EOF'
+#!/usr/bin/env bash
+out="$("$SW_SLOW_REAL" "$@")"; rc=$?
+if [ "${2:-}" = "SELECT count(*) FROM ssid;" ]; then
+  n=$(( $(cat "$SW_SLOW_DIR/calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$SW_SLOW_DIR/calls"
+  [ "$n" -eq "$SW_SLOW_AT" ] && { : > "$SW_SLOW_DIR/stalled"; sleep 3; }
+fi
+[ -n "$out" ] && printf '%s\n' "$out"
+exit "$rc"
+EOF
+chmod +x "$_hs/bin/sqlite3"
+_sw_start_slow() {   # $1 = which call of the first count stalls, $2 = SW_HEALTH_EVERY -> _sp
+  rm -rf "${_hs:?}/run" "$_hs/calls" "$_hs/stalled"; mkdir "$_hs/run"
+  PATH="$_hs/bin:$PATH" SW_SLOW_REAL="$_hsq" SW_SLOW_DIR="$_hs" SW_SLOW_AT="$1" \
+    SW_TEST_SOURCE= SW_SEEN_FILE="$_hs/run/seen.db" SW_LOOT_DIR="$_hs/run/loot" SW_TMP_DIR="$_hs/run" SW_SLEEP=1 \
+    SW_HEALTH_EVERY="$2" SW_BLE_CMD=true SW_RECON_DB="$_hs/recon.db" SW_RECENCY_SECS=600 \
+    python3 -c 'import os, signal as s, sys; [s.signal(n, s.SIG_DFL) for n in (s.SIGINT, s.SIGPIPE, s.SIGXFSZ)]; os.execvp("bash", ["bash"] + sys.argv[1:])' \
+    "$SW_ROOT/payload.sh" >/dev/null 2>&1 &
+  _sp=$!
+}
+_sw_stop_in_check() {   # the Pager's Stop inside the stalled check -> _inhc _log (before) _alive _rc _kids _left
+  for _i in $(seq 80); do [ -e "$_hs/stalled" ] && break; sleep 0.1; done
+  _inhc="$([ -e "$_hs/stalled" ] && echo yes || echo no)"
+  _kids="$(pgrep -P "$_sp")"
+  _log="$(cat "$SW_STUB_LOG")"; : > "$SW_STUB_LOG"
+  kill -INT "$_sp"
+  for _i in $(seq 20); do kill -0 "$_sp" 2>/dev/null || break; sleep 0.05; done    # the ~1 s grace
+  _alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
+  { kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
+  # the check that was under way goes on by itself: let it end before reading the log
+  for _i in $(seq 100); do
+    _left=; for _k in $_kids; do kill -0 "$_k" 2>/dev/null && _left=1; done
+    [ -z "$_left" ] && break; sleep 0.1
+  done
+}
+# every SW_HEALTH_EVERY laps (here every lap): the second check stalls
+: > "$SW_STUB_LOG"; _sw_start_slow 2 1; _sw_stop_in_check
+# control: the same run's startup check, on the same DB, did warn, so "nothing after the Stop"
+# below is not vacuous
+assert_contains "$_log" "not updating" stop_health_control_warns
+assert_eq "$_inhc" "yes" stop_periodic_health_control_was_in_the_check
+# control: the log below is read only after the check left running has ended (it was found, and
+# it is gone), so it had its chance to report
+assert_eq "$([ -n "$_kids" ] && [ -z "$_left" ] && echo yes)" "yes" stop_periodic_health_control_waited_for_the_check
+assert_eq "$_alive/$_rc" "no/0" stop_during_periodic_health_check_runs_trap_within_the_grace
+assert_empty "$(grep -E '^(LOG|ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_during_periodic_health_check_reports_nothing
+assert_empty "$(ls "$_hs/run" | grep -E '^sw_(ble|recon)\.')" stop_during_periodic_health_check_leaves_no_temp_files
+# at startup: the first check stalls
+: > "$SW_STUB_LOG"; _sw_start_slow 1 0; _sw_stop_in_check
+assert_eq "$_inhc" "yes" stop_startup_health_control_was_in_the_check
+assert_eq "$([ -n "$_kids" ] && [ -z "$_left" ] && echo yes)" "yes" stop_startup_health_control_waited_for_the_check
+assert_eq "$_alive/$_rc" "no/0" stop_during_startup_health_check_runs_trap_within_the_grace
+assert_empty "$(grep -E '^(LOG|ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_during_startup_health_check_reports_nothing
+assert_empty "$(ls "$_hs/run" | grep -E '^sw_(ble|recon)\.')" stop_during_startup_health_check_leaves_no_temp_files
+rm -rf "$_hs"; unset -f _sw_start_slow _sw_stop_in_check; unset _hs _hsq _sp _i _k _kids _left _inhc _log _alive _rc
 # REAL Flipper BLE Spam capture: name-only "Flipper" adverts from random MACs. Counts come from
 # the matcher, so the test pins behaviour, not today's numbers. _nf counts EVERY Flipper-kind
 # device (the user's real Flipper, if captured, is the same kind for the screen cap and CSV);

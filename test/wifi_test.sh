@@ -15,8 +15,8 @@ assert_contains "$recs" "wifi|70:C9:4E:11:22:33||-40" wifi_flock_record
 assert_contains "$recs" "wifi|AA:BB:CC:00:11:22|MyPineappleNet|-55" wifi_pine_record
 assert_contains "$recs" "wifi|F0:F5:A5:44:55:66||-70" wifi_client_record
 # The DB copy lives in ${SW_TMP_DIR:-/tmp}, like the BLE capture: payload.sh clears a copy that
-# the Pager's Stop stranded there (4.8 MB each on a real Pager), and a test can keep its copies
-# out of the dev box's /tmp.
+# the Pager's Stop stranded there (5.6 MB each on a real Pager, and growing), and a test can
+# keep its copies out of the dev box's /tmp.
 SW_TMPC="$(mktemp -d)"
 # control: a sweep with a usable temp dir returns records, and leaves no copy behind
 assert_contains "$(SW_TMP_DIR="$SW_TMPC" sw_wifi_records "$FIX/recon.db")" "wifi|70:C9:4E:11:22:33||-40" wifi_copy_tmp_dir_control
@@ -54,4 +54,20 @@ sw_wifi_stale_db "$SW_TMPD/stale.db"; assert_eq "$?" "0" stale_db_detected
 sw_wifi_stale_db "$SW_TMPD/recon.db"; assert_eq "$?" "1" stale_db_not_flagged_when_fresh
 SW_RECENCY_SECS=0
 sw_wifi_stale_db "$SW_TMPD/stale.db"; assert_eq "$?" "1" stale_db_off_when_window_off
+# A copy that vanishes mid-check (after a Stop the exit trap removes it; a relaunch's startup sweep
+# can too) must not read as "stale": the second count then opens an EMPTY new file, which the
+# sqlite3 CLI creates (the Pager's does too), and a healthy DB used to read as "not updating".
+# The function below removes the copy just as the second count opens it, as the trap could: the
+# last moment that still changes the answer, so a check made between the two counts misses it.
+SW_TMPV="$(mktemp -d)"
+( SW_RECENCY_SECS=600
+  sqlite3() {
+    case "$2" in *"WHERE time"*) rm -f "$1" && : > "$SW_TMPD/vanished" ;; esac
+    command sqlite3 "$@"
+  }
+  SW_TMP_DIR="$SW_TMPV" sw_wifi_stale_db "$SW_TMPD/recon.db" ); assert_eq "$?" "1" stale_db_vanished_copy_not_flagged
+# control: the copy really was removed mid-check (else the healthy DB above passes vacuously)
+assert_eq "$([ -e "$SW_TMPD/vanished" ] && echo yes)" "yes" stale_db_vanished_copy_control_removed
+assert_empty "$(ls -A "$SW_TMPV")" stale_db_vanished_copy_leaves_no_file
+rm -rf "$SW_TMPV"; unset SW_TMPV
 rm -rf "$SW_TMPD"; unset SW_TMPD recs_all recs_fresh
