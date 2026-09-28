@@ -109,6 +109,14 @@ sw_healthcheck() {
   if ! command -v btmon >/dev/null 2>&1; then
     _sw_health_warn "WARN: btmon missing — BLE detection OFF"; degraded=1
   fi
+  # The evil-twin check needs each network's security from the recon DB. A DB that stops recording
+  # it (a firmware update, say) would leave that check finding nothing, forever, and reading as "all
+  # clear" (spec 2026-09-29 §7). Asked only when the DB itself is usable (the WARNs above cover the
+  # rest), and never once stopped: a check left running by a Stop starts no new DB copy.
+  if [ "${SW_EVIL_TWIN:-0}" = 1 ] && command -v sqlite3 >/dev/null 2>&1 && [ -r "$SW_RECON_DB" ] \
+     && ! sw_stopped && sw_evil_twin_blind "$SW_RECON_DB"; then
+    _sw_health_warn "WARN: evil-twin check is blind (the recon DB no longer records network security)"; degraded=1
+  fi
   return $degraded
 }
 

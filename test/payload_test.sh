@@ -52,6 +52,39 @@ SW_RECON_DB="$SW_STALED/recon.db" SW_RECENCY_SECS=0 sw_healthcheck; assert_eq "$
 assert_empty "$(grep WARN "$SW_STUB_LOG")" health_stale_control_silent
 rm -rf "$SW_STALED"; unset SW_STALED
 
+# health signal: a recon DB that stops recording network security leaves the evil-twin check blind
+# (spec 2026-09-29 §7): it would find nothing, forever, and read as "all clear"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/recon_db.sh"   # sw_test_recon_db
+_hb2="$(mktemp -d)"
+sw_test_recon_db "$_hb2/null.db" "8,ACDE48000001,,0,-60,30,HomeNet"
+: > "$SW_STUB_LOG"
+SW_RECON_DB="$_hb2/null.db" SW_RECENCY_SECS=600 sw_healthcheck; assert_eq "$?" "1" health_twin_blind_rc
+assert_contains "$(cat "$SW_STUB_LOG")" "evil-twin check is blind" health_twin_blind_warns
+# control: the same DB with the check switched off says nothing about it
+: > "$SW_STUB_LOG"
+SW_EVIL_TWIN=0 SW_RECON_DB="$_hb2/null.db" SW_RECENCY_SECS=600 sw_healthcheck
+assert_empty "$(grep -F 'evil-twin' "$SW_STUB_LOG")" health_twin_blind_quiet_when_off
+# control: a DB that records security is healthy and silent
+sw_test_recon_db "$_hb2/ok.db" "8,ACDE48000001,17184063752,0,-60,30,HomeNet"
+: > "$SW_STUB_LOG"
+SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck; assert_eq "$?" "0" health_twin_ok_rc
+assert_empty "$(grep WARN "$SW_STUB_LOG")" health_twin_ok_silent
+# an unreadable DB gets its own WARN only, not a second, evil-twin one
+: > "$SW_STUB_LOG"
+SW_RECON_DB=/nonexistent/recon.db sw_healthcheck
+assert_contains "$(cat "$SW_STUB_LOG")" "WiFi detection OFF" health_unreadable_control_warns
+assert_empty "$(grep -F 'evil-twin' "$SW_STUB_LOG")" health_unreadable_no_twin_warn
+# a check left running by a Stop starts no new DB copy for the blind-spot count
+bash -c 'exit 0' & _hbd=$!; wait "$_hbd"
+( sw_recon_snapshot() { echo called >> "$_hb2/calls"; return 1; }
+  SW_MAIN_PID="$_hbd" SW_RECON_DB="$_hb2/null.db" SW_RECENCY_SECS=600 sw_healthcheck >/dev/null 2>&1 )
+assert_eq "$( { cat "$_hb2/calls" 2>/dev/null; } | grep -c called)" "0" health_stopped_check_makes_no_twin_copy
+# control: the same check while the payload runs does ask for one
+( sw_recon_snapshot() { echo called >> "$_hb2/calls"; return 1; }
+  SW_RECON_DB="$_hb2/null.db" SW_RECENCY_SECS=600 sw_healthcheck >/dev/null 2>&1 )
+assert_eq "$( { cat "$_hb2/calls" 2>/dev/null; } | grep -c called)" "1" health_running_check_asks_for_a_copy
+rm -rf "$_hb2"; unset _hb2 _hbd
+
 # sw_cleanup removes the scanner's temp files and kills NOTHING by name: `killall btmon` would
 # also stop another program's btmon or hcitool (another payload, an SSH session). The scan's
 # own helpers end by themselves (ble_test.sh: ble_orphans_end_by_themselves). killall and
@@ -111,11 +144,14 @@ assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" "AA:00:00:00:00:01" paylo
 # only what sw_healthcheck needs and no btmon at all.
 _bin="$(mktemp -d)"; _stubs="$(cd "$(dirname "${BASH_SOURCE[0]}")/stubs" && pwd)"
 ln -s "$_stubs/LOG" "$_bin/LOG"; ln -s "$_stubs/sqlite3" "$_bin/sqlite3"; ln -s "$(command -v bash)" "$_bin/bash"
+# ...and the everyday tools its DB checks use (the evil-twin blind-spot count copies the DB and reads
+# the clock; the sqlite3 stand-in runs python3), so btmon is the only thing missing
+for _t in cp date mktemp rm python3; do ln -s "$(command -v "$_t")" "$_bin/$_t"; done
 : > "$SW_STUB_LOG"
 PATH="$_bin" sw_healthcheck; _hc=$?
 assert_eq "$_hc" "1" health_btmon_missing_rc
 assert_contains "$(cat "$SW_STUB_LOG")" "btmon missing" health_btmon_missing_warns
-rm -rf "$_bin"; unset _bin _stubs _hc
+rm -rf "$_bin"; unset _bin _stubs _hc _t
 # A health check left running by a Stop must stay silent (the Stop tests below), so every WARN it
 # prints goes through _sw_health_warn, never a bare LOG.
 assert_eq "$(declare -f sw_healthcheck | grep -cw LOG)" "0" health_warns_only_through_the_stop_guard

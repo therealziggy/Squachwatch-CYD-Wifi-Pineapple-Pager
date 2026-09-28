@@ -105,3 +105,34 @@ assert_eq "$(cksum < "$_d")" "$_before" scan_leaves_copy_unchanged
 
 rm -rf "$_et"; unset _et _etn _d _o _w _old _fake _n _before _wpa2; unset -f _et_db _et_scan
 unset SW_RECENCY_SECS
+
+# --- the blind-spot check (spec 2026-09-29 §7) ---
+_eb="$(mktemp -d)"; SW_RECENCY_SECS=600
+sw_test_recon_db "$_eb/ok.db" "8,ACDE48000001,17184063752,0,-60,30,HomeNet" "8,021122334455,0,0,-38,20,Cafe"
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/ok.db"; assert_eq "$?" "1" blind_no_on_healthy_db
+sw_test_recon_db "$_eb/null.db" "8,ACDE48000001,,0,-60,30,HomeNet" "8,021122334455,,0,-38,20,Cafe"
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/null.db"; assert_eq "$?" "0" blind_yes_without_security_values
+# a recon DB whose ssid table has no encryption column any more (a firmware change)
+python3 - "$_eb/nocol.db" <<'PY'
+import sqlite3, sys, time
+c = sqlite3.connect(sys.argv[1])
+c.execute("CREATE TABLE ssid(hash INT PRIMARY KEY, type INT, bssid TEXT, ssid BLOB, hidden INT, time INT, signal INT)")
+c.execute("INSERT INTO ssid VALUES(1, 8, ?, ?, 0, ?, -60)", (b"ACDE48000001", b"HomeNet", int(time.time()) - 30))
+c.commit()
+PY
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/nocol.db"; assert_eq "$?" "0" blind_yes_when_column_gone
+# no rows in the window: no verdict (the stale-DB check reports that one)
+sw_test_recon_db "$_eb/old.db" "8,ACDE48000001,,0,-60,5000,HomeNet"
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/old.db"; assert_eq "$?" "1" blind_no_verdict_without_rows
+# rows the check skips (hidden radios) are not counted either: the count reads what the check reads
+sw_test_recon_db "$_eb/hid.db" "8,ACDE48000001,,1,-60,30,HomeNet"
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/hid.db"; assert_eq "$?" "1" blind_no_verdict_on_rows_the_check_skips
+# no DB: no verdict (the health check's unreadable-DB WARN covers it)
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/missing.db"; assert_eq "$?" "1" blind_no_verdict_without_db
+# A copy that vanishes during the check (the exit trap after a Stop) is "unknown", never "blind":
+# this sqlite3 removes the copy just before the count opens it. The DB would read as blind otherwise.
+( sqlite3() { case "$*" in *"count(encryption)"*) rm -f "$2"; : > "$_eb/vanished" ;; esac; command sqlite3 "$@"; }
+  SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/null.db" ); assert_eq "$?" "1" blind_vanished_copy_is_unknown
+assert_eq "$([ -e "$_eb/vanished" ] && echo yes)" "yes" blind_vanished_control_removed
+assert_empty "$(ls "$_eb" | grep '^sw_recon\.')" blind_leaves_no_copy
+rm -rf "$_eb"; unset _eb SW_RECENCY_SECS

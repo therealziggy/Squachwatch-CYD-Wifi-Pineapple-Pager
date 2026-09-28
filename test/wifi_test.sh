@@ -99,7 +99,7 @@ assert_eq "$([ -e "$_snap" ] && echo recreated || echo absent)" "absent" records
 SW_TMP_DIR="$_sn" sw_recon_snapshot "$_sn/no-such.db"; assert_eq "$?" "1" snapshot_missing_db_rc
 assert_empty "$REPLY" snapshot_missing_db_reply_empty
 assert_empty "$(ls -A "$_sn")" snapshot_missing_db_leaves_nothing
-SW_TMP_DIR="$_sn/missing" sw_recon_snapshot "$FIX/recon.db"; assert_eq "$?" "1" snapshot_no_tmp_dir_rc
+SW_TMP_DIR="$_sn/missing" sw_recon_snapshot "$FIX/recon.db" 2>/dev/null; assert_eq "$?" "1" snapshot_no_tmp_dir_rc
 rm -rf "$_sn"; unset _sn _snap
 
 # --- a network name cannot forge a second record (reproduced 2026-09-29) ---

@@ -72,3 +72,24 @@ sw_evil_twin_scan() {
     done
   }
 }
+
+sw_evil_twin_blind() {
+  # $1 = recon DB (default SW_RECON_DB). True (0) when the evil-twin check cannot work: the window
+  # holds named, visible beacon rows but none carries a security value, or the count fails on a
+  # readable copy (a firmware update renamed the column, say). The check would then find nothing,
+  # forever, and read as "all clear". False (1) = fine, or no verdict: no copy, no rows in the
+  # window (the stale-DB check reports that one), or the copy vanished during the check (the exit
+  # trap after a Stop), which is "unknown", never "blind".
+  local win now rows tmp out rc named secured
+  _sw_evil_twin_window; win="$REPLY"
+  now="$(date +%s)"; _sw_evil_twin_rows "$(( now - win ))"; rows="$REPLY"
+  sw_recon_snapshot "${1:-$SW_RECON_DB}" || return 1
+  tmp="$REPLY"
+  out="$(sqlite3 -readonly "$tmp" "SELECT count(*) || char(9) || count(encryption) FROM ssid WHERE $rows;" 2>/dev/null)"; rc=$?
+  [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
+  [ "$rc" -eq 0 ] || return 0
+  named="${out%%$'\t'*}"; secured="${out#*$'\t'}"
+  [[ "$named" =~ ^[0-9]+$ ]] && [[ "$secured" =~ ^[0-9]+$ ]] || return 0
+  [ "$named" -gt 0 ] && [ "$secured" -eq 0 ]
+}
