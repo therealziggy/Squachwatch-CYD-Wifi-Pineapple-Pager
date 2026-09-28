@@ -20,7 +20,7 @@
 - **No `:=` defaults in `lib/*.sh`.** `payload.sh` sources its libs BEFORE its config block, so a lib default would win. Read variables as `${VAR:-x}` at the point of use.
 - **sqlite3 output:** build ONE column per row, joined with `char(9)` in SQL, with the free-text field (the network name) LAST. The Pager's CLI separates columns with `|`, the test stand-in with TAB. The CLI prints a line break inside a value as it is, so names get `replace(replace(CAST(... AS TEXT), char(10), ''), char(13), '')` in SQL.
 - **Reads of a recon DB copy use `sqlite3 -readonly`.** On a missing file it fails and creates nothing, while a plain `sqlite3` leaves an empty 0-byte file. Both behaviours were checked on the Pager on 2026-09-29.
-- **Tests:** every "stays silent" assertion has a positive control (a sibling case that fires on the same data). Test files are `source`d into one shell by `test/run.sh`, so clean up your variables and functions at the end of each block. `bash test/run.sh` must end with `FAIL=0`. The baseline before this plan is `PASS=690 FAIL=0` (about 80 s).
+- **Tests:** every "stays silent" assertion has a positive control (a sibling case that fires on the same data). Test files are `source`d into one shell by `test/run.sh`, so clean up your variables and functions at the end of each block. `bash test/run.sh` must end with `FAIL=0`. The baseline before this plan is `PASS=690 FAIL=0` (about 80 s). The suite's output must stay free of stray lines: `bash test/run.sh 2>&1 | grep -v -E '^(== |  FAIL|-----|PASS=)'` prints nothing, as it did at the baseline.
 - **Functions the payload's main shell runs** (`sw_main`, `sw_prune_ledger`, `sw_seen_prune`, `sw_clear_tmp`, `sw_log_init`, `sw_cleanup`) never use `continue` or `break`. There is a static test for this. Code in the lap and in the new lib may use them.
 
 ## Plan additions beyond the spec (the spec is amended in Task 5)
@@ -810,7 +810,7 @@ Expected last output: `1`
 - Modify: `$SQ/lib/eviltwin.sh` (append `sw_evil_twin_blind`)
 - Modify: `$SQ/payload.sh` (`sw_healthcheck`)
 - Modify: `README.md` (health paragraph)
-- Test: `test/eviltwin_test.sh` (append), `test/payload_test.sh`
+- Test: `test/eviltwin_test.sh` (append), `test/payload_test.sh`, `test/wifi_test.sh` (one-line output fix)
 
 **Interfaces:**
 - Consumes: `_sw_evil_twin_window` and `_sw_evil_twin_rows` (Task 2), `sw_recon_snapshot` (Task 1), `sw_stopped` (`lib/ble.sh`), `_sw_health_warn` (`payload.sh`).
@@ -890,6 +890,37 @@ assert_eq "$( { cat "$_hb2/calls" 2>/dev/null; } | grep -c called)" "1" health_r
 rm -rf "$_hb2"; unset _hb2 _hbd
 ```
 
+Also keep the suite's output clean (Global Constraints). Two edits to existing tests:
+
+(a) In `test/payload_test.sh`, the "btmon missing" test builds a PATH with only `LOG`, `sqlite3` and `bash`. Once the blind-spot count runs inside `sw_healthcheck`, it needs `cp`, `date`, `mktemp`, `rm` and `python3` (the sqlite3 stand-in runs python3); without them it prints `date: command not found` and `mktemp: command not found`. Replace the line
+
+```bash
+ln -s "$_stubs/LOG" "$_bin/LOG"; ln -s "$_stubs/sqlite3" "$_bin/sqlite3"; ln -s "$(command -v bash)" "$_bin/bash"
+```
+
+with
+
+```bash
+ln -s "$_stubs/LOG" "$_bin/LOG"; ln -s "$_stubs/sqlite3" "$_bin/sqlite3"; ln -s "$(command -v bash)" "$_bin/bash"
+# ...and the everyday tools its DB checks use (the evil-twin blind-spot count copies the DB and reads
+# the clock; the sqlite3 stand-in runs python3), so btmon is the only thing missing
+for _t in cp date mktemp rm python3; do ln -s "$(command -v "$_t")" "$_bin/$_t"; done
+```
+
+and change that block's cleanup line `rm -rf "$_bin"; unset _bin _stubs _hc` to `rm -rf "$_bin"; unset _bin _stubs _hc _t`.
+
+(b) In `test/wifi_test.sh`, Task 1's test `snapshot_no_tmp_dir_rc` lets `mktemp` print its expected failure. Replace
+
+```bash
+SW_TMP_DIR="$_sn/missing" sw_recon_snapshot "$FIX/recon.db"; assert_eq "$?" "1" snapshot_no_tmp_dir_rc
+```
+
+with
+
+```bash
+SW_TMP_DIR="$_sn/missing" sw_recon_snapshot "$FIX/recon.db" 2>/dev/null; assert_eq "$?" "1" snapshot_no_tmp_dir_rc
+```
+
 - [ ] **Step 2: Run the tests to see them fail**
 
 Run: `bash test/run.sh 2>&1 | grep -E 'FAIL:|PASS='`
@@ -950,14 +981,14 @@ with
 - [ ] **Step 5: Run the whole suite**
 
 Run: `bash test/run.sh 2>&1 | tail -3`
-Expected: `PASS=799 FAIL=0` (781 + 9 in `eviltwin_test.sh` + 9 in `payload_test.sh`). The Stop tests that stall the health check (`stop_during_periodic_health_check_*`, `stop_during_startup_health_check_*`) and `health_warns_only_through_the_stop_guard` must stay green.
+Expected: `PASS=799 FAIL=0` (781 + 9 in `eviltwin_test.sh` + 9 in `payload_test.sh`). The Stop tests that stall the health check (`stop_during_periodic_health_check_*`, `stop_during_startup_health_check_*`) and `health_warns_only_through_the_stop_guard` must stay green. Then `bash test/run.sh 2>&1 | grep -v -E '^(== |  FAIL|-----|PASS=)'` must print nothing.
 
 - [ ] **Step 6: README.** In the paragraph that starts `If the recon DB stops updating, every sweep would return zero rows`, append this sentence at its end: ` The same goes for the evil-twin check: if the recon DB stops recording each network's security (after a firmware change, say), it warns "evil-twin check is blind" instead of quietly finding nothing.`
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh payloads/user/reconnaissance/squachwatch/payload.sh test/eviltwin_test.sh test/payload_test.sh README.md
+git add payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh payloads/user/reconnaissance/squachwatch/payload.sh test/eviltwin_test.sh test/payload_test.sh test/wifi_test.sh README.md
 TZ=UTC git -c user.name=Ziggy -c user.email=79704039+therealziggy@users.noreply.github.com commit -F - <<'EOF'
 health: warn when the evil-twin check goes blind
 
@@ -970,6 +1001,10 @@ but no values, or a failing count on a readable copy, is
 "WARN: evil-twin check is blind" and DEGRADED. A copy that vanished
 (a Stop) is "unknown"; an unreadable DB keeps its own WARN only; a
 stopped check starts no new copy.
+
+The suite's output is clean again: the btmon-missing test's PATH gets
+the everyday tools the DB checks use (only btmon is missing), and the
+snapshot test with no temp dir silences mktemp's expected failure.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
