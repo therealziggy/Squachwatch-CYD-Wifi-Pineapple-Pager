@@ -19,7 +19,7 @@ SW_HOME="${PAYLOAD_HOME:-$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )}"
 SW_HOME="${SW_HOME%/}"
 # Without its libs every lap is a silent no-op (each step is "command not found"), so a
 # lib that won't load stops the payload loudly instead of letting it run blind.
-for l in match wifi ble alert log follow ignore snooze; do
+for l in match wifi ble alert log follow ignore snooze eviltwin; do
   . "$SW_HOME/lib/$l.sh" || { LOG red "ERROR: can't load $SW_HOME/lib/$l.sh — SquachWatch NOT running" 2>/dev/null; exit 1; }
 done
 
@@ -74,6 +74,10 @@ done
 # flood), then one "...and N more <label>" line, so a flood cannot scroll everything else off
 # the screen. The CSV keeps every row. 0 = no cap.
 : "${SW_LOG_PER_KIND:=3}"
+# Evil-twin check (spec 2026-09-29): a network name offered both open and password-protected within
+# the recency window (600 s when that window is off) reports each open copy as an evil twin, with a
+# full alert like any other high-confidence find. 1 = on; anything else turns it off.
+: "${SW_EVIL_TWIN:=1}"
 
 SW_SIGS="$(sw_load_signatures "$SW_HOME/signatures.db")"
 SW_IGNORE_SET="$(sw_load_ignore "$SW_IGNORE_FILE")"
@@ -140,10 +144,19 @@ _sw_emit_capped() {
 }
 
 sw_scan_once() {
-  local now; now="$(date +%s)"
-  { sw_wifi_records "$SW_RECON_DB"; _sw_ble_records; } \
-    | sw_match_stream "$SW_SIGS" \
-    | {
+  local now snap=""; now="$(date +%s)"
+  # One recon DB copy per lap (6 MB on a real Pager), shared by the evil-twin check and the WiFi
+  # signature sweep (spec 2026-09-29 §6.2). No copy (an unreadable DB, a full /tmp): both are
+  # skipped this lap, and the health check says why.
+  sw_recon_snapshot "$SW_RECON_DB" && snap="$REPLY"
+  {
+    # Evil twins are finished detections, so they skip the matcher (spec 2026-09-29 §6.3). They
+    # come first: the check is one query, and its alert need not wait for the BLE scan.
+    [ -n "$snap" ] && [ "${SW_EVIL_TWIN:-0}" = 1 ] && sw_evil_twin_scan "$snap" "$now"
+    # The copy goes as soon as the WiFi sweep has read it, before the BLE scan.
+    { if [ -n "$snap" ]; then sw_wifi_records_in "$snap"; rm -f "$snap"; fi; _sw_ble_records; } \
+      | sw_match_stream "$SW_SIGS"
+  } | {
         # Per-lap screen counters (spec 2026-09-23 §5). They live in this pipeline subshell,
         # so they reset every lap.
         local -A _lap_shown=() _lap_hidden=() _lap_label=() _lap_class=()
@@ -168,6 +181,8 @@ sw_scan_once() {
           LOG "$(sw_color_for "${_lap_class[$key]}")" "...and ${_lap_hidden[$key]} more ${_lap_label[$key]}" 2>/dev/null
         done
       }
+  # normally removed already, right after the WiFi sweep; this covers a lap that ended early
+  [ -n "$snap" ] && rm -f "$snap"
 }
 
 # The scanner's temp files: BLE captures (sw_ble.XXXXXX), the BLE health state (sw_ble.state)

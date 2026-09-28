@@ -225,6 +225,20 @@ assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Flipper Zero" nolog_keeps_alert
 assert_contains "$(cat "$_L5/detections.csv")" "hacker_flipper" nolog_keeps_row
 rm -rf "$_L5" "$_s5"; unset _L5 _s5
 
+# An evil twin names the copied network on its screen line and in its alert (spec 2026-09-29 §6.4)
+_L6="$(mktemp -d)"; sw_log_init "$_L6"; _s6="$(mktemp)"; : > "$_s6"; : > "$SW_STUB_LOG"
+sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|HomeNet|-38" 1000 600 "$_s6" "$_L6"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG cyan Evil twin 'HomeNet' 02:11:22:33:44:55 -38dBm" twin_line_names_network
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Evil twin 'HomeNet'" twin_alert_names_network
+assert_contains "$(cat "$SW_STUB_LOG")" "LED R 255" twin_alert_red_led
+assert_contains "$(tail -1 "$_L6/detections.csv")" ',evil_twin,"Evil twin",high,attacker,wifi,02:11:22:33:44:55,"HomeNet",-38,' twin_csv_row
+# control: every other kind keeps its plain label
+: > "$SW_STUB_LOG"
+sw_emit "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:00:00:09|Flipper aa|-60" 1000 600 "$_s6" "$_L6"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG cyan Flipper Zero 80:E1:26:00:00:09 -60dBm" plain_label_line_unchanged
+assert_empty "$(grep -F "'Flipper aa'" "$SW_STUB_LOG")" plain_label_never_quotes_ident
+rm -rf "$_L6" "$_s6"; unset _L6 _s6
+
 # --- ledger pruning (spec 2026-09-23 §7) ---
 _P="$(mktemp -d)"; _pf="$_P/seen.db"
 printf '%s\n' 'AA:00:00:00:00:01|old_cat|1000' 'AA:00:00:00:00:02|new_cat|1500' '*|kind_old|1000' '*|kind_new|1550' 'garbage-line' 'AA:00:00:00:00:03|bad_ts|12x4' > "$_pf"

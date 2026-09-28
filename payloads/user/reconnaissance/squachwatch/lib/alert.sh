@@ -69,6 +69,10 @@ $det
 EOF
   local color; color="$(sw_color_for "$tclass")"
   local rssitag=""; [ -n "$rssi" ] && rssitag=" ${rssi}dBm"
+  # What the screen line and the alert call it. An evil twin is about WHICH network is being
+  # copied, so it names that network: "Evil twin 'HomeNet'" (spec 2026-09-29 §6.4).
+  local shown="$label"
+  [ "$cat" = evil_twin ] && shown="$label '$ident'"
   # The cooldown is evaluated ONCE, for every confidence level, and gates persistence.
   # It used to gate only the alert, so the loot CSV gained a row per device PER LAP
   # (~every 15s, unbounded) and a device matching two rules wrote two identical rows.
@@ -79,7 +83,7 @@ EOF
   # signal, and unlike the CSV it does not accumulate on disk. A lap loop that has already
   # shown enough lines of this kind sets SW_EMIT_NOLOG=1 for the call (spec 2026-09-23 §5):
   # only this line is skipped, never the CSV row or the alert.
-  [ -n "${SW_EMIT_NOLOG:-}" ] || LOG "$color" "$label $mac$rssitag" 2>/dev/null
+  [ -n "${SW_EMIT_NOLOG:-}" ] || LOG "$color" "$shown $mac$rssitag" 2>/dev/null
   # Full alert + hardware additionally requires high confidence, and (when snooze is on)
   # the device must not have used up its free alerts without coming closer.
   if [ "$fresh" -eq 0 ] && [ "$conf" = high ]; then
@@ -107,7 +111,7 @@ EOF
     if [ "$gate" -ne 1 ]; then
       [ "$gate" -eq 2 ] && note="
 snoozing: re-alerts only if closer"
-      ALERT "$label
+      ALERT "$shown
 $mac$rssitag$note" 2>/dev/null
       sw_hw_notify "$tclass"
     fi

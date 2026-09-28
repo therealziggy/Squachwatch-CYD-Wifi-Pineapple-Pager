@@ -599,10 +599,59 @@ assert_eq "$(grep -c ',hacker_flipper,' "$SW_LOOT_DIR/detections.csv")" "$_nf" s
 assert_contains "$(grep -A1 '^ALERT Flipper Zero' "$SW_STUB_LOG")" "80:E1:26:FA:D6:22" spam_leading_zero_control_real_flipper_still_alerts
 unset _bs _dets _nf _nn
 # --- end noise control ---
+
+# --- evil twin in the lap (spec 2026-09-29) ---
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/recon_db.sh"   # sw_test_recon_db
+_tw="$(mktemp -d)"; _twdb="$_tw/recon.db"
+sw_test_recon_db "$_twdb" "8,ACDE48000001,17184063752,0,-60,30,HomeNet" "8,021122334455,0,0,-38,20,HomeNet"
+_tw_reset() { rm -f "$SW_LOOT_DIR/detections.csv"; : > "$SW_SEEN_FILE"; sw_log_init "$SW_LOOT_DIR"; : > "$SW_STUB_LOG"; }
+# a lap over the twin DB plus one BLE Flipper (proof the lap ran), with a fresh ledger and CSV
+_tw_lap() { _tw_reset; SW_RECON_DB="$_twdb" SW_BLE_CMD="sw_test_btmon_devs C1:00:00:00:00 1 'Flipper x' -55" sw_scan_once; }
+_tw_lap
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Evil twin 'HomeNet'" lap_twin_alerts
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG cyan Evil twin 'HomeNet' 02:11:22:33:44:55 -38dBm" lap_twin_screen_line
+assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" ',evil_twin,"Evil twin",high,attacker,wifi,02:11:22:33:44:55,"HomeNet",-38,' lap_twin_csv_row
+assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_recon\.')" lap_leaves_no_db_copy
+# ONE copy per lap: with rm switched off, the copies a lap makes are all still there to count
+_tw1="$(mktemp -d)"
+( export SW_TMP_DIR="$_tw1"; rm() { :; }; SW_RECON_DB="$_twdb" SW_BLE_CMD=true sw_scan_once >/dev/null 2>&1 )
+assert_eq "$(ls -A "$_tw1" | grep -c '^sw_recon\.')" "1" lap_makes_one_db_copy
+rm -rf "$_tw1"; unset _tw1
+# SW_EVIL_TWIN=0 turns the check off; the same lap still reports the Flipper
+SW_EVIL_TWIN=0 _tw_lap
+assert_empty "$(grep -F 'Evil twin' "$SW_STUB_LOG")" lap_twin_off_silent
+assert_contains "$(cat "$SW_STUB_LOG")" "Flipper" lap_twin_off_control_lap_ran
+# ignore.txt silences an open copy by its MAC
+SW_IGNORE_SET=" 02:11:22:33:44:55 " _tw_lap
+assert_empty "$(grep -F 'Evil twin' "$SW_STUB_LOG")" lap_twin_ignored_by_mac
+assert_contains "$(cat "$SW_STUB_LOG")" "Flipper" lap_twin_ignore_control_lap_ran
+# three open copies in one lap: every one gets its CSV row, the kind buzzes once
+sw_test_recon_db "$_twdb" "8,021122334466,0,0,-50,20,HomeNet" "8,ACDE48000009,17184063752,0,-60,30,Office" "8,021122334477,0,0,-45,20,Office"
+_tw_lap
+assert_eq "$(grep -c ',evil_twin,' "$SW_LOOT_DIR/detections.csv")" "3" lap_twins_each_get_a_row
+assert_eq "$(grep -c '^ALERT Evil twin' "$SW_STUB_LOG")" "1" lap_twins_buzz_once
+# the screen cap: one twin line, then "...and 2 more Evil twin"
+SW_LOG_PER_KIND=1 _tw_lap
+assert_eq "$(grep -c "^LOG cyan Evil twin '" "$SW_STUB_LOG")" "1" lap_twin_screen_cap
+assert_contains "$(cat "$SW_STUB_LOG")" "...and 2 more Evil twin" lap_twin_screen_cap_more_line
+# a hostile name reaches the CSV guarded, so a spreadsheet will not run it
+sw_test_recon_db "$_tw/hostile.db" "8,ACDE48000001,17184063752,0,-60,30,=HYPERLINK(1)" "8,021122334455,0,0,-38,20,=HYPERLINK(1)"
+_tw_reset; SW_RECON_DB="$_tw/hostile.db" SW_BLE_CMD=true sw_scan_once
+assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" ",\"'=HYPERLINK(1)\"," lap_twin_csv_formula_guarded
+# a stopped lap reports no twin (the Pager's Stop, above); control: lap_twin_alerts
+bash -c 'exit 0' & _twd=$!; wait "$_twd"
+_tw_reset; SW_MAIN_PID="$_twd" SW_RECON_DB="$_twdb" SW_BLE_CMD=true sw_scan_once
+assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE|LOG) ' "$SW_STUB_LOG")" stopped_lap_reports_no_twin
+assert_eq "$(wc -l < "$SW_LOOT_DIR/detections.csv" | tr -d ' ')" "1" stopped_lap_writes_no_twin_row
+# the default is ON, read in a clean process (a test that sets a value cannot see its default)
+assert_eq "$(env -u SW_EVIL_TWIN bash -c 'SW_TEST_SOURCE=1 . "$1"/payload.sh >/dev/null 2>&1; echo "$SW_EVIL_TWIN"' _ "$SW_ROOT")" "1" payload_default_evil_twin_on
+rm -rf "$_tw"; unset _tw _twdb _twd; unset -f _tw_lap _tw_reset
+# --- end evil twin ---
+
 rm -rf "$SW_LOOT_DIR" "$SW_SEEN_FILE"
 
 rm -rf "$SW_TMP_DIR"
-unset SW_RECON_DB SW_BLE_CMD SW_LOOT_DIR SW_SEEN_FILE SW_TEST_SOURCE SW_RECENCY_SECS SW_FOLLOW_SECS SW_FOLLOW_GAP SW_TRACK_FILE SW_IGNORE_FILE SW_IGNORE_SET SW_TMP_DIR SW_SNOOZE_AFTER SW_SNOOZE_MARGIN_DB SW_SNOOZE_RESET_SECS SW_SNOOZE_FILE SW_KIND_COOLDOWN SW_LOG_PER_KIND SW_FOLLOW_MIN_RSSI
+unset SW_RECON_DB SW_BLE_CMD SW_LOOT_DIR SW_SEEN_FILE SW_TEST_SOURCE SW_RECENCY_SECS SW_FOLLOW_SECS SW_FOLLOW_GAP SW_TRACK_FILE SW_IGNORE_FILE SW_IGNORE_SET SW_TMP_DIR SW_SNOOZE_AFTER SW_SNOOZE_MARGIN_DB SW_SNOOZE_RESET_SECS SW_SNOOZE_FILE SW_KIND_COOLDOWN SW_LOG_PER_KIND SW_FOLLOW_MIN_RSSI SW_EVIL_TWIN
 
 # --- config defaults (regression: a lib default must not pre-empt the payload's) ---
 # lib/wifi.sh used to run `: "${SW_RECENCY_SECS:=0}"`, and payload.sh sources its libs
