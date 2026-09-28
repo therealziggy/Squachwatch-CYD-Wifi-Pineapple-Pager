@@ -85,4 +85,15 @@ if [ "$_padded" -le $(( _plain * 3 / 2 + 100000 )) ]; then pass; else fail "perf
 # ...by construction: the stream matches prepared records and never re-passes the text
 assert_contains "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_stream)" "_sw_match_prepared" perf_stream_uses_prepared
 assert_empty "$(_sw_body "$SW_ROOT/lib/match.sh" sw_match_stream | grep -n 'sw_match_record')" perf_stream_never_repasses_text
+
+# 7) The evil-twin check (spec 2026-09-29 §7) formats its rows with builtins only, reads the recon
+#    DB copy read-only, and reads its window once (MATERIALIZED: one pass over the table on the Pager).
+source "$SW_ROOT/lib/eviltwin.sh"
+for _fn in sw_evil_twin_scan _sw_evil_twin_window _sw_evil_twin_rows; do
+  assert_contains "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" "$_fn")" "$_fn()" "forkfree_found_$_fn"
+  assert_empty "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
+done
+assert_contains "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" sw_evil_twin_scan)" "sqlite3 -readonly" twin_query_read_only
+assert_contains "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" sw_evil_twin_scan)" "AS MATERIALIZED" twin_query_one_pass
+
 unset _fn _sw_body _sw_sigs _sw_bulk _sw_out _sw_elapsed _sw_t3sigs _sw_bulk_ble _sw_out_ble _sw_el_ble _sw_pad _i _l _t0 _t1 _t2 _sw_o1 _sw_o2 _plain _padded
