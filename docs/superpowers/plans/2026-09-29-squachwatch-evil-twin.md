@@ -30,6 +30,7 @@
 3. **`sw_evil_twin_scan` takes an optional third argument `until`** (leave out rows last seen after it). Only the replay tool passes it; a lap never does.
 4. **The blind-spot check makes its own DB copy**, like the stale-DB check (one more 0.1 s copy every `SW_HEALTH_EVERY` laps), and is skipped once the payload is stopped, so a check left running by a Stop starts no new copy.
 5. **The WiFi signature reader reads its copy with `-readonly` too**, because the shared copy now lives through the lap.
+6. **One row filter, `_sw_evil_twin_rows`, shared by the check and the blind-spot count,** so the count always covers exactly the rows the check reads. A test pins this: hidden rows without a security value give no verdict.
 
 ## File structure
 
@@ -38,7 +39,7 @@
 | `test/stubs/sqlite3` | modify | test stand-in for the CLI; learns `-readonly` exactly as the Pager's CLI behaves |
 | `test/helpers/recon_db.sh` | create | `sw_test_recon_db`: builds small recon DBs with the Pager's REAL schema (BLOB `bssid`/`ssid`, real `encryption` values) |
 | `payloads/user/reconnaissance/squachwatch/lib/wifi.sh` | modify | `sw_recon_snapshot` (one copy), `sw_wifi_records_in` (read a given copy), `sw_wifi_records` (unchanged API); line-break fix |
-| `payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh` | create | `_sw_evil_twin_window`, `sw_evil_twin_scan`, then `sw_evil_twin_blind` (Task 4) |
+| `payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh` | create | `_sw_evil_twin_window`, `_sw_evil_twin_rows`, `sw_evil_twin_scan`, then `sw_evil_twin_blind` (Task 4) |
 | `payloads/user/reconnaissance/squachwatch/lib/alert.sh` | modify | `sw_emit` names the network for category `evil_twin` |
 | `payloads/user/reconnaissance/squachwatch/payload.sh` | modify | loads `eviltwin`, `SW_EVIL_TWIN` config, one copy per lap in `sw_scan_once`, blind-spot WARN in `sw_healthcheck` |
 | `tools/replay_evil_twin.sh` | create | replays a recon DB's history through the real check (local use; no data in the repo) |
@@ -164,7 +165,7 @@ rm -rf "$_nl"; unset _nl _recs
 - [ ] **Step 3: Run the tests to see them fail**
 
 Run: `bash test/run.sh 2>&1 | grep -E 'FAIL:|PASS='`
-Expected: FAIL lines including `shim_readonly_reads_existing`, `snapshot_rc` (`sw_recon_snapshot: command not found`), `records_in_reads_copy`, `forge_one_record_per_row` (2 records), `forge_no_forged_record` and `forge_no_fake_flock_detection` (a `flock_generic` detection for `B4:1E:52:11:22:33`). Delete any stray file named `-readonly` that the old stub may have created in the repo root.
+Expected: FAIL lines including `shim_readonly_reads_existing`, `snapshot_rc` (`sw_recon_snapshot: command not found`), `records_in_reads_copy`, `forge_one_record_per_row` (2 records), `forge_no_forged_record` and `forge_no_fake_flock_detection` (a `flock_generic` detection for `B4:1E:52:11:22:33`). The old stub treats `-readonly` as the database name and creates a stray file by that name in the repo root: remove it with `rm -f ./-readonly`.
 
 - [ ] **Step 4: Replace `test/stubs/sqlite3`** with:
 
@@ -261,13 +262,7 @@ sw_wifi_records() {
 Run: `bash test/run.sh 2>&1 | tail -3`
 Expected: `PASS=710 FAIL=0` (690 + 20 new). Existing WiFi tests (`wifi_copy_*`, `recency_*`, `stale_db_*`, the payload sweep test `sweep_lap_leaves_three_temp_files`) must still pass unchanged.
 
-- [ ] **Step 7: Prove the new tests bite.** Apply each mutant, run `bash test/run.sh 2>&1 | grep FAIL:`, confirm the named test goes red, then revert (`git checkout -- <file>`):
-  - `wifi.sh`: replace `replace(replace(CAST(s.ssid AS TEXT), char(10), ''), char(13), '')` with `CAST(s.ssid AS TEXT)` → `forge_one_record_per_row`, `forge_no_forged_record`, `forge_no_fake_flock_detection`.
-  - `wifi.sh`: drop `-readonly` in `sw_wifi_records_in` → `records_in_vanished_copy_not_recreated`.
-  - `wifi.sh`: add `rm -f "$1"` after the sqlite3 pipeline in `sw_wifi_records_in` → `records_in_keeps_copy`.
-  - stub: make `ro` always `False` → `shim_readonly_missing_not_created`.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add test/stubs/sqlite3 test/helpers/recon_db.sh test/wifi_test.sh payloads/user/reconnaissance/squachwatch/lib/wifi.sh
@@ -295,6 +290,12 @@ git log -1 --format=%B | grep -cF 'Co-Authored-By: Claude Opus 5.5 <noreply@anth
 ```
 Expected last output: `1`
 
+- [ ] **Step 8: Prove the new tests bite.** Now that the work is committed, `git checkout -- <file>` restores the committed code. For each mutant: apply it, run `bash test/run.sh 2>&1 | grep FAIL:`, confirm the named test goes red, then restore with `git checkout -- <file>`. Finish with `git status --short` printing nothing. Record which test each mutant turned red in your report.
+  - `wifi.sh`: replace `replace(replace(CAST(s.ssid AS TEXT), char(10), ''), char(13), '')` with `CAST(s.ssid AS TEXT)` → `forge_one_record_per_row`, `forge_no_forged_record`, `forge_no_fake_flock_detection`.
+  - `wifi.sh`: drop `-readonly` in `sw_wifi_records_in` → `records_in_vanished_copy_not_recreated`.
+  - `wifi.sh`: add `rm -f "$1"` after the sqlite3 pipeline in `sw_wifi_records_in` → `records_in_keeps_copy`.
+  - `test/stubs/sqlite3`: replace `con = sqlite3.connect("file:" + urllib.parse.quote(db) + "?mode=ro", uri=True)` with `con = sqlite3.connect(db)` → `shim_readonly_missing_not_created`, `records_in_vanished_copy_not_recreated`.
+
 ---
 
 ### Task 2: The evil-twin check (`lib/eviltwin.sh`)
@@ -308,6 +309,7 @@ Expected last output: `1`
 - Consumes (Task 1): `sw_test_recon_db`, `sqlite3 -readonly` in the stand-in; from existing libs: `sw_wifi_colonize` (`wifi.sh`), `sw_sanitize_ident` (`match.sh`).
 - Produces:
   - `_sw_evil_twin_window`: `REPLY` = the window in seconds (`SW_RECENCY_SECS` if it matches `^[1-9][0-9]{0,8}$`, else `600`).
+  - `_sw_evil_twin_rows <since>`: `REPLY` = the SQL condition for the rows the check reads (visible, named beacons last seen since `<since>`). Task 4's blind-spot count reuses it.
   - `sw_evil_twin_scan <copy> <now> [until]`: prints `evil_twin|Evil twin|high|attacker|wifi|<AA:BB:CC:DD:EE:FF>|<sanitized name>|<signal>`, one line per open copy. It prints nothing for a bad `now`/`until`, and never writes to disk.
 
 - [ ] **Step 1: Write the failing tests.** Create `test/eviltwin_test.sh`:
@@ -428,7 +430,7 @@ And in `test/perf_test.sh`, insert these lines immediately BEFORE its final line
 # 7) The evil-twin check (spec 2026-09-29 §7) formats its rows with builtins only, reads the recon
 #    DB copy read-only, and reads its window once (MATERIALIZED: one pass over the table on the Pager).
 source "$SW_ROOT/lib/eviltwin.sh"
-for _fn in sw_evil_twin_scan _sw_evil_twin_window; do
+for _fn in sw_evil_twin_scan _sw_evil_twin_window _sw_evil_twin_rows; do
   assert_contains "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" "$_fn")" "$_fn()" "forkfree_found_$_fn"
   assert_empty "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
 done
@@ -460,6 +462,15 @@ _sw_evil_twin_window() {
   if [[ "${SW_RECENCY_SECS:-}" =~ ^[1-9][0-9]{0,8}$ ]]; then REPLY="$SW_RECENCY_SECS"; else REPLY=600; fi
 }
 
+_sw_evil_twin_rows() {
+  # $1 = since (epoch seconds) -> REPLY = the SQL condition for the beacon rows the check reads:
+  # visible access points (hidden radios are skipped: an Enhanced Open network is an open radio plus
+  # a hidden protected one with the same name, and must not read as a twin) with a real name (not
+  # empty, not only zero bytes), last seen since $1. The blind-spot count (sw_evil_twin_blind) uses
+  # the same condition, so it always counts exactly the rows the check reads.
+  REPLY="type = 8 AND hidden = 0 AND time >= $1 AND ltrim(hex(ssid), '0') <> ''"
+}
+
 sw_evil_twin_scan() {
   # $1 = a recon DB copy (sw_recon_snapshot in lib/wifi.sh): read only, never changed or removed.
   # $2 = the lap's start, epoch seconds. $3 (optional) = leave out rows last seen after this epoch:
@@ -467,25 +478,23 @@ sw_evil_twin_scan() {
   # that steps back cannot hide rows that look newer than the lap.
   # Prints one detection per open copy, in the matcher's format:
   #   evil_twin|Evil twin|high|attacker|wifi|<MAC>|<network name>|<its latest signal>
-  local db="$1" now="$2" until="${3:-}" since cap="" line mac rest sig name
+  local db="$1" now="$2" until="${3:-}" since rows cap="" line mac rest sig name
   [[ "$now" =~ ^[1-9][0-9]{0,11}$ ]] || return 0
   if [ -n "$until" ]; then
     [[ "$until" =~ ^[1-9][0-9]{0,11}$ ]] || return 0
     cap=" AND time <= $until"
   fi
   _sw_evil_twin_window; since=$(( now - REPLY ))
+  _sw_evil_twin_rows "$since"; rows="$REPLY"
   # The query (spec §6.1). MATERIALIZED reads the window ONCE: one pass over the table, ~0.27 s on
   # the Pager, where SQLite otherwise read it twice (~0.44 s; both measured 2026-09-29). ssid and
   # bssid are BLOBs, so GROUP BY and = compare bytes exactly ("Lobby-WiFi" never pairs with
-  # "LOBBY-WIFI"). Skipped: hidden radios (an Enhanced Open network is an open radio plus a hidden
-  # protected one with the same name, and must not read as a twin), rows with no security value, and
-  # names that are empty or only zero bytes. max(w.time) makes SQLite take each open copy's line
-  # from its latest row. The name goes LAST, with its line breaks removed: the CLI prints them as
+  # "LOBBY-WIFI"). It reads the rows of _sw_evil_twin_rows that carry a security value.
+  # max(w.time) makes SQLite take each open copy's line from its latest row. The name goes LAST, with its line breaks removed: the CLI prints them as
   # they are, and a name holding one could otherwise forge a second result line.
   sqlite3 -readonly "$db" "WITH w AS MATERIALIZED (
       SELECT bssid, ssid, signal, time, encryption FROM ssid
-      WHERE type = 8 AND hidden = 0 AND time >= $since$cap
-        AND encryption IS NOT NULL AND ltrim(hex(ssid), '0') <> ''
+      WHERE $rows$cap AND encryption IS NOT NULL
     ),
     twin AS (
       SELECT ssid FROM w GROUP BY ssid
@@ -516,22 +525,9 @@ sw_evil_twin_scan() {
 - [ ] **Step 4: Run the whole suite**
 
 Run: `bash test/run.sh 2>&1 | tail -3`
-Expected: `PASS=756 FAIL=0` (710 + 40 in `eviltwin_test.sh` + 6 in `perf_test.sh`).
+Expected: `PASS=758 FAIL=0` (710 + 40 in `eviltwin_test.sh` + 8 in `perf_test.sh`).
 
-- [ ] **Step 5: Prove the tests bite.** Apply each mutant to `lib/eviltwin.sh`, run the suite, confirm the named test goes red, then restore the original. The file is new (untracked) until Step 6, so `git checkout` cannot restore it: copy it aside first (`cp payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh ../eviltwin.sh.keep`) and copy it back after each mutant.
-  - HAVING → `HAVING count(DISTINCT bssid) > 1` and final `WHERE w.encryption = 0` → `WHERE 1` → `mesh_all_protected_silent`.
-  - twin: `SELECT lower(CAST(ssid AS TEXT)) AS k FROM w GROUP BY k` and join `ON lower(CAST(w.ssid AS TEXT)) = twin.k` → `capitals_are_different_names`.
-  - CYD's maker exemption: append to the final WHERE `AND NOT EXISTS (SELECT 1 FROM w p WHERE p.ssid = w.ssid AND p.encryption <> 0 AND substr(p.bssid, 3, 4) = substr(w.bssid, 3, 4))` → `twin_same_address_copy`.
-  - `time >= $since$cap` → `1$cap` → `window_open_copy_too_old`, `window_fallback_600_not_whole_db_[0]`.
-  - drop `hidden = 0 AND` → `hidden_protected_radio_skipped`.
-  - replace the `sw_sanitize_ident "$name"; name="$REPLY"` statement with `:` → `hostile_pipe_and_tab_removed`.
-  - `replace(replace(CAST(w.ssid AS TEXT), char(10), ''), char(13), '')` → `CAST(w.ssid AS TEXT)` → `hostile_line_break_forges_nothing`.
-  - `_sw_evil_twin_window` body → `REPLY="${SW_RECENCY_SECS:-600}"` → `window_fallback_600_inside_[0]`, `window_fallback_600_inside_[0600]`.
-  - drop `-readonly` → `vanished_copy_not_recreated`.
-  - drop ` AND ltrim(hex(ssid), '0') <> ''` → `empty_name_skipped`.
-  Report which test each mutant turned red.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh test/eviltwin_test.sh test/perf_test.sh
@@ -555,6 +551,18 @@ EOF
 git log -1 --format=%B | grep -cF 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
 ```
 Expected last output: `1`
+
+- [ ] **Step 6: Prove the tests bite.** Now that the work is committed, `git checkout -- <file>` restores the committed code. For each mutant: apply it, run `bash test/run.sh 2>&1 | grep FAIL:`, confirm the named test goes red, then restore with `git checkout -- <file>`. Finish with `git status --short` printing nothing. Record which test each mutant turned red in your report. The file is `payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh`.
+  - HAVING → `HAVING count(DISTINCT bssid) > 1`, and the final `WHERE w.encryption = 0` → `WHERE 1` → `mesh_all_protected_silent`.
+  - twin: `SELECT lower(CAST(ssid AS TEXT)) AS k FROM w GROUP BY k` and the join `ON lower(CAST(w.ssid AS TEXT)) = twin.k` → `capitals_are_different_names`.
+  - CYD's maker exemption: append to the final WHERE `AND NOT EXISTS (SELECT 1 FROM w p WHERE p.ssid = w.ssid AND p.encryption <> 0 AND substr(p.bssid, 3, 4) = substr(w.bssid, 3, 4))` → `twin_same_address_copy`.
+  - in `_sw_evil_twin_rows`: `time >= $1` → `1` → `window_open_copy_too_old`, `window_fallback_600_not_whole_db_[0]`.
+  - in `_sw_evil_twin_rows`: drop `hidden = 0 AND ` → `hidden_protected_radio_skipped`.
+  - in `_sw_evil_twin_rows`: drop ` AND ltrim(hex(ssid), '0') <> ''` → `empty_name_skipped`.
+  - replace the `sw_sanitize_ident "$name"; name="$REPLY"` statement with `:` → `hostile_pipe_and_tab_removed`.
+  - `replace(replace(CAST(w.ssid AS TEXT), char(10), ''), char(13), '')` → `CAST(w.ssid AS TEXT)` → `hostile_line_break_forges_nothing`.
+  - `_sw_evil_twin_window` body → `REPLY="${SW_RECENCY_SECS:-600}"` → `window_fallback_600_inside_[0]`, `window_fallback_600_inside_[0600]`.
+  - drop `-readonly` → `vanished_copy_not_recreated`.
 
 ---
 
@@ -755,15 +763,9 @@ The per-detection loop between them does not change.
 - [ ] **Step 5: Run the whole suite**
 
 Run: `bash test/run.sh 2>&1 | tail -3`
-Expected: `PASS=779 FAIL=0` (756 + 6 in `alert_test.sh` + 17 in `payload_test.sh`).
+Expected: `PASS=781 FAIL=0` (758 + 6 in `alert_test.sh` + 17 in `payload_test.sh`).
 
-- [ ] **Step 6: Prove the tests bite** (apply, run, confirm red, revert with `git checkout -- <file>`):
-  - `alert.sh`: delete the `[ "$cat" = evil_twin ] && shown=...` line → `twin_line_names_network`, `lap_twin_screen_line`.
-  - `payload.sh`: drop the `sw_evil_twin_scan` line → `lap_twin_alerts`.
-  - `payload.sh`: change `[ "${SW_EVIL_TWIN:-0}" = 1 ]` to `[ "${SW_EVIL_TWIN:-0}" != x ]` → `lap_twin_off_silent`.
-  - `payload.sh`: make `sw_evil_twin_scan` take its own copy (`sw_recon_snapshot "$SW_RECON_DB" && sw_evil_twin_scan "$REPLY" "$now"`) → `lap_makes_one_db_copy`.
-
-- [ ] **Step 7: README (user-facing).**
+- [ ] **Step 6: README (user-facing).**
   (a) In the `lib/` bullet under "What's in the box", replace `` `ignore.sh` (your own devices). `` with `` `ignore.sh` (your own devices), `snooze.sh` (AUTO SNOOZE), `eviltwin.sh` (the evil-twin check). ``
   (b) After the bullet that starts `` - `SW_LOG_PER_KIND` (default 3): `` insert this bullet:
 
@@ -773,7 +775,7 @@ Expected: `PASS=779 FAIL=0` (756 + 6 in `alert_test.sh` + 17 in `payload_test.sh
 
   (c) In the "What it detects" paragraph, after `hacker tools (Flipper Zero, WiFi Pineapple and Pager, ESP deauthers).` add ` Beyond the signatures, a behaviour check catches **evil twins**: an open copy of a nearby password-protected network (see `SW_EVIL_TWIN` above).`
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add payloads/user/reconnaissance/squachwatch/payload.sh payloads/user/reconnaissance/squachwatch/lib/alert.sh test/alert_test.sh test/payload_test.sh README.md
@@ -794,6 +796,12 @@ git log -1 --format=%B | grep -cF 'Co-Authored-By: Claude Opus 5.5 <noreply@anth
 ```
 Expected last output: `1`
 
+- [ ] **Step 8: Prove the tests bite.** Now that the work is committed, `git checkout -- <file>` restores the committed code. For each mutant: apply it, run `bash test/run.sh 2>&1 | grep FAIL:`, confirm the named test goes red, then restore with `git checkout -- <file>`. Finish with `git status --short` printing nothing. Record which test each mutant turned red in your report.
+  - `alert.sh`: delete the `[ "$cat" = evil_twin ] && shown=...` line → `twin_line_names_network`, `lap_twin_screen_line`.
+  - `payload.sh`: drop the `sw_evil_twin_scan` line → `lap_twin_alerts`.
+  - `payload.sh`: change `[ "${SW_EVIL_TWIN:-0}" = 1 ]` to `[ "${SW_EVIL_TWIN:-0}" != x ]` → `lap_twin_off_silent`.
+  - `payload.sh`: make `sw_evil_twin_scan` take its own copy (`sw_recon_snapshot "$SW_RECON_DB" && sw_evil_twin_scan "$REPLY" "$now"`) → `lap_makes_one_db_copy`.
+
 ---
 
 ### Task 4: Warn when the evil-twin check goes blind
@@ -805,7 +813,7 @@ Expected last output: `1`
 - Test: `test/eviltwin_test.sh` (append), `test/payload_test.sh`
 
 **Interfaces:**
-- Consumes: `_sw_evil_twin_window` (Task 2), `sw_recon_snapshot` (Task 1), `sw_stopped` (`lib/ble.sh`), `_sw_health_warn` (`payload.sh`).
+- Consumes: `_sw_evil_twin_window` and `_sw_evil_twin_rows` (Task 2), `sw_recon_snapshot` (Task 1), `sw_stopped` (`lib/ble.sh`), `_sw_health_warn` (`payload.sh`).
 - Produces: `sw_evil_twin_blind [db]`: rc 0 = blind, rc 1 = fine or no verdict. It makes and removes its own copy.
 
 - [ ] **Step 1: Write the failing tests.** Append to `test/eviltwin_test.sh`:
@@ -830,6 +838,9 @@ SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/nocol.db"; assert_eq "$?" "0" blind_y
 # no rows in the window: no verdict (the stale-DB check reports that one)
 sw_test_recon_db "$_eb/old.db" "8,ACDE48000001,,0,-60,5000,HomeNet"
 SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/old.db"; assert_eq "$?" "1" blind_no_verdict_without_rows
+# rows the check skips (hidden radios) are not counted either: the count reads what the check reads
+sw_test_recon_db "$_eb/hid.db" "8,ACDE48000001,,1,-60,30,HomeNet"
+SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/hid.db"; assert_eq "$?" "1" blind_no_verdict_on_rows_the_check_skips
 # no DB: no verdict (the health check's unreadable-DB WARN covers it)
 SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/missing.db"; assert_eq "$?" "1" blind_no_verdict_without_db
 # A copy that vanishes during the check (the exit trap after a Stop) is "unknown", never "blind":
@@ -895,12 +906,12 @@ sw_evil_twin_blind() {
   # forever, and read as "all clear". False (1) = fine, or no verdict: no copy, no rows in the
   # window (the stale-DB check reports that one), or the copy vanished during the check (the exit
   # trap after a Stop), which is "unknown", never "blind".
-  local win now since tmp out rc named secured
+  local win now rows tmp out rc named secured
   _sw_evil_twin_window; win="$REPLY"
-  now="$(date +%s)"; since=$(( now - win ))
+  now="$(date +%s)"; _sw_evil_twin_rows "$(( now - win ))"; rows="$REPLY"
   sw_recon_snapshot "${1:-$SW_RECON_DB}" || return 1
   tmp="$REPLY"
-  out="$(sqlite3 -readonly "$tmp" "SELECT count(*) || char(9) || count(encryption) FROM ssid WHERE type = 8 AND hidden = 0 AND time >= $since AND ltrim(hex(ssid), '0') <> '';" 2>/dev/null)"; rc=$?
+  out="$(sqlite3 -readonly "$tmp" "SELECT count(*) || char(9) || count(encryption) FROM ssid WHERE $rows;" 2>/dev/null)"; rc=$?
   [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
   [ "$rc" -eq 0 ] || return 0
@@ -939,17 +950,11 @@ with
 - [ ] **Step 5: Run the whole suite**
 
 Run: `bash test/run.sh 2>&1 | tail -3`
-Expected: `PASS=796 FAIL=0` (779 + 8 in `eviltwin_test.sh` + 9 in `payload_test.sh`). The Stop tests that stall the health check (`stop_during_periodic_health_check_*`, `stop_during_startup_health_check_*`) and `health_warns_only_through_the_stop_guard` must stay green.
+Expected: `PASS=799 FAIL=0` (781 + 9 in `eviltwin_test.sh` + 9 in `payload_test.sh`). The Stop tests that stall the health check (`stop_during_periodic_health_check_*`, `stop_during_startup_health_check_*`) and `health_warns_only_through_the_stop_guard` must stay green.
 
-- [ ] **Step 6: Prove the tests bite** (apply, run, confirm red, revert):
-  - move `[ -s "$tmp" ] || { rm -f "$tmp"; return 1; }` below `[ "$rc" -eq 0 ] || return 0` → `blind_vanished_copy_is_unknown`.
-  - delete the `[ "$rc" -eq 0 ] || return 0` line → `blind_yes_when_column_gone`.
-  - in `sw_healthcheck`, drop `&& ! sw_stopped` → `health_stopped_check_makes_no_twin_copy`.
-  - in `sw_healthcheck`, delete the whole new `if` block → `health_twin_blind_rc`, `health_twin_blind_warns`.
+- [ ] **Step 6: README.** In the paragraph that starts `If the recon DB stops updating, every sweep would return zero rows`, append this sentence at its end: ` The same goes for the evil-twin check: if the recon DB stops recording each network's security (after a firmware change, say), it warns "evil-twin check is blind" instead of quietly finding nothing.`
 
-- [ ] **Step 7: README.** In the paragraph that starts `If the recon DB stops updating, every sweep would return zero rows`, append this sentence at its end: ` The same goes for the evil-twin check: if the recon DB stops recording each network's security (after a firmware change, say), it warns "evil-twin check is blind" instead of quietly finding nothing.`
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add payloads/user/reconnaissance/squachwatch/lib/eviltwin.sh payloads/user/reconnaissance/squachwatch/payload.sh test/eviltwin_test.sh test/payload_test.sh README.md
@@ -971,6 +976,13 @@ EOF
 git log -1 --format=%B | grep -cF 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
 ```
 Expected last output: `1`
+
+- [ ] **Step 8: Prove the tests bite.** Now that the work is committed, `git checkout -- <file>` restores the committed code. For each mutant: apply it, run `bash test/run.sh 2>&1 | grep FAIL:`, confirm the named test goes red, then restore with `git checkout -- <file>`. Finish with `git status --short` printing nothing. Record which test each mutant turned red in your report.
+  - move `[ -s "$tmp" ] || { rm -f "$tmp"; return 1; }` below `[ "$rc" -eq 0 ] || return 0` → `blind_vanished_copy_is_unknown`.
+  - delete the `[ "$rc" -eq 0 ] || return 0` line → `blind_yes_when_column_gone`.
+  - in `sw_evil_twin_blind`, replace `WHERE $rows;` with `WHERE type = 8 AND time >= $(( now - win ));` (a filter of its own) → `blind_no_verdict_on_rows_the_check_skips`.
+  - in `sw_healthcheck`, drop `&& ! sw_stopped` → `health_stopped_check_makes_no_twin_copy`.
+  - in `sw_healthcheck`, delete the whole new `if` block → `health_twin_blind_rc`, `health_twin_blind_warns`.
 
 ---
 
@@ -1041,7 +1053,7 @@ for key in "${!hits[@]}"; do
 done
 ```
 
-Run: `bash test/run.sh 2>&1 | tail -3` → Expected: `PASS=799 FAIL=0`.
+Run: `bash test/run.sh 2>&1 | tail -3` → Expected: `PASS=802 FAIL=0`.
 
 - [ ] **Step 3: Append to `docs/superpowers/P0-findings.md`:**
 
@@ -1084,7 +1096,29 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
   (b) In "Tests", replace `**638 assertions, all passing**` with `**N assertions, all passing**`. Take N from the `PASS=` line of your last full run.
 
 - [ ] **Step 5: Amend the spec** (`docs/superpowers/specs/2026-09-29-squachwatch-evil-twin-design.md`), so it matches what was built:
-  (a) In §6.1, replace the whole ```` ```sql ```` block with the query from Task 2 Step 3 (starting `WITH w AS MATERIALIZED (`, with `time >= <since><cap>` in place of `time >= $since$cap`, and with the `replace(replace(CAST(w.ssid AS TEXT), char(10), ''), char(13), '')` name). Below it, add: `` `<cap>` is empty on a lap; `tools/replay_evil_twin.sh` passes a third argument `until`, which adds `AND time <= <until>`, to replay history. MATERIALIZED makes SQLite read the window once (265 ms on the Pager, against 439 ms). ``
+  (a) In §6.1, replace the whole ```` ```sql ```` block with the query as built (the first condition line is `_sw_evil_twin_rows`, which the blind-spot count shares):
+
+```sql
+WITH w AS MATERIALIZED (
+  SELECT bssid, ssid, signal, time, encryption FROM ssid
+  WHERE type = 8 AND hidden = 0 AND time >= <since> AND ltrim(hex(ssid), '0') <> ''<cap>
+    AND encryption IS NOT NULL
+),
+twin AS (
+  SELECT ssid FROM w GROUP BY ssid
+  HAVING sum(encryption = 0) > 0 AND sum(encryption <> 0) > 0
+)
+SELECT line FROM (
+  SELECT w.bssid || char(9) || w.signal || char(9) ||
+         replace(replace(CAST(w.ssid AS TEXT), char(10), ''), char(13), '') AS line,
+         max(w.time)
+  FROM w JOIN twin ON w.ssid = twin.ssid
+  WHERE w.encryption = 0
+  GROUP BY w.bssid, w.ssid
+);
+```
+
+     Below it, add: `` `<cap>` is empty on a lap; `tools/replay_evil_twin.sh` passes a third argument `until`, which adds `AND time <= <until>`, to replay history. MATERIALIZED makes SQLite read the window once (265 ms on the Pager, against 439 ms). ``
   (b) In §7, at the end of the **Hostile names** bullet, add: `` Line breaks are removed from the name in SQL (the CLI prints them as they are, so a name holding one could forge a second result line). The WiFi signature reader had exactly that bug and gets the same fix (a network name could forge a fake Flock Safety camera, full alert included; reproduced 2026-09-29). ``
   (c) In §7, in the **Blind-spot health check** bullet, replace `runs one more count on its database copy:` with `runs one more count, on its own copy of the database (as the stale-DB check does), and never once the payload is stopped:`.
   (d) In §8, after the **Real-history replay** paragraph, add: `` A suite test runs the tool on a synthetic history (one twin found, and none in an all-protected control). ``
