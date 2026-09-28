@@ -157,28 +157,35 @@ sw_seen_prune() {
     LOG yellow "WARN: can't prune $sf — it will keep growing" 2>/dev/null; return 1
   fi
   local total=0 kept=0 no_nl=0 rd_rc
+  # Both loops use if-blocks, never `continue` or `break`: this runs in the payload's main shell, and
+  # bash drops a trapped SIGINT (the Pager's Stop) that lands while a loop continues or breaks.
   while IFS= read -r line; rd_rc=$?; [ "$rd_rc" -eq 0 ] || [ -n "$line" ]; do
     total=$((total + 1))
     [ "$rd_rc" -ne 0 ] && no_nl=1
-    [[ "$line" =~ $line_re ]] || continue
-    ts="${line##*|}"
-    [ "$ts" -le "$now" ] || continue
-    [ $((now - ts)) -lt "$keep" ] || continue
-    kept=$((kept + 1))
+    if [[ "$line" =~ $line_re ]]; then
+      ts="${line##*|}"
+      if [ "$ts" -le "$now" ] && [ $((now - ts)) -lt "$keep" ]; then
+        kept=$((kept + 1))
+      fi
+    fi
   done < "$sf"
   if [ "$kept" -eq "$total" ] && [ "$no_nl" -eq 0 ]; then
     return 0
   fi
-  if ! tmp="$(mktemp "$sf.XXXXXX" 2>/dev/null)"; then
+  # A name no one would type: payload.sh removes a temp copy that a Stop or a crash left behind by
+  # this pattern (seen.db.sw-prune-tmp. plus six characters). The old seen.db.XXXXXX also matched a
+  # hand-made seen.db.backup, and a plainer seen.db.prune.XXXXXX a seen.db.prune.before.
+  if ! tmp="$(mktemp "$sf.sw-prune-tmp.XXXXXX" 2>/dev/null)"; then
     LOG yellow "WARN: can't prune $sf — it will keep growing" 2>/dev/null; return 1
   fi
   local wfail=0
   while IFS= read -r line || [ -n "$line" ]; do
-    [[ "$line" =~ $line_re ]] || continue
-    ts="${line##*|}"
-    [ "$ts" -le "$now" ] || continue
-    [ $((now - ts)) -lt "$keep" ] || continue
-    printf '%s\n' "$line" || wfail=1
+    if [[ "$line" =~ $line_re ]]; then
+      ts="${line##*|}"
+      if [ "$ts" -le "$now" ] && [ $((now - ts)) -lt "$keep" ]; then
+        printf '%s\n' "$line" || wfail=1
+      fi
+    fi
   done < "$sf" 2>/dev/null > "$tmp" || wfail=1
   if [ "$wfail" -eq 1 ]; then
     rm -f "$tmp"; LOG yellow "WARN: can't prune $sf — it will keep growing" 2>/dev/null; return 1

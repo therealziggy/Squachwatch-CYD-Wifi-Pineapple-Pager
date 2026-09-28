@@ -6,6 +6,12 @@
 # Category: reconnaissance
 # Homage to SquachWatch-CYD (skizzophrenic); reuses Hak5 community payload patterns.
 
+# A Stop while the libs and signatures load (about a quarter of a second on the Pager) must end
+# the run cleanly too. Nothing has been started or written yet, so a plain exit is all it needs;
+# sw_main replaces this with the full trap as its first step. Skipped when a test sources this
+# file, so the test shell's own signal handling stays as it was.
+[ -n "${SW_TEST_SOURCE:-}" ] || trap 'exit 0' INT TERM
+
 # The Pager UI does not run this file in place: it runs a copy (/tmp/payload-<n>.sh) and
 # passes the real folder in PAYLOAD_HOME. BASH_SOURCE is only right for a direct
 # `bash payload.sh` (SSH, tests).
@@ -165,18 +171,21 @@ sw_scan_once() {
 }
 
 # The scanner's temp files: BLE captures (sw_ble.XXXXXX), the BLE health state (sw_ble.state)
-# and the recon DB copies (sw_recon.XXXXXX, 5.6 MB each on a real Pager, and growing). All in RAM on the Pager.
-sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_recon.* 2>/dev/null; }
+# and the recon DB copies (sw_recon.XXXXXX, 5.6 MB each on a real Pager, and growing), all in RAM
+# on the Pager; and the ledger prune's temp copy (seen.db.sw-prune-tmp.XXXXXX), in the loot dir on flash,
+# where a leftover would outlive a reboot. Only sw_main runs this, before its own first prune.
+sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_recon.* "$SW_SEEN_FILE".sw-prune-tmp.?????? 2>/dev/null; }
 
-# On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE health state and any recon DB copy,
-# but leave BLE captures to the lap that owns them. A lap still running reads its capture again
-# for the health check, and it removes the capture itself on every path (sw_stopped); the next
-# start sweeps whatever a lap could not. Nothing is killed here: btmon and hcitool each run
-# under their own `timeout` (lib/ble.sh), so an orphan ends within seconds by itself, while
-# killing by NAME would also stop another program's btmon or hcitool (another payload, an SSH
-# session).
+# On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE health state, any recon DB copy and
+# the ledger prune's temp copy (only this shell prunes, and a Stop can land between the prune's
+# mktemp and its mv), but leave BLE captures to the lap that owns them. A lap still running reads
+# its capture again for the health check, and it removes the capture itself on every path
+# (sw_stopped); the next start sweeps whatever a lap could not. Nothing is killed here: btmon and
+# hcitool each run under their own `timeout` (lib/ble.sh), so an orphan ends within seconds by
+# itself, while killing by NAME would also stop another program's btmon or hcitool (another
+# payload, an SSH session).
 sw_cleanup() {
-  rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.state "${SW_TMP_DIR:-/tmp}"/sw_recon.* 2>/dev/null
+  rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.state "${SW_TMP_DIR:-/tmp}"/sw_recon.* "$SW_SEEN_FILE".sw-prune-tmp.?????? 2>/dev/null
   exit 0
 }
 
@@ -194,15 +203,19 @@ sw_main() {
   # sw_stopped's "main shell": always this one. An inherited value (a leftover export in an SSH
   # shell) would otherwise make every lap think the payload had been stopped.
   SW_MAIN_PID=$$
+  # First, before this run creates anything: from here on a Stop must also clean up, so the full
+  # trap replaces the plain exit the top of this file set. With no trap at all, bash drops a SIGINT
+  # that lands during a foreground command (it takes the command's normal exit to mean the command
+  # handled it) or, inside a command substitution, dies from it: never a clean exit.
+  trap sw_cleanup EXIT INT TERM
   # Backstop for a run that ended without its trap (a crash, a power cut, a SIGKILL from
-  # something else, a Stop before the trap below was set): clear its leftovers here. A stale
+  # something else, a Stop while the libs were still loading): clear its leftovers here. A stale
   # capture or DB copy would stay in RAM, and a stale BLE health state would hide the WARN for
   # a scan that is still failing.
   sw_clear_tmp
   sw_log_init "$SW_LOOT_DIR"
   mkdir -p "$(dirname "$SW_SEEN_FILE")"; touch "$SW_SEEN_FILE"
   sw_prune_ledger
-  trap sw_cleanup EXIT INT TERM
   sw_healthcheck &
   if wait $!; then
     LOG green "SquachWatch armed — watching WiFi + BLE" 2>/dev/null

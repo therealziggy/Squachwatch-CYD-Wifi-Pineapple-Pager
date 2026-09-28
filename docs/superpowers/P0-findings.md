@@ -407,6 +407,30 @@ own process group (pgrp 1, sid 1), with only SIGQUIT ignored (`SigIgn` 0x4). The
   between the two counts, fails `stale_db_vanished_copy_not_flagged`; with both removed, the Stop tests'
   "reports nothing" fail as well. The ledger prune stays in the foreground: it is builtins apart from
   `date`, `mktemp` and `mv`, so the trap never waits long for it.
+- The first moments and the ledger prune (the two optional follow-ups from the M5 review). With no trap,
+  bash drops a SIGINT that lands during a foreground command (it takes the command's normal exit to mean
+  the command handled it) or, inside a command substitution, dies from it; neither is a clean exit. On the
+  Pager the libs and signatures took 251–272 ms to load and the startup steps before the old trap another
+  96–112 ms, and a Stop in there was either ignored until the SIGKILL (it even printed "armed" after the
+  Stop) or ended the run by signal (`exited with -1`). The top of `payload.sh` now sets a plain `exit 0`
+  trap (nothing has been started or written yet; skipped when a test sources the file, or a Ctrl-C of the
+  suite would end it with status 0), and `sw_main` replaces it with the full trap as its first step. The
+  ledger prune's temp copy now has a name no one would type, `seen.db.sw-prune-tmp.XXXXXX` (the old
+  `seen.db.XXXXXX` also matched a hand-made `seen.db.backup`, and a first try, `seen.db.prune.XXXXXX`, a
+  `seen.db.prune.before`). The exit trap removes it (a Stop can land between the prune's `mktemp` and `mv`,
+  and only the main shell prunes), and so does the startup sweep (a crash or a power cut; the loot dir is
+  on flash). And the prune's two loops no longer `continue`: bash drops a trapped SIGINT that lands while a
+  loop continues or breaks (bash 5.2, x86: 53 of 300 Stops lost in a `|| continue` loop, 0 of 300 written
+  with `if`; the real prune over a 20,000-line expired ledger lost 3 of 150 before and 0 of 150 after), and
+  `main_shell_code_never_continues_or_breaks` keeps both out of every function the main shell runs. Test-local
+  `touch` and `mktemp` hold a startup step for 0.3 s so the Stop lands inside it, and a test-local `grep`
+  holds the signature load (`stop_while_loading_*` for INT and TERM, `stop_in_first_moments_*`,
+  `stop_in_prune_*`, the last also checking that the ledger and look-alike files survive); the
+  force-killed-run sweep test seeds a stranded temp copy (`main_clears_killed_runs_ledger_temp`,
+  `main_clear_keeps_the_ledger_and_look_alikes`), and `payload_sourced_sets_no_signal_trap` pins the
+  test-source guard. Two independent reviews, one of them adversarial on data safety (1,650 randomized
+  Stops: the ledger always ended untouched or exactly pruned, `detections.csv` never changed), found nothing
+  blocking; their follow-ups are folded in.
 
 **On-device probes of the fixes** (staging copies, the launcher's own header, the screen/sound/LED verbs
 shadowed, separate temp and loot dirs; the installed payload, the real loot and the real `/tmp` were untouched):
@@ -436,6 +460,16 @@ the time was never touched; the check's first count held 3 s by a wrapper around
 The last row is one run each: both exit well inside the grace, and the figure depends on where in the
 check the Stop lands, so it does not mean the new code is slower.
 
+The first moments and the ledger prune on the Pager, the same way, measured on the final code of this fix
+(each step held 0.3 s by a wrapper around the real BusyBox tool, so every "after" figure includes that hold):
+
+| Case | Before (`7375687`) | After |
+|---|---|---|
+| The measured Stop while the libs and signatures load | died by the SIGINT (`exited with -1`) | exit 0 **317 ms** after SIGINT; 0 verb calls after |
+| The measured Stop during the startup `touch` of the ledger | ignored: still alive 1 s later, SIGKILLed, and "armed" was printed after the Stop | exit 0 **331 ms** after SIGINT; 0 verb calls after |
+| The measured Stop between the startup prune's `mktemp` and `mv` (an expired ledger line, next to `seen.db.backup`, `seen.db.bak`, `seen.db.1234567`, `seen.db.prune.before`) | died by the SIGINT; its temp copy `seen.db.XXXXXX` left in the loot dir | exit 0 **314 ms** after SIGINT; the loot dir exactly as before (ledger unchanged, look-alikes kept) |
+| A stranded `seen.db.sw-prune-tmp.XXXXXX` from an earlier crash, then a start and a Stop | — | swept at startup; the ledger (pruned as usual, by the rewritten loops) and the look-alikes kept; exit 0 152 ms after SIGINT |
+
 **Remaining:**
 - After a Stop mid-lap, the lap that goes on holds the payload's stdout/stderr until it winds down (up to
   one scan). The launcher removed its `payload_log` receiver 18 s after the probe's stop, when the probe's
@@ -444,10 +478,27 @@ check the Stop lands, so it does not mean the new code is slower.
 - After a Stop mid-scan, the lap's `hcitool` runs out its `timeout` (up to 12 s) and then switches LE scanning
   off. A relaunch inside that window could lose part of its first scan with no WARN (reasoned from BlueZ, not
   measured).
-- A power cut or crash in the middle of a follow/snooze/ledger rewrite can strand a tiny
-  `sw_track.db.XXXXXX` / `sw_snooze.db.XXXXXX` (in `/tmp`) or `seen.db.XXXXXX` (in the loot dir). These are not
-  swept. A Stop no longer does this to the follow and snooze state, because the lap finishes the detection
-  it is on before going quiet. The ledger prune runs in the main shell, so a Stop in the milliseconds of its
-  rewrite can still leave a `seen.db.XXXXXX`.
+- A power cut or crash in the middle of a follow/snooze rewrite can strand a tiny `sw_track.db.XXXXXX` /
+  `sw_snooze.db.XXXXXX` in `/tmp`. These are not swept (a lap orphaned by a Stop may still be writing them
+  when the next run starts), but `/tmp` is RAM, so a reboot clears them, and a Stop does not leave them,
+  because the lap finishes the detection it is on before going quiet. The ledger prune's temp copy, which
+  lives on flash, is removed by the exit trap and swept at startup (Fixes, last bullet). A temp copy
+  under the OLD name (`seen.db.XXXXXX`, from builds before this fix) is never swept, on purpose: it can't
+  be told apart from a hand-made `seen.db.backup`. The Pager had none on 2026-09-28.
+- Bash can still drop a Stop that lands in the last instant of a command substitution the main shell runs
+  (x86, bash 5.2: 37 of 300 lost in a loop of `x=$(dirname …)`, 26 of 300 with `$(date +%s)`, 0 of 300 with
+  the same command run directly). At startup those are the signature and ignore-list loads, `$(dirname …)`
+  and `$(date +%s)`, and in a prune rewrite `$(mktemp …)`. Such a Stop is ignored until the SIGKILL (logged
+  `exited with -1`); nothing is lost, and the next start sweeps any leftover. Removing the startup ones means
+  loading the signatures and the ignore list without a command substitution; `$(mktemp …)` would remain.
+  Nothing before the launcher's own header (sourced ahead of line 2) can be covered at all.
+- Two runs at once (a menu run plus a `bash payload.sh` over SSH) can remove each other's in-flight ledger
+  temp copy: that run's prune then fails with one "can't prune" WARN and leaves the ledger as it was. The
+  menu itself runs one payload at a time.
+- A Stop in the very instant the health check reports can still let that one status line through (seen on
+  x86, also at `7375687`): a check left running asks `sw_stopped` while the exit trap is still removing
+  files, so the main shell still counts as alive. Never an alert or a buzz. A possible fix: `sw_cleanup`
+  first writes a stop flag with a builtin (`: > "${SW_TMP_DIR:-/tmp}/sw_stop.$$"`), `sw_stopped` also checks
+  for it, and `sw_clear_tmp` sweeps it; a check-then-act can only narrow that window, not close it.
 - Scope: SquachWatch no longer kills other programs' Bluetooth tools, but its per-lap
   `hciconfig down/reset/up` still interrupts their scans.

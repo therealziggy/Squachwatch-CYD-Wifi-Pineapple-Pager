@@ -121,6 +121,19 @@ rm -rf "$_bin"; unset _bin _stubs _hc
 assert_eq "$(declare -f sw_healthcheck | grep -cw LOG)" "0" health_warns_only_through_the_stop_guard
 # control: the same grep does see a LOG call in a function body
 assert_eq "$(declare -f _sw_health_warn | grep -cw LOG)" "1" health_guard_control_sees_log
+# The main shell's own code (startup and the ledger prune: the only loops the Pager's Stop can land
+# in) must never `continue` or `break`: bash drops a trapped SIGINT that lands while a loop continues
+# or breaks (measured 2026-09-28, bash 5.2: 53 of 300 Stops lost in a `|| continue` loop, 0 of 300 in
+# the same loop written with `if`; `break` loses them too), and the run goes on until the SIGKILL.
+_mc=0; for _fn in sw_main sw_prune_ledger sw_seen_prune sw_clear_tmp sw_log_init sw_cleanup; do
+  declare -F "$_fn" >/dev/null || { _mc="missing $_fn"; break; }
+  _mc=$((_mc + $(declare -f "$_fn" | grep -cwE 'continue|break')))
+done
+assert_eq "$_mc" "0" main_shell_code_never_continues_or_breaks
+# control: the same count does see the lap loop's `continue` (it runs in a subshell, which the
+# Stop never signals)
+assert_eq "$([ "$(declare -f sw_scan_once | grep -cw continue)" -gt 0 ] && echo yes)" "yes" main_shell_continue_probe_control
+unset _mc _fn
 # ...and the guard itself: silent once the main shell is gone. The Stop tests below cannot show
 # this on their own: there the check's DB copy is always gone before it decides, so
 # sw_wifi_stale_db already answers "unknown". A WARN that needs no copy (btmon missing, say) is
@@ -268,6 +281,10 @@ rm -rf "$_mt"; unset _mt _pn
 # start. `timeout -s KILL` ends each run below without its trap too (a TERM would run the trap,
 # and the trap would remove the files itself); `2>/dev/null` hides the shell's "Killed" notice.
 _kt="$(mktemp -d)"; : > "$_kt/sw_ble.AbC123"; echo scan_failed > "$_kt/sw_ble.state"; : > "$_kt/sw_recon.AbC123"; : > "$_kt/keep.me"
+# ...and the ledger prune's temp copy, which lives in the loot dir (on flash, not in RAM), next to
+# the ledger itself and files that only look like that temp copy
+: > "$_kt/seen.db.sw-prune-tmp.AbC123"; echo keep > "$_kt/seen.db.backup"; echo keep > "$_kt/seen.db.bak"; echo keep > "$_kt/seen.db.prune.before"
+printf '%s\n' "AA:00:00:00:00:02|new|$(date +%s)" > "$_kt/seen.db"; _kl="$(cat "$_kt/seen.db")"
 { SW_TEST_SOURCE= SW_SEEN_FILE="$_kt/seen.db" SW_LOOT_DIR="$_kt/loot" SW_TMP_DIR="$_kt" SW_SLEEP=1 SW_HEALTH_EVERY=0 \
   SW_BLE_CMD=true SW_RECON_DB=/nonexistent/recon.db timeout -s KILL 2 bash "$SW_ROOT/payload.sh" >/dev/null 2>&1; } 2>/dev/null
 _rc=$?
@@ -280,6 +297,9 @@ assert_eq "$([ -f "$_kt/loot/detections.csv" ] && echo started)" "started" main_
 assert_empty "$(for f in sw_ble.AbC123 sw_ble.state; do [ -e "$_kt/$f" ] && echo "$f"; done)" main_clears_killed_runs_ble_temp
 assert_empty "$([ -e "$_kt/sw_recon.AbC123" ] && echo sw_recon.AbC123)" main_clears_killed_runs_recon_copy
 assert_contains "$(ls "$_kt")" "keep.me" main_clear_leaves_other_files   # control: not rm -rf
+assert_empty "$([ -e "$_kt/seen.db.sw-prune-tmp.AbC123" ] && echo seen.db.sw-prune-tmp.AbC123)" main_clears_killed_runs_ledger_temp
+assert_eq "$(cat "$_kt/seen.db")|$(cat "$_kt/seen.db.backup")|$(cat "$_kt/seen.db.bak")|$(cat "$_kt/seen.db.prune.before")" "$_kl|keep|keep|keep" main_clear_keeps_the_ledger_and_look_alikes
+unset _kl
 # A restart after such a stop must WARN again about a BLE scan that is still failing. The old
 # run's "scan_failed" state would mark that WARN as already shown: the new run would say
 # "armed" and never mention BLE. Real scan path (SW_BLE_CMD empty) through the stubs. The old
@@ -467,6 +487,82 @@ assert_eq "$_alive/$_rc" "no/0" stop_during_startup_health_check_runs_trap_withi
 assert_empty "$(grep -E '^(LOG|ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_during_startup_health_check_reports_nothing
 assert_empty "$(ls "$_hs/run" | grep -E '^sw_(ble|recon)\.')" stop_during_startup_health_check_leaves_no_temp_files
 rm -rf "$_hs"; unset -f _sw_start_slow _sw_stop_in_check; unset _hs _hsq _sp _i _k _kids _left _inhc _log _alive _rc
+# ...and a Stop in the first moments, before the first lap. With no trap, bash drops a SIGINT that
+# lands during a foreground command (it takes the child's normal exit to mean the child handled
+# it), so the run went on until the SIGKILL, or, inside a command substitution, dies from it.
+# Test-local `touch` and `mktemp` hold one startup step for 0.3 s, the one whose first argument
+# starts with SW_HOLD_ARG, and mark the moment.
+_hb="$(mktemp -d)"; mkdir "$_hb/bin" "$_hb/run"; _hbt="$(command -v touch)"; _hbm="$(command -v mktemp)"; _hbg="$(command -v grep)"
+cat > "$_hb/bin/touch" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in "${SW_HOLD_ARG:?}"*) : > "$SW_HOLD_MARK"; sleep 0.3 ;; esac
+exec "$SW_HOLD_TOUCH" "$@"
+EOF
+cat > "$_hb/bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+out="$("$SW_HOLD_MKTEMP" "$@")"; rc=$?
+case "${1:-}" in "${SW_HOLD_ARG:?}"*) : > "$SW_HOLD_MARK"; sleep 0.3 ;; esac
+[ -n "$out" ] && printf '%s\n' "$out"
+exit "$rc"
+EOF
+# `grep` holds only on an argument that IS SW_HOLD_ARG: loading the signatures greps their file
+cat > "$_hb/bin/grep" <<'EOF'
+#!/usr/bin/env bash
+for a in "$@"; do [ "$a" = "${SW_HOLD_ARG:?}" ] && { : > "$SW_HOLD_MARK"; sleep 0.3; break; }; done
+exec "$SW_HOLD_GREP" "$@"
+EOF
+chmod +x "$_hb/bin/touch" "$_hb/bin/mktemp" "$_hb/bin/grep"
+_sw_start_held() {   # $1 = what the held call gets (touch/mktemp: its start; grep: all of it) -> _sp
+  rm -f "$_hb/held"
+  SW_HOLD_ARG="$1" SW_HOLD_MARK="$_hb/held" SW_HOLD_TOUCH="$_hbt" SW_HOLD_MKTEMP="$_hbm" SW_HOLD_GREP="$_hbg" PATH="$_hb/bin:$PATH" \
+    SW_TEST_SOURCE= SW_SEEN_FILE="$_hb/run/seen.db" SW_LOOT_DIR="$_hb/run/loot" SW_TMP_DIR="$_hb/run" SW_SLEEP=1 \
+    SW_HEALTH_EVERY=0 SW_BLE_CMD=true SW_RECON_DB=/nonexistent/recon.db \
+    python3 -c 'import os, signal as s, sys; [s.signal(n, s.SIG_DFL) for n in (s.SIGINT, s.SIGPIPE, s.SIGXFSZ)]; os.execvp("bash", ["bash"] + sys.argv[1:])' \
+    "$SW_ROOT/payload.sh" >/dev/null 2>&1 &
+  _sp=$!
+}
+_sw_stop_held() {   # the Pager's Stop (or $1, e.g. TERM) during the held step -> _inh _alive _rc
+  for _i in $(seq 80); do [ -e "$_hb/held" ] && break; sleep 0.05; done
+  _inh="$([ -e "$_hb/held" ] && echo yes || echo no)"
+  : > "$SW_STUB_LOG"
+  kill -"${1:-INT}" "$_sp"
+  for _i in $(seq 20); do kill -0 "$_sp" 2>/dev/null || break; sleep 0.05; done    # the ~1 s grace
+  _alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
+  { kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
+}
+# the startup `touch` of the ledger, before the ledger prune and the health check
+rm -rf "${_hb:?}/run"; mkdir "$_hb/run"
+_sw_start_held "$_hb/run/seen.db"; _sw_stop_held
+assert_eq "$_inh" "yes" stop_first_moments_control_was_held
+assert_eq "$_alive/$_rc" "no/0" stop_in_first_moments_runs_trap_within_the_grace
+assert_empty "$(grep -E '^(LOG|ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_in_first_moments_reports_nothing
+# ...even earlier, while the libs and signatures load (about a quarter of a second on the Pager),
+# before sw_main or its trap exist
+rm -rf "${_hb:?}/run"; mkdir "$_hb/run"
+_sw_start_held "$SW_ROOT/signatures.db"; _sw_stop_held
+assert_eq "$_inh" "yes" stop_while_loading_control_was_held
+assert_eq "$_alive/$_rc" "no/0" stop_while_loading_ends_cleanly_within_the_grace
+assert_empty "$(grep -E '^(LOG|ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_while_loading_reports_nothing
+# ...and a TERM there (a shutdown, a kill over SSH) the same way
+rm -rf "${_hb:?}/run"; mkdir "$_hb/run"
+_sw_start_held "$SW_ROOT/signatures.db"; _sw_stop_held TERM
+assert_eq "$_inh/$_alive/$_rc" "yes/no/0" stop_while_loading_term_ends_cleanly
+# ...inside the ledger prune's rewrite: the trap ends the run between the prune's mktemp and its mv,
+# which left the prune's temp copy of the ledger in the loot dir for good. The ledger holds an
+# expired line, so the startup prune rewrites it. Files that only look like that temp copy (a
+# hand-made seen.db.backup, say) must survive, and so must the ledger itself, which the prune
+# never got to replace.
+rm -rf "${_hb:?}/run"; mkdir "$_hb/run"
+printf '%s\n' "AA:00:00:00:00:01|old|$(( $(date +%s) - 100000 ))" "AA:00:00:00:00:02|new|$(date +%s)" > "$_hb/run/seen.db"
+for _f in seen.db.bak seen.db.backup seen.db.1234567 seen.db.prune.before; do echo keep > "$_hb/run/$_f"; done
+_ledger="$(cat "$_hb/run/seen.db")"
+_sw_start_held "$_hb/run/seen.db."; _sw_stop_held
+assert_eq "$_inh" "yes" stop_in_prune_control_was_held
+assert_eq "$_alive/$_rc" "no/0" stop_in_prune_runs_trap_within_the_grace
+assert_eq "$(ls "$_hb/run" | LC_ALL=C sort | tr '\n' ' ')" "loot seen.db seen.db.1234567 seen.db.backup seen.db.bak seen.db.prune.before " stop_in_prune_leaves_no_ledger_temp
+assert_eq "$(cat "$_hb/run/seen.db")" "$_ledger" stop_in_prune_keeps_the_ledger
+assert_eq "$(cat "$_hb/run/seen.db.backup")|$(cat "$_hb/run/seen.db.prune.before")" "keep|keep" stop_in_prune_keeps_look_alikes
+rm -rf "$_hb"; unset -f _sw_start_held _sw_stop_held; unset _hb _hbt _hbm _hbg _sp _i _f _inh _alive _rc _ledger
 # REAL Flipper BLE Spam capture: name-only "Flipper" adverts from random MACs. Counts come from
 # the matcher, so the test pins behaviour, not today's numbers. _nf counts EVERY Flipper-kind
 # device (the user's real Flipper, if captured, is the same kind for the screen cap and CSV);
@@ -518,6 +614,18 @@ SW_DEFAULTS="$(env -u SW_RECENCY_SECS -u SW_RECON_DB -u SW_BLE_CMD -u SW_LOOT_DI
   bash -c 'SW_TEST_SOURCE=1 . "$1"/payload.sh >/dev/null 2>&1; echo "$SW_RECENCY_SECS"' _ "$SW_ROOT")"
 assert_eq "$SW_DEFAULTS" "600" payload_default_recency_window
 unset SW_DEFAULTS
+# Sourcing payload.sh (as these tests do) must not install its early `exit 0` trap in the sourcing
+# shell: a Ctrl-C of the suite would then end it with status 0, as if it had passed. (A real run
+# does install it: stop_while_loading_ends_cleanly_within_the_grace.) python3 restores the default
+# SIGINT/SIGTERM first: a suite started in the background inherits SIGINT ignored, and `trap -p`
+# then reports that inherited "ignore" whatever the sourced code does.
+_sw_dfl_bash() { python3 -c 'import os, signal as s, sys; [s.signal(n, s.SIG_DFL) for n in (s.SIGINT, s.SIGTERM)]; os.execvp("bash", ["bash"] + sys.argv[1:])' "$@"; }
+# The probe prints "sourced" only if the file really loaded (so a failed source cannot pass as
+# "no trap"), then any INT/TERM trap it finds.
+assert_eq "$(_sw_dfl_bash -c 'SW_TEST_SOURCE=1 . "$1/payload.sh" >/dev/null 2>&1; declare -F sw_main >/dev/null && echo sourced; trap -p INT TERM' _ "$SW_ROOT")" "sourced" payload_sourced_sets_no_signal_trap
+# control: the same probe does report a trap the sourced code sets
+assert_contains "$(_sw_dfl_bash -c 'trap "exit 0" INT; trap -p INT TERM')" "exit 0" payload_sourced_trap_probe_control
+unset -f _sw_dfl_bash
 
 # --- launched from the Pager UI (regression, found on-device 2026-09-23) ---
 # The Pager does NOT run payload.sh in place: its launcher writes a copy to
