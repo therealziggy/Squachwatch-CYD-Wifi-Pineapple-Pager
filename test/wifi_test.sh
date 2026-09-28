@@ -71,3 +71,49 @@ assert_eq "$([ -e "$SW_TMPD/vanished" ] && echo yes)" "yes" stale_db_vanished_co
 assert_empty "$(ls -A "$SW_TMPV")" stale_db_vanished_copy_leaves_no_file
 rm -rf "$SW_TMPV"; unset SW_TMPV
 rm -rf "$SW_TMPD"; unset SW_TMPD recs_all recs_fresh
+
+# --- the test shim behaves like the Pager's sqlite3 3.46.1 (checked on the device 2026-09-29) ---
+_ro="$(mktemp -d)"
+sqlite3 -readonly "$_ro/missing.db" "SELECT 1;" >/dev/null 2>&1; assert_eq "$?" "1" shim_readonly_missing_fails
+assert_eq "$([ -e "$_ro/missing.db" ] && echo created || echo absent)" "absent" shim_readonly_missing_not_created
+# control: without -readonly a missing file is created (empty), as the real CLI does
+sqlite3 "$_ro/plain.db" "SELECT 1;" >/dev/null 2>&1
+assert_eq "$([ -e "$_ro/plain.db" ] && echo created || echo absent)" "created" shim_plain_missing_created
+assert_eq "$(sqlite3 -readonly "$FIX/recon.db" "SELECT count(*) FROM ssid;")" "6" shim_readonly_reads_existing
+rm -rf "$_ro"; unset _ro
+
+# --- one copy per lap: sw_recon_snapshot + sw_wifi_records_in (spec 2026-09-29 §6.2) ---
+_sn="$(mktemp -d)"
+SW_TMP_DIR="$_sn" sw_recon_snapshot "$FIX/recon.db"; assert_eq "$?" "0" snapshot_rc
+_snap="$REPLY"
+assert_contains "$_snap" "$_sn/sw_recon." snapshot_in_sw_tmp_dir
+assert_eq "$(cmp -s "$FIX/recon.db" "$_snap" && echo same)" "same" snapshot_is_a_copy
+# the reader reads a given copy and leaves it for the next reader (the evil-twin check)
+assert_contains "$(sw_wifi_records_in "$_snap")" "wifi|AA:BB:CC:00:11:22|MyPineappleNet|-55" records_in_reads_copy
+assert_eq "$([ -e "$_snap" ] && echo kept)" "kept" records_in_keeps_copy
+rm -f "$_snap"
+# a copy removed under the lap (the exit trap after a Stop) reads as nothing and is NOT recreated
+assert_empty "$(sw_wifi_records_in "$_snap")" records_in_vanished_copy_empty
+assert_eq "$([ -e "$_snap" ] && echo recreated || echo absent)" "absent" records_in_vanished_copy_not_recreated
+# no copy possible: rc 1, REPLY empty, nothing left behind
+SW_TMP_DIR="$_sn" sw_recon_snapshot "$_sn/no-such.db"; assert_eq "$?" "1" snapshot_missing_db_rc
+assert_empty "$REPLY" snapshot_missing_db_reply_empty
+assert_empty "$(ls -A "$_sn")" snapshot_missing_db_leaves_nothing
+SW_TMP_DIR="$_sn/missing" sw_recon_snapshot "$FIX/recon.db"; assert_eq "$?" "1" snapshot_no_tmp_dir_rc
+rm -rf "$_sn"; unset _sn _snap
+
+# --- a network name cannot forge a second record (reproduced 2026-09-29) ---
+# The sqlite3 CLI prints a line break inside a value as it is, so a nearby network named
+# "X<LF>B41E52112233<TAB>-10<TAB>Fake" used to add a record for B4:1E:52:11:22:33 -- Flock Safety's
+# own block, i.e. a fake full-screen "Flock Safety device" alert at an address the attacker picks.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/recon_db.sh"   # sw_test_recon_db
+_nl="$(mktemp -d)"
+sw_test_recon_db "$_nl/r.db" "8,021122334455,0,0,-60,30,X"$'\n'"B41E52112233"$'\t'"-10"$'\t'"Fake"
+# control: the name really holds a line break (else the checks below pass vacuously)
+assert_eq "$(python3 -c 'import sqlite3,sys; print(int(b"\n" in sqlite3.connect(sys.argv[1]).execute("SELECT ssid FROM ssid").fetchone()[0]))' "$_nl/r.db")" "1" forge_control_name_has_line_break
+_recs="$(sw_wifi_records "$_nl/r.db")"
+assert_eq "$(printf '%s\n' "$_recs" | grep -c .)" "1" forge_one_record_per_row
+assert_contains "$_recs" "wifi|02:11:22:33:44:55|XB41E52112233-10Fake|-60" forge_real_record_kept
+assert_empty "$(printf '%s\n' "$_recs" | grep -F 'B4:1E:52')" forge_no_forged_record
+assert_empty "$(printf '%s\n' "$_recs" | sw_match_stream "$(sw_load_signatures "$SW_ROOT/signatures.db")" | grep -F 'flock')" forge_no_fake_flock_detection
+rm -rf "$_nl"; unset _nl _recs

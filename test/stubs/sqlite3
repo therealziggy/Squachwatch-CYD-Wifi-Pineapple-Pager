@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # test/stubs/sqlite3 — emulate the CLI forms the engine uses:
-#   sqlite3 DB ".tables" | "PRAGMA ..." | "SELECT ..." | piped SQL
+#   sqlite3 [-readonly] DB ".tables" | "PRAGMA ..." | "SELECT ..." | piped SQL
 # Delegates to python3 stdlib sqlite3. Tab-separated output (like -separator).
 # stdin is freed for SQL input; supports both positional args and piped input.
-exec python3 -c 'import sqlite3, sys
-db = sys.argv[1]
-sql = sys.argv[2] if len(sys.argv) > 2 else sys.stdin.read()
-con = sqlite3.connect(db)
+# -readonly behaves like the Pager's sqlite3 3.46.1 (checked on the device 2026-09-29): a missing
+# database is an error and is NOT created. Without it a missing database is created empty, as the
+# real CLI does.
+exec python3 -c 'import sqlite3, sys, urllib.parse
+args = sys.argv[1:]
+ro = bool(args) and args[0] == "-readonly"
+if ro:
+    args = args[1:]
+db = args[0]
+sql = args[1] if len(args) > 1 else sys.stdin.read()
 try:
+    if ro:
+        con = sqlite3.connect("file:" + urllib.parse.quote(db) + "?mode=ro", uri=True)
+    else:
+        con = sqlite3.connect(db)
     if sql.strip().startswith(".tables"):
         cur = con.execute("SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name")
         rows = cur.fetchall()

@@ -53,20 +53,34 @@ sw_wifi_row_to_record() {
   printf 'wifi|%s|%s|%s\n' "$mac" "$ident" "$3"
 }
 
-sw_wifi_records() {
-  # $1 = db path (default SW_RECON_DB). Copies to ${SW_TMP_DIR:-/tmp} first (lock-safe); a copy
-  # stranded by the Pager's Stop is cleared by payload.sh at the next start (sw_clear_tmp).
-  local db="${1:-$SW_RECON_DB}" tmp
+sw_recon_snapshot() {
+  # $1 = recon DB path -> REPLY = the path of a private copy in ${SW_TMP_DIR:-/tmp}, rc 0; or rc 1
+  # and REPLY="" when no copy could be made. Every read goes to a copy: the live DB locks while the
+  # Recon GUI is open. The caller removes the copy; one stranded by the Pager's Stop is cleared by
+  # payload.sh at the next start (sw_clear_tmp removes sw_recon.*).
+  REPLY=""
+  local tmp
   tmp="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_recon.XXXXXX")" || return 1   # trailing X's only — BusyBox mktemp rejects a suffix after XXXXXX
-  cp "$db" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  cp "$1" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  REPLY="$tmp"
+}
+
+sw_wifi_records_in() {
+  # $1 = a recon DB copy (sw_recon_snapshot). Emits one wifi record per row and leaves the copy in
+  # place: a lap (payload.sh, sw_scan_once) shares one copy with the evil-twin check. -readonly: a
+  # copy removed under a running lap (the exit trap after a Stop) makes this read fail instead of
+  # leaving an empty new file in its place.
   # P0-confirmed schema: join wifi_device for the canonical MAC (clients have EMPTY
   # ssid.bssid; the MAC is only in wifi_device.mac). ssid is a BLOB -> CAST to TEXT.
   # Emit ONE column per row = mac<TAB>signal<TAB>ssid, joined with char(9) in SQL, so we
   # do NOT depend on the sqlite3 CLI's column separator (real CLI defaults to '|', the
   # python test shim to tab). SSID is LAST so any bytes it holds (tabs/pipes/etc.) can't
-  # shift mac/signal. mac/signal never contain a tab. The { } runs in ONE subshell (pipe RHS).
+  # shift mac/signal. mac/signal never contain a tab. The CLI prints a line break inside a
+  # value as it is, so line breaks are removed from the SSID in SQL: a network named
+  # "x<LF>B41E52112233<TAB>-10<TAB>y" used to read as a second, forged record (a fake Flock
+  # Safety camera, full alert included; reproduced 2026-09-29). The { } runs in ONE subshell.
   local window; _sw_wifi_window_sql; window="$REPLY"
-  sqlite3 "$tmp" "SELECT w.mac || char(9) || s.signal || char(9) || CAST(s.ssid AS TEXT) FROM ssid s JOIN wifi_device w ON s.wifi_device=w.hash WHERE s.type IN (4,8)$window;" 2>/dev/null | {
+  sqlite3 -readonly "$1" "SELECT w.mac || char(9) || s.signal || char(9) || replace(replace(CAST(s.ssid AS TEXT), char(10), ''), char(13), '') FROM ssid s JOIN wifi_device w ON s.wifi_device=w.hash WHERE s.type IN (4,8)$window;" 2>/dev/null | {
     local line mac rest signal ssid
     while IFS= read -r line; do
       [ -z "$line" ] && continue
@@ -77,5 +91,13 @@ sw_wifi_records() {
       sw_wifi_row_to_record "$mac" "$ssid" "$signal"
     done
   }
+}
+
+sw_wifi_records() {
+  # $1 = db path (default SW_RECON_DB): copy, read, remove the copy. For tests and tools; a lap
+  # takes one copy and shares it (payload.sh, sw_scan_once).
+  sw_recon_snapshot "${1:-$SW_RECON_DB}" || return 1
+  local tmp="$REPLY"
+  sw_wifi_records_in "$tmp"
   rm -f "$tmp"
 }
