@@ -83,7 +83,8 @@ Every lap, on the lap's copy of the recon database:
    database) or is not a whole number without a leading zero, the twin check uses 600 s, because "at the
    same time" needs a window. (A leading zero would make bash read the number as octal.) Rows last seen more
    than a minute after the lap started are left out too: after the device clock steps back, older history
-   would otherwise look like "right now" (final review).
+   would otherwise look like "right now" (final review). The WiFi signature sweep and the stale-DB check use
+   the same upper bound.
 2. Keep only visible, named networks: `hidden = 0`, and a name that is neither empty nor made only of zero
    bytes. Skip rows with no security value.
 3. Group the rows by the exact name, byte for byte (capitals, spaces and all).
@@ -104,12 +105,13 @@ is the one named, whichever appeared first (this removes the CYD limitation desc
   `AA:BB:CC:00:00:01 -38dBm` on the next line.
 - CSV row: category `evil_twin`, label `Evil twin`, confidence `high`, class `attacker`, radio `wifi`, the
   open copy's MAC, the network name (the ident column) and its signal.
-- The existing gates, unchanged:
+- The existing gates (the cooldown key and the ignore list changed after the final review):
   - `SW_COOLDOWN`: one alert and one CSV row per open copy and network name per 600 s (the ledger key is
     the MAC plus `evil_twin:<name>`), so a radio copying several names, or decoys around a real target,
     cannot hide one name behind another (user decision after the final review).
   - `SW_KIND_COOLDOWN`: several twins at once buzz once; the alert names the first one found.
-  - `SW_LOG_PER_KIND`: 3 screen lines per lap, then `...and N more Evil twin`.
+  - `SW_LOG_PER_KIND`: 3 screen lines per lap, then `...and N more Evil twin` (the flood guard: past that, a
+    name shows only in the CSV).
   - `ignore.txt`: only a line `evil_twin:<MAC>` silences an evil twin (that one). A plain MAC line never
     does, because the attacker chooses the address and could copy one of the owner's (user decision after
     the final review).
@@ -145,7 +147,8 @@ test that separates a twin from a normal network.
 - Each result row is ONE column, `mac<TAB>signal<TAB>name`, joined in SQL with `char(9)`, with the name
   LAST. The reason is the same as for `sw_wifi_records`: the CLI's column separator differs between the
   Pager and the test shim, and a name can hold tabs or pipes.
-- The query (its exact text is pinned by the tests; `<rows>` is `_sw_evil_twin_rows`):
+- The query (the tests pin its behaviour, and `perf_test.sh` pins `-readonly` and `AS MATERIALIZED`; `<rows>` is
+  `_sw_evil_twin_rows`):
 
   ```sql
   WITH w AS MATERIALIZED (
@@ -217,20 +220,26 @@ no default of its own (the recency-window lesson: payload.sh sources its libs be
   line. Every loop whose lines end with a name (the WiFi reader, the twin check, the btmon parser) reads in
   the C locale (`local LC_ALL=C`): in a UTF-8 locale, which is how the Pager's bash behaves by default,
   `read` swallows the line break after a byte that starts a multi-byte character, so a name ending in one
-  hid the next device's line (found in the final review round, confirmed on the Pager).
+  hid the next device's line (found in the final review round, confirmed on the Pager). In the C locale
+  `[[:cntrl:]]` covers only ASCII, so `sw_sanitize_ident` also strips, in their UTF-8 form, the C1 controls
+  (NEL, CSI, OSC...) and the Unicode line and paragraph separators, which the Pager's default locale used to
+  count as control characters. The cooldown ledger, whose evil-twin keys hold a name, is read as bytes too.
 - **Read-only open.** `sqlite3 -readonly` means a copy that disappears under a running lap (the exit trap
   after a Stop removes it) is never recreated as an empty file. That was the 2026-09-28 health-check bug.
   The Pager's sqlite3 (3.46.1) supports the flag. The test shim gains it too and models the Pager: with
   `-readonly`, a missing file is an error and is not created.
 - **Blind-spot health check.** A check that silently finds nothing must never read as "all clear". The health
-  check (at startup and every `SW_HEALTH_EVERY` laps, never once the payload is stopped) copies the database
-  once. A copy that can't be made (a full `/tmp`, say) is `WARN: can't copy the recon DB ... — WiFi detection
-  OFF`. When `SW_EVIL_TWIN=1`, a probe on that copy counts the beacon rows in the window and, among them,
-  those with a usable hidden flag, security value and signal (numbers) and a 12-hex address. Rows present but
-  none usable in one of those columns, or a probe that fails for any reason but a damaged copy (a renamed
-  column, an sqlite3 that can't run the check's query), is `WARN: evil-twin check is blind (the recon DB no
-  longer records what it needs)` and DEGRADED. A torn copy of a database that was being written ("malformed",
-  "not a database", "disk I/O") or a copy that vanished (a Stop) is "unknown", not blind, and
+  check (at startup and every `SW_HEALTH_EVERY` laps, never once the payload is stopped) makes one copy of the
+  database for these checks (the stale-DB check still makes its own). A copy that can't be made (a full
+  `/tmp`, say) is `WARN: can't copy the recon DB ... — WiFi detection OFF`. When `SW_EVIL_TWIN=1`, a probe on
+  that copy counts the beacon rows in the window and, among them, those with a usable hidden flag, security
+  value and signal (numbers) and a 12-hex address, and, among the visible ones, those with a name. Rows
+  present but none usable in one of those columns, visible rows without a single name, or a probe that fails
+  for any reason but a damaged copy (a renamed column, an sqlite3 that can't run the check's query), is
+  `WARN: evil-twin check is blind (the recon DB no longer records what it needs)` and DEGRADED. A damaged
+  copy ("malformed", "not a database", "disk I/O") is usually one torn by a write in progress, so the check
+  looks at one fresh copy; if that one reads as damaged too, it is `WARN: recon DB copy unreadable twice
+  (damaged?) — WiFi detection OFF`. A copy that vanished (a Stop) is "unknown", not blind, and
   `_sw_health_warn` stays silent once the payload is stopped. With no rows in the window there is no verdict:
   the existing "recon DB not updating" warning covers that case. Not caught: a firmware change that keeps the
   columns but changes what their values mean.
@@ -314,8 +323,10 @@ A suite test runs the tool on a synthetic history (one twin found, and none in a
 - A nearby router switched from open to protected during its setup triggers one alert.
 - A venue that deliberately offers one name both open and protected is reported; an `evil_twin:<address>` line
   in `ignore.txt` silences it.
-- Several twins at once buzz once, and the alert names the first one found; the screen and the CSV list
-  them all.
+- Several twins at once buzz once, and the alert names the first one found; the CSV lists them all, the
+  screen up to `SW_LOG_PER_KIND` per lap.
+- `SW_RECENCY_SECS=0` turns off the stale-DB warning (it needs a window), while the twin check still uses
+  600 s.
 - The blind-spot check does not catch a firmware change that keeps the columns but changes what their values
   mean.
 - The user's own Pager, running its open access point under a nearby protected network's name, is reported.

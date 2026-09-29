@@ -533,7 +533,7 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
   btmon parser) now reads in the C locale.
 - The test stand-in for sqlite3 now prints values as the Pager's CLI does: raw bytes, cut at the first
   NUL. The old one failed a whole query on a name that is not UTF-8 (the author's history holds one such
-  name) and printed NUL bytes the real CLI never prints.
+  access-point name, five counting names that clients probed for) and printed NUL bytes the real CLI never prints.
 - Replaying the author's whole recon history (`tools/replay_evil_twin.sh`: 1,286 minutes that hold
   beacon data, 600 s window) finds exactly one open copy, which fired in 7 minutes. It is the Pager's own
   open access point, run on its first day under the name and address of the owner's router. CYD's rule
@@ -543,3 +543,10 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
   sighting in a session), so the whole history was also counted directly: exactly one visible, named
   network was ever seen both open and protected, in any session, and it is that same one. Re-run with the
   final code and the byte-faithful stand-in (1,336 minutes by then): the same single copy.
+- The second review round (2026-09-30): in the C locale bash's `[[:cntrl:]]` covers only ASCII control
+  characters and DEL, where the Pager's default (UTF-8) locale also counted the C1 controls and U+2028/U+2029;
+  the name cleaning now strips those explicitly. GNU grep in a UTF-8 locale hides a line holding a byte that is
+  not UTF-8 ("binary file matches"; the Pager's BusyBox grep does not), and bash's `[[ =~ ]]` does not match
+  such a line in a UTF-8 locale: since an evil twin's cooldown key holds its name, the ledger is read as bytes.
+  A damaged copy of the recon DB ("malformed" and the like) is usually one taken during a write, so the health
+  check looks at a fresh copy before warning that the DB is damaged.
