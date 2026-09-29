@@ -252,6 +252,14 @@ sw_emit "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:00:00:0A|Flipper
 sw_emit "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:00:00:0A|Flipper b|-60" 1010 600 "$_s7" "$_L7"
 assert_eq "$(grep -c ',hacker_flipper,' "$_L7/detections.csv")" "1" other_kinds_one_row_per_device
 rm -rf "$_L7" "$_s7"; unset _L7 _s7
+# a name that is not UTF-8 keeps its cooldown, and the prune keeps its ledger line: the ledger is read
+# as bytes (GNU grep hid such a line as "binary", and bash's regex did not match it in UTF-8)
+_L8="$(mktemp -d)"; sw_log_init "$_L8"; _s8="$(mktemp)"; : > "$_s8"; : > "$SW_STUB_LOG"
+for _t in 1000 1010 1020; do sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|Caf"$'\xe9'"|-38" "$_t" 600 "$_s8" "$_L8"; done
+assert_eq "$(grep -a -c ',evil_twin,' "$_L8/detections.csv")" "1" twin_non_utf8_name_keeps_its_cooldown
+sw_seen_prune "$_s8" 1100 600
+assert_eq "$(grep -a -c 'evil_twin:Caf' "$_s8")" "1" prune_keeps_non_utf8_name_line
+rm -rf "$_L8" "$_s8"; unset _L8 _s8 _t
 
 # --- ledger pruning (spec 2026-09-23 §7) ---
 _P="$(mktemp -d)"; _pf="$_P/seen.db"

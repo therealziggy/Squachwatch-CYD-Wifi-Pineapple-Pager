@@ -14,7 +14,9 @@ _sw_wifi_window_sql() {
   REPLY=""
   case "${SW_RECENCY_SECS:-0}" in ''|*[!0-9]*) return 0 ;; 0) return 0 ;; esac
   local now; now="$(date +%s)"
-  REPLY=" AND s.time >= $(( now - SW_RECENCY_SECS ))"
+  # ...and nothing last seen more than a minute from now: after the device clock steps back, older
+  # history would otherwise read as nearby (as in the evil-twin check).
+  REPLY=" AND s.time >= $(( now - SW_RECENCY_SECS )) AND s.time <= $(( now + 60 ))"
 }
 
 sw_wifi_stale_db() {
@@ -27,7 +29,7 @@ sw_wifi_stale_db() {
   cp "$db" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   now="$(date +%s)"
   total="$(sqlite3 "$tmp" "SELECT count(*) FROM ssid;" 2>/dev/null)"
-  fresh="$(sqlite3 "$tmp" "SELECT count(*) FROM ssid WHERE time >= $(( now - SW_RECENCY_SECS ));" 2>/dev/null)"
+  fresh="$(sqlite3 "$tmp" "SELECT count(*) FROM ssid WHERE time >= $(( now - SW_RECENCY_SECS )) AND time <= $(( now + 60 ));" 2>/dev/null)"
   # A copy that vanished mid-check (the exit trap after a Stop, a relaunch's startup sweep) left
   # the counts an empty new file, which the sqlite3 CLI creates: that is "unknown", not "stale".
   [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
@@ -96,7 +98,7 @@ sw_wifi_records_in() {
     local line mac rest signal ssid
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      mac="${line%%$'\t'*}"; [ -z "$mac" ] && continue
+      mac="${line%%$'\t'*}"; [[ "$mac" =~ ^[0-9A-Fa-f]{12}$ ]] || continue   # as in SQL, and past a NUL
       rest="${line#*$'\t'}"                 # signal<TAB>ssid
       signal="${rest%%$'\t'*}"              # up to 2nd tab
       ssid="${rest#*$'\t'}"                 # everything after 2nd tab (ssid may contain anything)

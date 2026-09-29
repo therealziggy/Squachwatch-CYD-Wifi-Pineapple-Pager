@@ -27,6 +27,11 @@ sw_sanitize_ident() {
   # correctly, which is why this replaces the old octal-range pipeline.
   REPLY="${1//|/}"
   REPLY="${REPLY//[[:cntrl:]]/}"
+  # The record readers run in the C locale (bytes), where [[:cntrl:]] stops at ASCII: also strip the
+  # C1 controls (NEL, CSI, OSC...) and the Unicode line and paragraph separators, which the Pager's
+  # default UTF-8 locale counted as control characters too, in their UTF-8 form.
+  REPLY="${REPLY//$'\xc2'[$'\x80'-$'\x9f']/}"
+  REPLY="${REPLY//$'\xe2\x80'[$'\xa8\xa9']/}"
 }
 
 sw_oui() {

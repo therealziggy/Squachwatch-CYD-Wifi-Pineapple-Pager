@@ -35,7 +35,9 @@ sw_should_report() {
   # is POSIX ERE, so this is portable) also keeps a stored value from overflowing bash's integer
   # arithmetic and raising the same class of error a different way.
   local mac="$1" cat="$2" now="$3" cooldown="$4" sf="$5" key="$1|$2" last num='^[1-9][0-9]{0,11}$'
-  last="$(grep -F "$key|" "$sf" 2>/dev/null | tail -1 | cut -d'|' -f3)"
+  # The key can hold an evil twin's name, in any bytes: GNU grep in a UTF-8 locale hides a line
+  # holding a byte that is not UTF-8 ("binary file matches"), so the ledger is read as bytes.
+  last="$(LC_ALL=C grep -F "$key|" "$sf" 2>/dev/null | tail -1 | cut -d'|' -f3)"
   if [[ "$last" =~ $num ]] && [ "$now" -ge "$last" ] && [ $((now - last)) -lt "$cooldown" ]; then
     return 1
   fi
@@ -161,6 +163,9 @@ sw_seen_prune() {
   # loop whose redirection could not be set up at all (a missing input, or an output path that
   # can't be created) reports that failure as its own exit status.
   local sf="$1" now="$2" keep="$3" tmp line ts line_re='^[^|]+\|[^|]+\|[1-9][0-9]{0,11}$'
+  # Bytes, not characters: an evil twin's key holds its network name, and in a UTF-8 locale (the
+  # Pager's default) the line regex does not match a line holding a byte that is not UTF-8.
+  local LC_ALL=C
   [ -e "$sf" ] || return 0
   if [ ! -f "$sf" ] || [ ! -r "$sf" ]; then
     LOG yellow "WARN: can't prune $sf — it will keep growing" 2>/dev/null; return 1

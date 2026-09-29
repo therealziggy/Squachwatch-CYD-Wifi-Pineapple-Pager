@@ -78,15 +78,17 @@ sw_evil_twin_scan() {
 }
 
 sw_evil_twin_blind() {
-  # $1 = a recon DB copy (read only). True (0) when the evil-twin check cannot work: the window holds
-  # beacon rows, but none of them has a usable value in one of the columns the check reads (hidden,
-  # encryption and signal as numbers, a 12-hex address), or the probe fails for any reason but a
-  # damaged copy (a renamed column, an sqlite3 that can't run the check's query). The check would
-  # then find nothing, forever, and read as "all clear". False (1) = fine, or no verdict: no rows in
-  # the window (the stale-DB check reports that one), a torn copy of a DB that was being written, or
-  # a copy that vanished during the check (the exit trap after a Stop): "unknown", never "blind".
-  # Not caught: a firmware change that keeps these columns but changes what their values mean.
-  local now since out rc total hid enc sig mac
+  # $1 = a recon DB copy (read only). 0 = blind: the evil-twin check cannot work, because the window
+  # holds beacon rows but none of them has a usable value in one of the columns the check reads
+  # (hidden, encryption and signal as numbers, a 12-hex address), its visible rows have no names, or
+  # the probe fails for any reason but a damaged copy (a renamed column, an sqlite3 that can't run the
+  # check's query). The check would then find nothing, forever, and read as "all clear". 2 = the copy
+  # is damaged ("malformed", "not a database", "disk I/O"): usually a copy torn by a write in progress,
+  # so the health check looks at one fresh copy before it says anything. 1 = fine, or no verdict: no
+  # rows in the window (the stale-DB check reports that one), or a copy that vanished during the check
+  # (the exit trap after a Stop). Not caught: a firmware change that keeps these columns but changes
+  # what their values mean.
+  local now since out rc total hid enc sig mac vis visnamed
   _sw_evil_twin_window
   now="$(date +%s)"; since=$(( now - REPLY ))
   out="$(sqlite3 -readonly "$1" "WITH b AS MATERIALIZED (
@@ -97,14 +99,20 @@ sw_evil_twin_blind() {
       count(CASE WHEN typeof(hidden) = 'integer' THEN 1 END) || char(9) ||
       count(CASE WHEN typeof(encryption) = 'integer' THEN 1 END) || char(9) ||
       count(CASE WHEN typeof(signal) = 'integer' THEN 1 END) || char(9) ||
-      count(CASE WHEN length(bssid) = 12 AND bssid NOT GLOB '*[^0-9A-Fa-f]*' THEN 1 END)
+      count(CASE WHEN length(bssid) = 12 AND bssid NOT GLOB '*[^0-9A-Fa-f]*' THEN 1 END) || char(9) ||
+      count(CASE WHEN hidden = 0 THEN 1 END) || char(9) ||
+      count(CASE WHEN hidden = 0 AND ltrim(hex(ssid), '0') <> '' THEN 1 END)
     FROM b;" 2>&1)"; rc=$?
   [ -s "$1" ] || return 1
   if [ "$rc" -ne 0 ]; then
-    case "$out" in *malformed*|*"not a database"*|*"disk I/O"*) return 1 ;; esac
+    case "$out" in *malformed*|*"not a database"*|*"disk I/O"*) return 2 ;; esac
     return 0
   fi
-  IFS=$'\t' read -r total hid enc sig mac <<< "$out"
-  [[ "$total" =~ ^[0-9]+$ && "$hid" =~ ^[0-9]+$ && "$enc" =~ ^[0-9]+$ && "$sig" =~ ^[0-9]+$ && "$mac" =~ ^[0-9]+$ ]] || return 0
-  [ "$total" -gt 0 ] && { [ "$hid" -eq 0 ] || [ "$enc" -eq 0 ] || [ "$sig" -eq 0 ] || [ "$mac" -eq 0 ]; }
+  IFS=$'\t' read -r total hid enc sig mac vis visnamed <<< "$out"
+  [[ "$total" =~ ^[0-9]+$ && "$hid" =~ ^[0-9]+$ && "$enc" =~ ^[0-9]+$ && "$sig" =~ ^[0-9]+$ && "$mac" =~ ^[0-9]+$ \
+     && "$vis" =~ ^[0-9]+$ && "$visnamed" =~ ^[0-9]+$ ]] || return 0
+  [ "$total" -gt 0 ] || return 1
+  if [ "$hid" -eq 0 ] || [ "$enc" -eq 0 ] || [ "$sig" -eq 0 ] || [ "$mac" -eq 0 ]; then return 0; fi
+  if [ "$vis" -gt 0 ] && [ "$visnamed" -eq 0 ]; then return 0; fi
+  return 1
 }

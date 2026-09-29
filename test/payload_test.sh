@@ -75,12 +75,27 @@ assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_recon\.')" health_leaves_no_db_c
 : > "$SW_STUB_LOG"
 SW_TMP_DIR="$_hb2/no-such-dir" SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck 2>/dev/null; assert_eq "$?" "1" health_no_copy_rc
 assert_contains "$(cat "$SW_STUB_LOG")" "can't copy the recon DB" health_no_copy_warns
+# a recon DB damaged for good (here: not a database at all) is a WARN, once a fresh copy reads the same
+printf 'this is not a database, only text\n' > "$_hb2/junk.db"
+: > "$SW_STUB_LOG"
+SW_RECON_DB="$_hb2/junk.db" SW_RECENCY_SECS=600 sw_healthcheck 2>/dev/null; assert_eq "$?" "1" health_damaged_db_rc
+assert_contains "$(cat "$SW_STUB_LOG")" "recon DB copy unreadable twice" health_damaged_db_warns
+# ...but a copy torn once by a write in progress (the first copy damaged, the next one fine) says nothing
+( eval "$(declare -f sw_recon_snapshot | sed '1s/sw_recon_snapshot/_sw_real_snapshot/')"
+  sw_recon_snapshot() {
+    _sw_real_snapshot "$@" || return 1
+    [ -e "$_hb2/torn-once" ] && return 0
+    : > "$_hb2/torn-once"; printf 'torn-page-torn-page' | dd of="$REPLY" bs=1 seek=100 conv=notrunc 2>/dev/null
+  }
+  : > "$SW_STUB_LOG"; SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck 2>/dev/null ); assert_eq "$?" "0" health_torn_once_rc
+assert_empty "$(grep WARN "$SW_STUB_LOG")" health_torn_once_silent
+assert_eq "$([ -e "$_hb2/torn-once" ] && echo yes)" "yes" health_torn_once_control_was_torn
 # an unreadable DB gets its own WARN only, not a second, evil-twin one
 : > "$SW_STUB_LOG"
 SW_RECON_DB=/nonexistent/recon.db sw_healthcheck
 assert_contains "$(cat "$SW_STUB_LOG")" "WiFi detection OFF" health_unreadable_control_warns
 assert_empty "$(grep -F 'evil-twin' "$SW_STUB_LOG")" health_unreadable_no_twin_warn
-# a check left running by a Stop starts no new DB copy for the blind-spot count
+# a check left running by a Stop makes no new DB copy
 bash -c 'exit 0' & _hbd=$!; wait "$_hbd"
 ( sw_recon_snapshot() { echo called >> "$_hb2/calls"; return 1; }
   SW_MAIN_PID="$_hbd" SW_RECON_DB="$_hb2/null.db" SW_RECENCY_SECS=600 sw_healthcheck >/dev/null 2>&1 )
@@ -150,8 +165,8 @@ assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" "AA:00:00:00:00:01" paylo
 # only what sw_healthcheck needs and no btmon at all.
 _bin="$(mktemp -d)"; _stubs="$(cd "$(dirname "${BASH_SOURCE[0]}")/stubs" && pwd)"
 ln -s "$_stubs/LOG" "$_bin/LOG"; ln -s "$_stubs/sqlite3" "$_bin/sqlite3"; ln -s "$(command -v bash)" "$_bin/bash"
-# ...and the everyday tools its DB checks use (the evil-twin blind-spot count copies the DB and reads
-# the clock; the sqlite3 stand-in runs python3), so btmon is the only thing missing
+# ...and the everyday tools its DB checks use (the health check copies the DB and reads the clock;
+# the sqlite3 stand-in runs python3), so btmon is the only thing missing
 for _t in cp date mktemp rm python3; do ln -s "$(command -v "$_t")" "$_bin/$_t"; done
 : > "$SW_STUB_LOG"
 PATH="$_bin" sw_healthcheck; _hc=$?
@@ -691,6 +706,7 @@ sw_test_recon_db "$_tw/wal.db" "8,ACDE48000001,17184063752,0,-60,30,HomeNet" "8,
 assert_eq "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("PRAGMA journal_mode=WAL").fetchone()[0])' "$_tw/wal.db")" "wal" lap_wal_control_db_is_wal
 _tw_reset; SW_RECON_DB="$_tw/wal.db" SW_BLE_CMD=true sw_scan_once
 SW_RECON_DB="$_tw/wal.db" SW_RECENCY_SECS=600 sw_healthcheck >/dev/null 2>&1
+SW_TMP_DIR="$SW_TMP_DIR" sw_wifi_records "$_tw/wal.db" >/dev/null
 assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Evil twin 'HomeNet'" lap_wal_control_twin_found
 assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_recon\.')" lap_wal_leaves_no_files
 # the copy is gone before the BLE scan starts (6 MB of RAM freed for the scan's ~12 s)

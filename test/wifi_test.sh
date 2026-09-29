@@ -135,4 +135,27 @@ sw_test_recon_db "$_nl/u.db" "8,021122334455,0,0,-60,30,hex:436166e9" "8,B41E521
 _recs="$(sw_wifi_records "$_nl/u.db")"
 assert_contains "$_recs" "wifi|B4:1E:52:11:22:33|FlockCam|-40" lead_byte_name_hides_no_record
 assert_eq "$(printf '%s\n' "$_recs" | grep -c '^wifi|')" "2" lead_byte_name_one_record_each
+# control characters beyond ASCII are stripped too (C1 controls such as NEL and CSI, and the Unicode
+# line and paragraph separators) now that names are read as bytes; é stays
+sw_test_recon_db "$_nl/c.db" "8,021122334455,0,0,-60,30,hex:41c28542c29b43e280a844c3a945"
+assert_eq "$(sw_wifi_records "$_nl/c.db")" "wifi|02:11:22:33:44:55|ABCD"$'\xc3\xa9'"E|-60" sanitize_strips_c1_and_separators
+# only a hex address reaches a record, even a 12-character one
+sw_test_recon_db "$_nl/h.db" "8,GGGGGGGGGGGG,0,0,-60,30,Net" "8,021122334466,0,0,-60,30,Net2"
+_recs="$(sw_wifi_records "$_nl/h.db")"
+assert_empty "$(printf '%s\n' "$_recs" | grep -F 'GG:GG')" wifi_address_must_be_hex
+assert_contains "$_recs" "wifi|02:11:22:33:44:66|Net2|-60" wifi_address_hex_control
+# ...and a zero byte cannot shorten one past the SQL check (the CLI prints up to it): the reader
+# checks the printed address too
+python3 -c 'import sqlite3,sys,time; c=sqlite3.connect(sys.argv[1]); n=int(time.time()); c.execute("CREATE TABLE wifi_device(hash INT PRIMARY KEY, mac TEXT)"); c.execute("CREATE TABLE ssid(hash INT PRIMARY KEY, wifi_device INT, type INT, ssid BLOB, time INT, signal INT)"); c.executemany("INSERT INTO wifi_device VALUES(?,?)", [(1, b"02112233\x00\x00\x00\x00"), (2, b"021122334466")]); c.executemany("INSERT INTO ssid VALUES(?,?,8,?,?,-60)", [(1, 1, b"Net", n), (2, 2, b"Net2", n)]); c.commit()' "$_nl/n.db"
+_recs="$(sw_wifi_records "$_nl/n.db")"
+assert_eq "$(printf '%s\n' "$_recs" | grep -c '^wifi|')" "1" wifi_nul_shortened_address_no_record
+assert_contains "$_recs" "wifi|02:11:22:33:44:66|Net2|-60" wifi_nul_address_control
+# rows last seen more than a minute from now (a clock that stepped back) are not swept, and a DB that
+# holds only such rows reads as not updating
+sw_test_recon_db "$_nl/f.db" "8,B41E52112233,8,0,-40,-1123200,FlockCam" "8,021122334466,0,0,-60,30,Net2"
+_recs="$(SW_RECENCY_SECS=600 sw_wifi_records "$_nl/f.db")"
+assert_empty "$(printf '%s\n' "$_recs" | grep -F 'B4:1E:52')" clock_future_row_not_swept
+assert_contains "$_recs" "wifi|02:11:22:33:44:66|Net2|-60" clock_control_present_row_swept
+sw_test_recon_db "$_nl/f2.db" "8,021122334455,0,0,-60,-1123200,Future"
+SW_RECENCY_SECS=600 sw_wifi_stale_db "$_nl/f2.db"; assert_eq "$?" "0" stale_when_only_future_rows
 rm -rf "$_nl"; unset _nl _recs; unset -f sw_test_recon_db

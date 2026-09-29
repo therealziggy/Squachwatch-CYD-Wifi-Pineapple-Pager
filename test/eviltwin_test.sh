@@ -121,6 +121,11 @@ _et_db "8,ACDE48000001,$_wpa2,0,-60,30,hex:436166e9" "8,021122334455,0,0,-38,20,
 _o="$(_et_scan "$REPLY")"
 assert_contains "$_o" "|02:11:22:33:44:66|HomeNet|-38" non_utf8_name_costs_no_other_twin
 assert_contains "$_o" "|02:11:22:33:44:55|Caf"$'\xe9'"|-38" non_utf8_name_reported
+# the address must be hex, not just 12 characters long
+_et_db "8,ACDE48000001,$_wpa2,0,-60,30,HomeNet" "8,GGGGGGGGGGGG,0,0,-38,20,HomeNet" "8,021122334466,0,0,-40,20,HomeNet"
+_o="$(_et_scan "$REPLY")"
+assert_empty "$(printf '%s\n' "$_o" | grep -F 'GG:GG')" address_must_be_hex
+assert_contains "$_o" "|02:11:22:33:44:66|HomeNet|-40" address_hex_control_valid_copy
 # a NUL inside a name: the Pager's CLI prints up to it (C strings), and so does the test stand-in
 _et_db "8,ACDE48000001,$_wpa2,0,-60,30,hex:486f6d65004e6574" "8,021122334455,0,0,-38,20,hex:486f6d65004e6574"
 assert_eq "$(_et_scan "$REPLY")" "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|Home|-38" nul_in_name_cut_like_the_cli
@@ -163,18 +168,27 @@ mk("nullbssid.db", std, (1, 8, None, b"HomeNet", 0, now - 30, -60, 0))
 mk("textenc.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, "WPA2"))
 mk("nullhidden.db", std, (1, 8, b"ACDE48000001", b"HomeNet", None, now - 30, -60, 0))
 mk("good.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
+mk("realsignal.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60.5, 0))
+mk("noname.db", std, (1, 8, b"ACDE48000001", b"", 0, now - 30, -60, 0))
+mk("hiddenonly.db", std, (1, 8, b"ACDE48000001", b"", 1, now - 30, -60, 0))
+mk("future.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now + 1000, -60, None))
 PY
-for _b in nobssid nosignal nullbssid textenc nullhidden; do
+for _b in nobssid nosignal nullbssid textenc nullhidden realsignal noname; do
   sw_evil_twin_blind "$_eb/$_b.db"; assert_eq "$?" "0" "blind_yes_$_b"
 done
 # control: the same shape with every column usable is fine
 sw_evil_twin_blind "$_eb/good.db"; assert_eq "$?" "1" blind_no_on_good_shape
+# control for noname: hidden radios without names are normal
+sw_evil_twin_blind "$_eb/hiddenonly.db"; assert_eq "$?" "1" blind_no_on_hidden_unnamed_rows
+# rows last seen after the lap (a clock that stepped back) are outside the window: no verdict
+sw_evil_twin_blind "$_eb/future.db"; assert_eq "$?" "1" blind_no_verdict_on_future_rows
 # hidden radios count too: a window of hidden rows with no security value means the field is gone
 sw_test_recon_db "$_eb/hid.db" "8,ACDE48000001,,1,-60,30,HomeNet"
 sw_evil_twin_blind "$_eb/hid.db"; assert_eq "$?" "0" blind_yes_when_even_hidden_rows_lack_security
-# a torn copy of a DB that was being written is "unknown", not blind
+# a torn copy of a DB that was being written reads as damaged (2), not blind: the health check
+# looks at a fresh copy before it says anything
 cp "$_eb/ok.db" "$_eb/torn.db"; printf 'torn-page-torn-page' | dd of="$_eb/torn.db" bs=1 seek=100 conv=notrunc 2>/dev/null
-sw_evil_twin_blind "$_eb/torn.db"; assert_eq "$?" "1" blind_torn_copy_is_unknown
+sw_evil_twin_blind "$_eb/torn.db"; assert_eq "$?" "2" blind_torn_copy_reads_as_damaged
 # control: that copy really is damaged (else "unknown" above passes vacuously)
 assert_contains "$(sqlite3 -readonly "$_eb/torn.db" "SELECT count(*) FROM ssid;" 2>&1)" "malformed" blind_torn_control_is_damaged
 # no DB: no verdict (the health check's unreadable-DB WARN covers it)

@@ -117,11 +117,21 @@ sw_healthcheck() {
   # once stopped: a check left running by a Stop makes no new DB copy.
   if command -v sqlite3 >/dev/null 2>&1 && [ -r "$SW_RECON_DB" ] && ! sw_stopped; then
     if sw_recon_snapshot "$SW_RECON_DB" 2>/dev/null; then
-      local copy="$REPLY"
-      if [ "${SW_EVIL_TWIN:-0}" = 1 ] && sw_evil_twin_blind "$copy"; then
-        _sw_health_warn "WARN: evil-twin check is blind (the recon DB no longer records what it needs)"; degraded=1
+      local copy="$REPLY" st=1
+      if [ "${SW_EVIL_TWIN:-0}" = 1 ]; then
+        sw_evil_twin_blind "$copy"; st=$?
+        # A damaged copy is usually one torn by a write in progress: look at one fresh copy before
+        # saying anything. A DB that is damaged for good reads that way twice.
+        if [ "$st" -eq 2 ] && ! sw_stopped; then
+          sw_recon_drop "$copy"; copy=""; st=1
+          if sw_recon_snapshot "$SW_RECON_DB" 2>/dev/null; then copy="$REPLY"; sw_evil_twin_blind "$copy"; st=$?; fi
+        fi
       fi
-      sw_recon_drop "$copy"
+      case "$st" in
+        0) _sw_health_warn "WARN: evil-twin check is blind (the recon DB no longer records what it needs)"; degraded=1 ;;
+        2) _sw_health_warn "WARN: recon DB copy unreadable twice (damaged?) — WiFi detection OFF"; degraded=1 ;;
+      esac
+      [ -n "$copy" ] && sw_recon_drop "$copy"
     else
       _sw_health_warn "WARN: can't copy the recon DB to ${SW_TMP_DIR:-/tmp} (full?) — WiFi detection OFF"; degraded=1
     fi

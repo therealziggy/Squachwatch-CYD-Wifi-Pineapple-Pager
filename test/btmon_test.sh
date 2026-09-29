@@ -143,4 +143,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/btmon_gen.sh"   # 
 _lb="$( { sw_test_btmon_devs C1:00:00:00:00 4 $'Caf\xe9' -60; sw_test_btmon_devs C2:00:00:00:00 4 'Flipper x' -55; } | sw_btmon_parse)"
 assert_eq "$(printf '%s\n' "$_lb" | grep -a -c '^ble|')" "8" btmon_lead_byte_name_one_record_each
 assert_eq "$(printf '%s\n' "$_lb" | grep -a -c '|Flipper x|')" "4" btmon_lead_byte_name_hides_no_device
+# the sanitizer strips the C1 controls on the BLE path too (bytes: NEL between A and B)
+assert_contains "$(sw_test_btmon_devs C3:00:00:00:00 1 $'A\xc2\x85B' -50 | sw_btmon_parse)" "ble|C3:00:00:00:00:01|AB|-50|" btmon_sanitize_strips_c1
 unset _lb; unset -f sw_test_btmon_devs
