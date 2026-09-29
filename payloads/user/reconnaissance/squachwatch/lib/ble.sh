@@ -86,6 +86,10 @@ sw_btmon_parse() {
   # cleaned by sw_sanitize_ident (lib/match.sh), the ONE implementation of the Finding-1
   # boundary: never re-implement it in awk.
   local line mac rssi toks r
+  # The name ends each line, so bash reads bytes (LC_ALL=C): in a UTF-8 locale (the Pager's default too, checked 2026-09-29)
+  # a name ending in the first byte of a multi-byte character makes `read` swallow the line break
+  # after it, so the NEXT line merged into this one and that device vanished.
+  local LC_ALL=C
   _sw_btmon_awk | while IFS= read -r line; do
     mac="${line%%$'\t'*}"; r="${line#*$'\t'}"
     rssi="${r%%$'\t'*}";   r="${r#*$'\t'}"

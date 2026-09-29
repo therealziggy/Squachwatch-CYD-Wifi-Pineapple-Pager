@@ -14,6 +14,8 @@ source "$LIB/match.sh"; source "$LIB/wifi.sh"; source "$LIB/eviltwin.sh"
 command -v sqlite3 >/dev/null 2>&1 || PATH="$ROOT/test/stubs:$PATH"
 SW_RECENCY_SECS="${2:-600}"
 declare -A hits=() first=()
+mins="$(sqlite3 -readonly "$db" "SELECT DISTINCT time / 60 FROM ssid WHERE type = 8 ORDER BY 1;")" \
+  || { echo "can't read the history in $db (is it a recon DB?)" >&2; exit 1; }
 minutes=0
 while IFS= read -r m; do
   [ -n "$m" ] || continue
@@ -25,7 +27,7 @@ while IFS= read -r m; do
     hits[$key]=$(( ${hits[$key]:-0} + 1 ))
     [ -n "${first[$key]:-}" ] || first[$key]="$end"
   done < <(sw_evil_twin_scan "$db" "$end" "$end")
-done < <(sqlite3 -readonly "$db" "SELECT DISTINCT time / 60 FROM ssid WHERE type = 8 ORDER BY 1;")
+done <<< "$mins"
 _sw_evil_twin_window
 echo "window ${REPLY}s; minutes with beacon data: $minutes; open copies found: ${#hits[@]}"
 for key in "${!hits[@]}"; do

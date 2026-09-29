@@ -137,3 +137,10 @@ assert_eq "$(printf '%s\n' "$_log" | grep -c 'BLE capture not understood')" "1" 
 assert_eq "$(printf '%s\n' "$_log" | grep -c .)" "3" health_note_first_ok_silent
 assert_eq "$(cat "$_st/ble.state")" "not_understood" health_note_state_persisted
 rm -rf "$_st"; unset -f _n_of; unset _FIX _st _log
+# a name ending in the first byte of a multi-byte character cannot swallow the next device's line
+# (bash's `read` did, in a UTF-8 locale; the Pager's default behaves the same, checked 2026-09-29)
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/btmon_gen.sh"   # sw_test_btmon_devs
+_lb="$( { sw_test_btmon_devs C1:00:00:00:00 4 $'Caf\xe9' -60; sw_test_btmon_devs C2:00:00:00:00 4 'Flipper x' -55; } | sw_btmon_parse)"
+assert_eq "$(printf '%s\n' "$_lb" | grep -a -c '^ble|')" "8" btmon_lead_byte_name_one_record_each
+assert_eq "$(printf '%s\n' "$_lb" | grep -a -c '|Flipper x|')" "4" btmon_lead_byte_name_hides_no_device
+unset _lb; unset -f sw_test_btmon_devs

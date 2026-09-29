@@ -69,6 +69,12 @@ sw_test_recon_db "$_hb2/ok.db" "8,ACDE48000001,17184063752,0,-60,30,HomeNet"
 : > "$SW_STUB_LOG"
 SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck; assert_eq "$?" "0" health_twin_ok_rc
 assert_empty "$(grep WARN "$SW_STUB_LOG")" health_twin_ok_silent
+# ...and leaves no copy behind
+assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_recon\.')" health_leaves_no_db_copy
+# a copy that can't be made (a full /tmp, say) turns WiFi detection off: that is a WARN too
+: > "$SW_STUB_LOG"
+SW_TMP_DIR="$_hb2/no-such-dir" SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck 2>/dev/null; assert_eq "$?" "1" health_no_copy_rc
+assert_contains "$(cat "$SW_STUB_LOG")" "can't copy the recon DB" health_no_copy_warns
 # an unreadable DB gets its own WARN only, not a second, evil-twin one
 : > "$SW_STUB_LOG"
 SW_RECON_DB=/nonexistent/recon.db sw_healthcheck
@@ -679,6 +685,18 @@ _tw_reset; SW_RECON_DB="$_tw/decoy.db" SW_BLE_CMD=true sw_scan_once
 assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" ',"HomeNet",' lap_decoys_cannot_hide_the_target
 assert_eq "$(grep -c ',evil_twin,' "$SW_LOOT_DIR/detections.csv")" "5" lap_every_copied_name_logged
 assert_eq "$(grep -c '^ALERT Evil twin' "$SW_STUB_LOG")" "1" lap_decoys_buzz_once
+# a recon DB in WAL mode: a read-only open leaves -wal and -shm files next to its copy, and the lap
+# and the health check remove those too (the Pager's recon.db uses a rollback journal today)
+sw_test_recon_db "$_tw/wal.db" "8,ACDE48000001,17184063752,0,-60,30,HomeNet" "8,021122334455,0,0,-38,20,HomeNet"
+assert_eq "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("PRAGMA journal_mode=WAL").fetchone()[0])' "$_tw/wal.db")" "wal" lap_wal_control_db_is_wal
+_tw_reset; SW_RECON_DB="$_tw/wal.db" SW_BLE_CMD=true sw_scan_once
+SW_RECON_DB="$_tw/wal.db" SW_RECENCY_SECS=600 sw_healthcheck >/dev/null 2>&1
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Evil twin 'HomeNet'" lap_wal_control_twin_found
+assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_recon\.')" lap_wal_leaves_no_files
+# the copy is gone before the BLE scan starts (6 MB of RAM freed for the scan's ~12 s)
+_tw_reset; SW_RECON_DB="$_twdb" SW_BLE_CMD="ls -A '$SW_TMP_DIR' > '$_tw/during-ble'" sw_scan_once
+assert_eq "$([ -e "$_tw/during-ble" ] && echo ran)" "ran" lap_ble_step_control_ran
+assert_empty "$(grep '^sw_recon\.' "$_tw/during-ble")" lap_copy_gone_before_ble_scan
 # the screen cap: one twin line, then "...and 2 more Evil twin"
 SW_LOG_PER_KIND=1 _tw_lap
 assert_eq "$(grep -c "^LOG cyan Evil twin '" "$SW_STUB_LOG")" "1" lap_twin_screen_cap

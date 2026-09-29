@@ -65,6 +65,13 @@ sw_recon_snapshot() {
   REPLY="$tmp"
 }
 
+sw_recon_drop() {
+  # $1 = a copy from sw_recon_snapshot: remove it, with the -wal and -shm files a read-only open
+  # leaves next to it when the DB is in WAL mode. The Pager's recon.db uses a rollback journal
+  # (checked 2026-09-29); this keeps /tmp clean if a firmware update ever switches it to WAL.
+  rm -f "$1" "$1-wal" "$1-shm"
+}
+
 sw_wifi_records_in() {
   # $1 = a recon DB copy (sw_recon_snapshot). Emits one wifi record per row and leaves the copy in
   # place: a lap (payload.sh, sw_scan_once) shares one copy with the evil-twin check. -readonly: a
@@ -78,9 +85,14 @@ sw_wifi_records_in() {
   # shift mac/signal. mac/signal never contain a tab. The CLI prints a line break inside a
   # value as it is, so line breaks are removed from the SSID in SQL: a network named
   # "x<LF>B41E52112233<TAB>-10<TAB>y" used to read as a second, forged record (a fake Flock
-  # Safety camera, full alert included; reproduced 2026-09-29). The { } runs in ONE subshell.
+  # Safety camera, full alert included; reproduced 2026-09-29). Only a 12-hex MAC gets through, for
+  # the same reason (defence in depth: pineapd writes hex). The { } runs in ONE subshell.
+  # bash reads bytes (LC_ALL=C): in a UTF-8 locale (the Pager's default too, checked 2026-09-29)
+  # a name ending in the first byte of a multi-byte character makes `read` swallow the line break
+  # after it, so the NEXT line merged into this one and that device vanished.
+  local LC_ALL=C
   local window; _sw_wifi_window_sql; window="$REPLY"
-  sqlite3 -readonly "$1" "SELECT w.mac || char(9) || s.signal || char(9) || replace(replace(CAST(s.ssid AS TEXT), char(10), ''), char(13), '') FROM ssid s JOIN wifi_device w ON s.wifi_device=w.hash WHERE s.type IN (4,8)$window;" 2>/dev/null | {
+  sqlite3 -readonly "$1" "SELECT w.mac || char(9) || s.signal || char(9) || replace(replace(CAST(s.ssid AS TEXT), char(10), ''), char(13), '') FROM ssid s JOIN wifi_device w ON s.wifi_device=w.hash WHERE s.type IN (4,8) AND length(w.mac) = 12 AND w.mac NOT GLOB '*[^0-9A-Fa-f]*'$window;" 2>/dev/null | {
     local line mac rest signal ssid
     while IFS= read -r line; do
       [ -z "$line" ] && continue
@@ -99,5 +111,5 @@ sw_wifi_records() {
   sw_recon_snapshot "${1:-$SW_RECON_DB}" || return 1
   local tmp="$REPLY"
   sw_wifi_records_in "$tmp"
-  rm -f "$tmp"
+  sw_recon_drop "$tmp"
 }

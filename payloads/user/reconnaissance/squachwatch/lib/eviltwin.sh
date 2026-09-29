@@ -15,38 +15,42 @@ _sw_evil_twin_window() {
 }
 
 _sw_evil_twin_rows() {
-  # $1 = since (epoch seconds) -> REPLY = the SQL condition for the beacon rows the check reads:
-  # visible access points (hidden radios are skipped: an Enhanced Open network is an open radio plus
-  # a hidden protected one with the same name, and must not read as a twin) with a real name (not
-  # empty, not only zero bytes), last seen since $1. The blind-spot count (sw_evil_twin_blind) uses
-  # the same condition, so it always counts exactly the rows the check reads.
-  REPLY="type = 8 AND hidden = 0 AND time >= $1 AND ltrim(hex(ssid), '0') <> ''"
+  # $1 = since, $2 = until (epoch seconds) -> REPLY = the SQL condition for the beacon rows the check
+  # reads: visible access points (hidden radios are skipped: an Enhanced Open network is an open radio
+  # plus a hidden protected one with the same name, and must not read as a twin) with a real name (not
+  # empty, not only zero bytes) and a 12-hex address (nothing else can reach a result line), last seen
+  # between $1 and $2.
+  REPLY="type = 8 AND hidden = 0 AND time >= $1 AND time <= $2 AND ltrim(hex(ssid), '0') <> ''"
+  REPLY+=" AND length(bssid) = 12 AND bssid NOT GLOB '*[^0-9A-Fa-f]*'"
 }
 
 sw_evil_twin_scan() {
   # $1 = a recon DB copy (sw_recon_snapshot in lib/wifi.sh): read only, never changed or removed.
-  # $2 = the lap's start, epoch seconds. $3 (optional) = leave out rows last seen after this epoch:
-  # only tools/replay_evil_twin.sh passes it, to replay history. A lap never does, so a device clock
-  # that steps back cannot hide rows that look newer than the lap.
+  # $2 = the lap's start, epoch seconds. $3 (optional) = leave out rows last seen after this epoch. A
+  # lap leaves it out and gets its start plus a minute: after the device clock steps back, older
+  # history would otherwise look like "right now" and pair up as false twins.
+  # tools/replay_evil_twin.sh passes it to replay history.
   # Prints one detection per open copy, in the matcher's format:
   #   evil_twin|Evil twin|high|attacker|wifi|<MAC>|<network name>|<its latest signal>
-  local db="$1" now="$2" until="${3:-}" since rows cap="" line mac rest sig name
+  local db="$1" now="$2" until="${3:-}" rows line mac rest sig name
+  # The name ends each result line, so bash reads bytes (LC_ALL=C): in a UTF-8 locale (the Pager's default too, checked 2026-09-29)
+  # a name ending in the first byte of a multi-byte character makes `read` swallow the line break
+  # after it, so the NEXT line merged into this one and that device vanished.
+  local LC_ALL=C
   [[ "$now" =~ ^[1-9][0-9]{0,11}$ ]] || return 0
-  if [ -n "$until" ]; then
-    [[ "$until" =~ ^[1-9][0-9]{0,11}$ ]] || return 0
-    cap=" AND time <= $until"
-  fi
-  _sw_evil_twin_window; since=$(( now - REPLY ))
-  _sw_evil_twin_rows "$since"; rows="$REPLY"
+  [ -n "$until" ] || until=$(( now + 60 ))
+  [[ "$until" =~ ^[1-9][0-9]{0,11}$ ]] || return 0
+  _sw_evil_twin_window
+  _sw_evil_twin_rows "$(( now - REPLY ))" "$until"; rows="$REPLY"
   # The query (spec §6.1). MATERIALIZED reads the window ONCE: one pass over the table, ~0.27 s on
   # the Pager, where SQLite otherwise read it twice (~0.44 s; both measured 2026-09-29). ssid and
   # bssid are BLOBs, so GROUP BY and = compare bytes exactly ("Lobby-WiFi" never pairs with
-  # "LOBBY-WIFI"). It reads the rows of _sw_evil_twin_rows that carry a security value.
-  # max(w.time) makes SQLite take each open copy's line from its latest row. The name goes LAST, with its line breaks removed: the CLI prints them as
-  # they are, and a name holding one could otherwise forge a second result line.
+  # "LOBBY-WIFI"). Rows with no security value count for neither side. max(w.time) makes SQLite take
+  # each open copy's line from its latest row. The name goes LAST, with its line breaks removed: the
+  # CLI prints them as they are, and a name holding one could otherwise forge a second result line.
   sqlite3 -readonly "$db" "WITH w AS MATERIALIZED (
       SELECT bssid, ssid, signal, time, encryption FROM ssid
-      WHERE $rows$cap AND encryption IS NOT NULL
+      WHERE $rows AND encryption IS NOT NULL
     ),
     twin AS (
       SELECT ssid FROM w GROUP BY ssid
@@ -74,22 +78,33 @@ sw_evil_twin_scan() {
 }
 
 sw_evil_twin_blind() {
-  # $1 = recon DB (default SW_RECON_DB). True (0) when the evil-twin check cannot work: the window
-  # holds named, visible beacon rows but none carries a security value, or the count fails on a
-  # readable copy (a firmware update renamed the column, say). The check would then find nothing,
-  # forever, and read as "all clear". False (1) = fine, or no verdict: no copy, no rows in the
-  # window (the stale-DB check reports that one), or the copy vanished during the check (the exit
-  # trap after a Stop), which is "unknown", never "blind".
-  local win now rows tmp out rc named secured
-  _sw_evil_twin_window; win="$REPLY"
-  now="$(date +%s)"; _sw_evil_twin_rows "$(( now - win ))"; rows="$REPLY"
-  sw_recon_snapshot "${1:-$SW_RECON_DB}" || return 1
-  tmp="$REPLY"
-  out="$(sqlite3 -readonly "$tmp" "SELECT count(*) || char(9) || count(encryption) FROM ssid WHERE $rows;" 2>/dev/null)"; rc=$?
-  [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
-  rm -f "$tmp"
-  [ "$rc" -eq 0 ] || return 0
-  named="${out%%$'\t'*}"; secured="${out#*$'\t'}"
-  [[ "$named" =~ ^[0-9]+$ ]] && [[ "$secured" =~ ^[0-9]+$ ]] || return 0
-  [ "$named" -gt 0 ] && [ "$secured" -eq 0 ]
+  # $1 = a recon DB copy (read only). True (0) when the evil-twin check cannot work: the window holds
+  # beacon rows, but none of them has a usable value in one of the columns the check reads (hidden,
+  # encryption and signal as numbers, a 12-hex address), or the probe fails for any reason but a
+  # damaged copy (a renamed column, an sqlite3 that can't run the check's query). The check would
+  # then find nothing, forever, and read as "all clear". False (1) = fine, or no verdict: no rows in
+  # the window (the stale-DB check reports that one), a torn copy of a DB that was being written, or
+  # a copy that vanished during the check (the exit trap after a Stop): "unknown", never "blind".
+  # Not caught: a firmware change that keeps these columns but changes what their values mean.
+  local now since out rc total hid enc sig mac
+  _sw_evil_twin_window
+  now="$(date +%s)"; since=$(( now - REPLY ))
+  out="$(sqlite3 -readonly "$1" "WITH b AS MATERIALIZED (
+      SELECT bssid, ssid, signal, time, hidden, encryption FROM ssid
+      WHERE type = 8 AND time >= $since AND time <= $(( now + 60 ))
+    )
+    SELECT count(*) || char(9) ||
+      count(CASE WHEN typeof(hidden) = 'integer' THEN 1 END) || char(9) ||
+      count(CASE WHEN typeof(encryption) = 'integer' THEN 1 END) || char(9) ||
+      count(CASE WHEN typeof(signal) = 'integer' THEN 1 END) || char(9) ||
+      count(CASE WHEN length(bssid) = 12 AND bssid NOT GLOB '*[^0-9A-Fa-f]*' THEN 1 END)
+    FROM b;" 2>&1)"; rc=$?
+  [ -s "$1" ] || return 1
+  if [ "$rc" -ne 0 ]; then
+    case "$out" in *malformed*|*"not a database"*|*"disk I/O"*) return 1 ;; esac
+    return 0
+  fi
+  IFS=$'\t' read -r total hid enc sig mac <<< "$out"
+  [[ "$total" =~ ^[0-9]+$ && "$hid" =~ ^[0-9]+$ && "$enc" =~ ^[0-9]+$ && "$sig" =~ ^[0-9]+$ && "$mac" =~ ^[0-9]+$ ]] || return 0
+  [ "$total" -gt 0 ] && { [ "$hid" -eq 0 ] || [ "$enc" -eq 0 ] || [ "$sig" -eq 0 ] || [ "$mac" -eq 0 ]; }
 }

@@ -5,7 +5,8 @@
 # stdin is freed for SQL input; supports both positional args and piped input.
 # -readonly behaves like the Pager's sqlite3 3.46.1 (checked on the device 2026-09-29): a missing
 # database is an error and is NOT created. Without it a missing database is created empty, as the
-# real CLI does.
+# real CLI does. Values are printed as the real CLI prints them: their bytes as they are (a name
+# that is not UTF-8 still prints), cut at the first NUL (it prints C strings).
 exec python3 -c 'import sqlite3, sys, urllib.parse
 args = sys.argv[1:]
 ro = bool(args) and args[0] == "-readonly"
@@ -13,20 +14,24 @@ if ro:
     args = args[1:]
 db = args[0]
 sql = args[1] if len(args) > 1 else sys.stdin.read()
+out = sys.stdout.buffer
+def cell(v):
+    if v is None:
+        return b""
+    if isinstance(v, bytes):
+        return v.split(b"\0", 1)[0]
+    return str(v).encode()
 try:
     if ro:
         con = sqlite3.connect("file:" + urllib.parse.quote(db) + "?mode=ro", uri=True)
     else:
         con = sqlite3.connect(db)
+    con.text_factory = bytes
     if sql.strip().startswith(".tables"):
-        cur = con.execute("SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name")
-        rows = cur.fetchall()
-        tables = [r[0] for r in rows]
-        print(" ".join(tables))
+        rows = con.execute("SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name").fetchall()
+        out.write(b" ".join(cell(r[0]) for r in rows) + b"\n")
     else:
-        cur = con.execute(sql)
-        rows = cur.fetchall()
-        for r in rows:
-            print("\t".join("" if v is None else str(v) for v in r))
-except sqlite3.OperationalError as e:
+        for r in con.execute(sql).fetchall():
+            out.write(b"\t".join(cell(v) for v in r) + b"\n")
+except sqlite3.Error as e:
     sys.stderr.write("Error: %s\n" % e); sys.exit(1)' "$@"

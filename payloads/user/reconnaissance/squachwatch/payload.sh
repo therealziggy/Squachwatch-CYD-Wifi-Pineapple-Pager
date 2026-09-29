@@ -109,13 +109,22 @@ sw_healthcheck() {
   if ! command -v btmon >/dev/null 2>&1; then
     _sw_health_warn "WARN: btmon missing — BLE detection OFF"; degraded=1
   fi
-  # The evil-twin check needs each network's security from the recon DB. A DB that stops recording
-  # it (a firmware update, say) would leave that check finding nothing, forever, and reading as "all
-  # clear" (spec 2026-09-29 §7). Asked only when the DB itself is usable (the WARNs above cover the
-  # rest), and never once stopped: a check left running by a Stop starts no new DB copy.
-  if [ "${SW_EVIL_TWIN:-0}" = 1 ] && command -v sqlite3 >/dev/null 2>&1 && [ -r "$SW_RECON_DB" ] \
-     && ! sw_stopped && sw_evil_twin_blind "$SW_RECON_DB"; then
-    _sw_health_warn "WARN: evil-twin check is blind (the recon DB no longer records network security)"; degraded=1
+  # Every WiFi check reads a copy of the recon DB in ${SW_TMP_DIR:-/tmp}. When no copy can be made
+  # (a full /tmp, say) the WiFi sweep and the evil-twin check skip every lap, so that is a WARN. On
+  # the copy runs the evil-twin check's own probe: a DB that stops recording what the check needs (a
+  # firmware update, say) would leave it finding nothing, forever, and reading as "all clear" (spec
+  # 2026-09-29 §7). Only when the DB itself is usable (the WARNs above cover the rest), and never
+  # once stopped: a check left running by a Stop makes no new DB copy.
+  if command -v sqlite3 >/dev/null 2>&1 && [ -r "$SW_RECON_DB" ] && ! sw_stopped; then
+    if sw_recon_snapshot "$SW_RECON_DB" 2>/dev/null; then
+      local copy="$REPLY"
+      if [ "${SW_EVIL_TWIN:-0}" = 1 ] && sw_evil_twin_blind "$copy"; then
+        _sw_health_warn "WARN: evil-twin check is blind (the recon DB no longer records what it needs)"; degraded=1
+      fi
+      sw_recon_drop "$copy"
+    else
+      _sw_health_warn "WARN: can't copy the recon DB to ${SW_TMP_DIR:-/tmp} (full?) — WiFi detection OFF"; degraded=1
+    fi
   fi
   return $degraded
 }
@@ -162,7 +171,7 @@ sw_scan_once() {
     # come first: the check is one query, and its alert need not wait for the BLE scan.
     [ -n "$snap" ] && [ "${SW_EVIL_TWIN:-0}" = 1 ] && sw_evil_twin_scan "$snap" "$now"
     # The copy goes as soon as the WiFi sweep has read it, before the BLE scan.
-    { if [ -n "$snap" ]; then sw_wifi_records_in "$snap"; rm -f "$snap"; fi; _sw_ble_records; } \
+    { if [ -n "$snap" ]; then sw_wifi_records_in "$snap"; sw_recon_drop "$snap"; fi; _sw_ble_records; } \
       | sw_match_stream "$SW_SIGS"
   } | {
         # Per-lap screen counters (spec 2026-09-23 §5). They live in this pipeline subshell,
@@ -190,7 +199,7 @@ sw_scan_once() {
         done
       }
   # normally removed already, right after the WiFi sweep; this covers a lap that ended early
-  [ -n "$snap" ] && rm -f "$snap"
+  [ -n "$snap" ] && sw_recon_drop "$snap"
 }
 
 # The scanner's temp files: BLE captures (sw_ble.XXXXXX), the BLE health state (sw_ble.state)

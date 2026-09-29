@@ -103,6 +103,28 @@ assert_empty "$(sw_evil_twin_scan "$_d" "$_n" "x")" bad_until_gives_nothing
 _before="$(cksum < "$_d")"; _et_scan "$_d" >/dev/null
 assert_eq "$(cksum < "$_d")" "$_before" scan_leaves_copy_unchanged
 
+# a clock that stepped back cannot turn old history into "right now" (the adversarial review's
+# repro): an open copy and a protected network seen 100 s apart, 13 days ago
+_et_db "8,021122334455,0,0,-60,$((13*86400)),Cafe" "8,ACDE48000001,$_wpa2,0,-60,$((13*86400 - 100)),Cafe"; _d="$REPLY"
+_n="$(date +%s)"
+assert_empty "$(sw_evil_twin_scan "$_d" "$(( _n - 14*86400 ))")" clock_step_back_fabricates_no_twin
+# control: a lap that ran back then, when both were in range, does pair them
+assert_contains "$(sw_evil_twin_scan "$_d" "$(( _n - 13*86400 + 100 ))")" "|02:11:22:33:44:55|Cafe|-60" clock_control_pair_was_real_then
+# a line break inside the stored address cannot forge a line either (defence in depth: pineapd writes hex)
+_et_db "8,ACDE48000001,$_wpa2,0,-60,30,HomeNet" "8,021122334455"$'\n'"B41E52112233,0,0,-38,20,HomeNet" "8,021122334466,0,0,-40,20,HomeNet"
+_o="$(_et_scan "$REPLY")"
+assert_empty "$(printf '%s\n' "$_o" | grep -F 'B4:1E:52')" address_line_break_forges_nothing
+assert_contains "$_o" "|02:11:22:33:44:66|HomeNet|-40" address_line_break_control_valid_copy
+# a name that is not UTF-8 is still a name, and never costs another twin its report
+_et_db "8,ACDE48000001,$_wpa2,0,-60,30,hex:436166e9" "8,021122334455,0,0,-38,20,hex:436166e9" \
+       "8,ACDE48000002,$_wpa2,0,-60,30,HomeNet" "8,021122334466,0,0,-38,20,HomeNet"
+_o="$(_et_scan "$REPLY")"
+assert_contains "$_o" "|02:11:22:33:44:66|HomeNet|-38" non_utf8_name_costs_no_other_twin
+assert_contains "$_o" "|02:11:22:33:44:55|Caf"$'\xe9'"|-38" non_utf8_name_reported
+# a NUL inside a name: the Pager's CLI prints up to it (C strings), and so does the test stand-in
+_et_db "8,ACDE48000001,$_wpa2,0,-60,30,hex:486f6d65004e6574" "8,021122334455,0,0,-38,20,hex:486f6d65004e6574"
+assert_eq "$(_et_scan "$REPLY")" "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|Home|-38" nul_in_name_cut_like_the_cli
+
 rm -rf "$_et"; unset _et _etn _d _o _w _old _fake _n _before _wpa2; unset -f _et_db _et_scan
 unset SW_RECENCY_SECS
 
@@ -124,17 +146,44 @@ SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/nocol.db"; assert_eq "$?" "0" blind_y
 # no rows in the window: no verdict (the stale-DB check reports that one)
 sw_test_recon_db "$_eb/old.db" "8,ACDE48000001,,0,-60,5000,HomeNet"
 SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/old.db"; assert_eq "$?" "1" blind_no_verdict_without_rows
-# rows the check skips (hidden radios) are not counted either: the count reads what the check reads
+# every column the check reads counts (the final review's cases): a renamed address or signal
+# column, NULL addresses, text in the security column or NULL hidden flags all blind it
+python3 - "$_eb" <<'PY'
+import sqlite3, sys, time
+d, now = sys.argv[1], int(time.time())
+std = "hash INT PRIMARY KEY, type INT, bssid TEXT, ssid BLOB, hidden INT, time INT, signal INT, encryption INT"
+def mk(name, cols, row):
+    c = sqlite3.connect(d + "/" + name)
+    c.execute("CREATE TABLE ssid(%s)" % cols)
+    c.execute("INSERT INTO ssid VALUES(%s)" % ",".join("?" * len(row)), row)
+    c.commit()
+mk("nobssid.db", std.replace("bssid TEXT", "mac TEXT"), (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
+mk("nosignal.db", std.replace("signal INT", "rssi INT"), (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
+mk("nullbssid.db", std, (1, 8, None, b"HomeNet", 0, now - 30, -60, 0))
+mk("textenc.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, "WPA2"))
+mk("nullhidden.db", std, (1, 8, b"ACDE48000001", b"HomeNet", None, now - 30, -60, 0))
+mk("good.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
+PY
+for _b in nobssid nosignal nullbssid textenc nullhidden; do
+  sw_evil_twin_blind "$_eb/$_b.db"; assert_eq "$?" "0" "blind_yes_$_b"
+done
+# control: the same shape with every column usable is fine
+sw_evil_twin_blind "$_eb/good.db"; assert_eq "$?" "1" blind_no_on_good_shape
+# hidden radios count too: a window of hidden rows with no security value means the field is gone
 sw_test_recon_db "$_eb/hid.db" "8,ACDE48000001,,1,-60,30,HomeNet"
-SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/hid.db"; assert_eq "$?" "1" blind_no_verdict_on_rows_the_check_skips
+sw_evil_twin_blind "$_eb/hid.db"; assert_eq "$?" "0" blind_yes_when_even_hidden_rows_lack_security
+# a torn copy of a DB that was being written is "unknown", not blind
+cp "$_eb/ok.db" "$_eb/torn.db"; printf 'torn-page-torn-page' | dd of="$_eb/torn.db" bs=1 seek=100 conv=notrunc 2>/dev/null
+sw_evil_twin_blind "$_eb/torn.db"; assert_eq "$?" "1" blind_torn_copy_is_unknown
+# control: that copy really is damaged (else "unknown" above passes vacuously)
+assert_contains "$(sqlite3 -readonly "$_eb/torn.db" "SELECT count(*) FROM ssid;" 2>&1)" "malformed" blind_torn_control_is_damaged
 # no DB: no verdict (the health check's unreadable-DB WARN covers it)
 SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/missing.db"; assert_eq "$?" "1" blind_no_verdict_without_db
 # A copy that vanishes during the check (the exit trap after a Stop) is "unknown", never "blind":
-# this sqlite3 removes the copy just before the count opens it. The DB would read as blind otherwise.
-( sqlite3() { case "$*" in *"count(encryption)"*) rm -f "$2"; : > "$_eb/vanished" ;; esac; command sqlite3 "$@"; }
-  SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/null.db" ); assert_eq "$?" "1" blind_vanished_copy_is_unknown
+# this sqlite3 removes the copy just before the probe opens it. The DB would read as blind otherwise.
+( sqlite3() { case "$*" in *"typeof(encryption)"*) rm -f "$2"; : > "$_eb/vanished" ;; esac; command sqlite3 "$@"; }
+  sw_evil_twin_blind "$_eb/null.db" ); assert_eq "$?" "1" blind_vanished_copy_is_unknown
 assert_eq "$([ -e "$_eb/vanished" ] && echo yes)" "yes" blind_vanished_control_removed
-assert_empty "$(ls "$_eb" | grep '^sw_recon\.')" blind_leaves_no_copy
 rm -rf "$_eb"; unset _eb SW_RECENCY_SECS
 
 # --- tools/replay_evil_twin.sh (spec 2026-09-29 §8) replays history through the real check ---
@@ -146,4 +195,8 @@ assert_contains "$_out" "02:11:22:33:44:55  'HomeNet'" replay_names_the_copy
 # control: a history where every radio is protected finds nothing
 sw_test_recon_db "$_rp/mesh.db" "8,ACDE48000001,17184063752,0,-60,30,MeshNet" "8,ACDE48000002,17184063752,0,-60,30,MeshNet"
 assert_contains "$(bash "$_rpt" "$_rp/mesh.db")" "open copies found: 0" replay_control_mesh_finds_nothing
+# a file that is not a recon DB is an error, not an empty history
+printf 'not a database, just text\n' > "$_rp/junk.db"
+_out="$(bash "$_rpt" "$_rp/junk.db" 2>&1)"; assert_eq "$?" "1" replay_unreadable_history_fails
+assert_contains "$_out" "can't read the history" replay_unreadable_history_says_so
 rm -rf "$_rp"; unset _rp _rpt _out

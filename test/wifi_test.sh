@@ -81,6 +81,13 @@ sqlite3 "$_ro/plain.db" "SELECT 1;" >/dev/null 2>&1
 assert_eq "$([ -e "$_ro/plain.db" ] && echo created || echo absent)" "created" shim_plain_missing_created
 assert_eq "$(sqlite3 -readonly "$FIX/recon.db" "SELECT count(*) FROM ssid;")" "6" shim_readonly_reads_existing
 rm -rf "$_ro"; unset _ro
+# ...and it prints values as the Pager's CLI does: their bytes as they are (a name that is not UTF-8
+# still prints), cut at the first NUL (the CLI prints C strings)
+_ro2="$(mktemp -d)"
+python3 -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("CREATE TABLE t(s BLOB)"); c.executemany("INSERT INTO t VALUES(?)", [(b"Caf\xe9",), (b"Home\x00Net",)]); c.commit()' "$_ro2/t.db"
+assert_eq "$(sqlite3 -readonly "$_ro2/t.db" "SELECT CAST(s AS TEXT) FROM t WHERE rowid = 1;")" $'Caf\xe9' shim_prints_non_utf8_bytes
+assert_eq "$(sqlite3 -readonly "$_ro2/t.db" "SELECT CAST(s AS TEXT) FROM t WHERE rowid = 2;")" "Home" shim_cuts_at_nul
+rm -rf "$_ro2"; unset _ro2
 
 # --- one copy per lap: sw_recon_snapshot + sw_wifi_records_in (spec 2026-09-29 §6.2) ---
 _sn="$(mktemp -d)"
@@ -116,4 +123,16 @@ assert_eq "$(printf '%s\n' "$_recs" | grep -c .)" "1" forge_one_record_per_row
 assert_contains "$_recs" "wifi|02:11:22:33:44:55|XB41E52112233-10Fake|-60" forge_real_record_kept
 assert_empty "$(printf '%s\n' "$_recs" | grep -F 'B4:1E:52')" forge_no_forged_record
 assert_empty "$(printf '%s\n' "$_recs" | sw_match_stream "$(sw_load_signatures "$SW_ROOT/signatures.db")" | grep -F 'flock')" forge_no_fake_flock_detection
-rm -rf "$_nl"; unset _nl _recs
+# the same through the stored address: only a 12-hex MAC reaches a record (pineapd writes hex)
+sw_test_recon_db "$_nl/m.db" "8,021122334455"$'\n'"B41E52112233,0,0,-60,30,Net" "8,021122334466,0,0,-60,30,Net2"
+_recs="$(sw_wifi_records "$_nl/m.db")"
+assert_empty "$(printf '%s\n' "$_recs" | grep -F 'B4:1E:52')" forge_address_line_no_record
+assert_contains "$_recs" "wifi|02:11:22:33:44:66|Net2|-60" forge_address_control_valid_record_kept
+# a name that is not UTF-8 no longer costs the rest of the sweep its records
+# ...and a name ending in the first byte of a multi-byte character cannot swallow the next record
+# (bash's `read` did, in a UTF-8 locale, and the Pager's default behaves the same)
+sw_test_recon_db "$_nl/u.db" "8,021122334455,0,0,-60,30,hex:436166e9" "8,B41E52112233,8,0,-40,30,FlockCam"
+_recs="$(sw_wifi_records "$_nl/u.db")"
+assert_contains "$_recs" "wifi|B4:1E:52:11:22:33|FlockCam|-40" lead_byte_name_hides_no_record
+assert_eq "$(printf '%s\n' "$_recs" | grep -c '^wifi|')" "2" lead_byte_name_one_record_each
+rm -rf "$_nl"; unset _nl _recs; unset -f sw_test_recon_db
