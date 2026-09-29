@@ -502,3 +502,29 @@ The first moments and the ledger prune on the Pager, the same way, measured on t
   for it, and `sw_clear_tmp` sweeps it; a check-then-act can only narrow that window, not close it.
 - Scope: SquachWatch no longer kills other programs' Bluetooth tools, but its per-lap
   `hciconfig down/reset/up` still interrupts their scans.
+
+## Evil-twin check (2026-09-29)
+
+Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evil-twin-design.md`):
+
+- `ssid.encryption` is a 64-bit bit field written by `pineapd`: 0 = open, any other value = protected
+  (the low bits carry WEP / WPA / WPA2 / WPA3, the higher ones the ciphers and key-management
+  suites; `17184063752`, the most common value, is a WPA2 personal network). It is NULL only on client
+  rows (type 4) and on type-5 rows, which are names that clients probed for and have no BSSID.
+- There is one `ssid` row per radio, name and recon session, and its `time` is when it was last seen in
+  that session. A `hidden = 1` row can carry a name the Pager learned from a probe response.
+- The Pager's `sqlite3` (3.46.1): with `-readonly`, a missing file fails (rc 1) and nothing is created.
+  Without it, the same call leaves a 0-byte file. A missing column fails with rc 1.
+- It prints a line break inside a value as it is. A network named `X<LF>B41E52112233<TAB>-10<TAB>Fake`
+  therefore read as two WiFi records, and the second became a full-screen "Flock Safety device" alert
+  at an address the name chose (reproduced on the dev box; the CLI behaviour was confirmed on the Pager).
+  Both WiFi queries now remove line breaks from names in SQL.
+- Timing on the real 5.9 MB DB, best of 3: the twin query 265 ms with `MATERIALIZED` and 439 ms without
+  (SQLite then reads the window twice); one full pass over `ssid` 250 ms; the health check's blind-spot
+  count 248 ms; copying the DB 112 ms; starting sqlite3 37 ms.
+- Replaying the author's whole recon history (`tools/replay_evil_twin.sh`: 1,286 minutes that hold
+  beacon data, 600 s window) finds exactly one open copy, which fired in 7 minutes. It is the Pager's own
+  open access point, run on its first day under the name and address of the owner's router. CYD's rule
+  finds nothing in the same history, because its same-maker exemption covers that copy. Ignoring
+  capitals would add 22 false finds: a venue's open guest network on 23 radios next to a protected
+  network with the same name in other capitals.

@@ -144,22 +144,28 @@ test that separates a twin from a normal network.
 - The query (its exact text is pinned by the tests):
 
   ```sql
-  WITH w AS (
+  WITH w AS MATERIALIZED (
     SELECT bssid, ssid, signal, time, encryption FROM ssid
-    WHERE type = 8 AND hidden = 0 AND time >= <since>
-      AND encryption IS NOT NULL AND ltrim(hex(ssid), '0') <> ''
+    WHERE type = 8 AND hidden = 0 AND time >= <since> AND ltrim(hex(ssid), '0') <> ''<cap>
+      AND encryption IS NOT NULL
   ),
   twin AS (
     SELECT ssid FROM w GROUP BY ssid
     HAVING sum(encryption = 0) > 0 AND sum(encryption <> 0) > 0
   )
   SELECT line FROM (
-    SELECT w.bssid || char(9) || w.signal || char(9) || CAST(w.ssid AS TEXT) AS line, max(w.time)
+    SELECT w.bssid || char(9) || w.signal || char(9) ||
+           replace(replace(CAST(w.ssid AS TEXT), char(10), ''), char(13), '') AS line,
+           max(w.time)
     FROM w JOIN twin ON w.ssid = twin.ssid
     WHERE w.encryption = 0
     GROUP BY w.bssid, w.ssid
   );
   ```
+
+  `<cap>` is empty on a lap; `tools/replay_evil_twin.sh` passes a third argument `until`, which adds
+  `AND time <= <until>`, to replay history. MATERIALIZED makes SQLite read the window once (265 ms on
+  the Pager, against 439 ms).
 
   `max(w.time)` makes SQLite take `line` (so the signal) from each open copy's latest row. `ssid` and
   `bssid` are BLOBs, so grouping and `=` compare bytes exactly. `<since>` is the lap's start time minus the
@@ -197,14 +203,18 @@ no default of its own (the recency-window lesson: payload.sh sources its libs be
 - **Hostile names.** The attacker chooses the name. It is cleaned by `sw_sanitize_ident` (pipes and control
   characters removed) before it goes into the pipe-delimited detection line; it is the last field of the
   query output; the CSV's formula guard (`_sw_csv_field`) already covers the ident column; it is never
-  evaluated, and it reaches `LOG` and `ALERT` only as a quoted argument.
+  evaluated, and it reaches `LOG` and `ALERT` only as a quoted argument. Line breaks are removed from the
+  name in SQL (the CLI prints them as they are, so a name holding one could forge a second result line).
+  The WiFi signature reader had exactly that bug and gets the same fix (a network name could forge a fake
+  Flock Safety camera, full alert included; reproduced 2026-09-29).
 - **Read-only open.** `sqlite3 -readonly` means a copy that disappears under a running lap (the exit trap
   after a Stop removes it) is never recreated as an empty file. That was the 2026-09-28 health-check bug.
   The Pager's sqlite3 (3.46.1) supports the flag. The test shim gains it too and models the Pager: with
   `-readonly`, a missing file is an error and is not created.
 - **Blind-spot health check.** A check that silently finds nothing must never read as "all clear". When
-  `SW_EVIL_TWIN=1`, the health check (at startup and every `SW_HEALTH_EVERY` laps) runs one more count on its
-  database copy: the named, visible beacon rows in the window, and how many of them carry a security value.
+  `SW_EVIL_TWIN=1`, the health check (at startup and every `SW_HEALTH_EVERY` laps) runs one more count, on its
+  own copy of the database (as the stale-DB check does), and never once the payload is stopped: the named,
+  visible beacon rows in the window, and how many of them carry a security value.
   If there are such rows but none has a value, or the count fails on a readable copy (a renamed column, for
   instance), it reports `WARN: evil-twin check is blind (the recon DB no longer records network security)`
   and the run is DEGRADED. A copy that vanished (a Stop) counts as "unknown", not blind, with the same guard
@@ -252,6 +262,7 @@ and made-up MACs only.
 **Real-history replay** (local only; the data is never committed). `tools/replay_evil_twin.sh <recon.db>`
 (no data in the repo) runs the real `sw_evil_twin_scan` minute by minute. On the author's database it must
 report exactly the one real event of §2.3. Its numbers go into `P0-findings.md` with no names or addresses.
+A suite test runs the tool on a synthetic history (one twin found, and none in an all-protected control).
 
 ## 9. Deploy and verify on the Pager (needs the user)
 

@@ -136,3 +136,14 @@ SW_TMP_DIR="$_eb" sw_evil_twin_blind "$_eb/missing.db"; assert_eq "$?" "1" blind
 assert_eq "$([ -e "$_eb/vanished" ] && echo yes)" "yes" blind_vanished_control_removed
 assert_empty "$(ls "$_eb" | grep '^sw_recon\.')" blind_leaves_no_copy
 rm -rf "$_eb"; unset _eb SW_RECENCY_SECS
+
+# --- tools/replay_evil_twin.sh (spec 2026-09-29 §8) replays history through the real check ---
+_rp="$(mktemp -d)"; _rpt="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/tools/replay_evil_twin.sh"
+sw_test_recon_db "$_rp/twin.db" "8,ACDE48000001,17184063752,0,-60,30,HomeNet" "8,021122334455,0,0,-38,20,HomeNet"
+_out="$(bash "$_rpt" "$_rp/twin.db")"
+assert_contains "$_out" "open copies found: 1" replay_finds_the_twin
+assert_contains "$_out" "02:11:22:33:44:55  'HomeNet'" replay_names_the_copy
+# control: a history where every radio is protected finds nothing
+sw_test_recon_db "$_rp/mesh.db" "8,ACDE48000001,17184063752,0,-60,30,MeshNet" "8,ACDE48000002,17184063752,0,-60,30,MeshNet"
+assert_contains "$(bash "$_rpt" "$_rp/mesh.db")" "open copies found: 0" replay_control_mesh_finds_nothing
+rm -rf "$_rp"; unset _rp _rpt _out

@@ -104,7 +104,7 @@ A zero-dependency offline harness runs the whole detection engine on a normal Li
 bash test/run.sh
 ```
 
-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **638 assertions, all passing** (also as root).
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **802 assertions, all passing** (also as root).
 
 ## Status & roadmap
 
@@ -117,6 +117,8 @@ This is **core v1**: WiFi + name-based BLE detection, native alerts, offline-tes
 **Noise control** (2026-09-23/24, built after a real BLE Spam field test raised 9 full-screen alerts in one lap): a Flipper matched by its advertised name alone only logs (hardware-matched ones still alert); each kind of device buzzes at most once per `SW_KIND_COOLDOWN` (a flood of new devices of one kind interrupts once); the screen shows at most `SW_LOG_PER_KIND` lines per kind and confidence per lap plus "...and N more", so a real device is never buried under spoofed ones; trackers weaker than `SW_FOLLOW_MIN_RSSI` never count toward "following you"; and the cooldown ledger is pruned (future-dated, torn or malformed entries fail open, never silence a lap). Every device still gets its CSV row. A real 15-second BLE Spam capture (607 addresses) is pinned as a regression fixture.
 
 **Signature port** (2026-09-26): SquachWatch-CYD's current fingerprints, graded the way CYD grades them, by who the ID is registered to. That audit also demoted eight of our own "Flock" prefixes that turned out to belong to chip makers (Lite-On, USI, Silicon Labs), so they no longer raise alerts. Weak generic-chip rules ship switched off. The matcher now indexes its rules, so each device is only checked against the rules that could fit it. On the Pager it checks 200 devices in about 9 s with the 83 active rules, where the old matcher took 16 s with 27, and switching all 42 weak rules on costs about 2% (`tools/bench_match.sh`; numbers in `docs/superpowers/P0-findings.md`).
+
+**Evil twin** (2026-09-29): each lap, a network name that is offered both open and password-protected reports every open copy as an evil twin (see `SW_EVIL_TWIN` above). This is SquachWatch-CYD's test without CYD's same-maker exemption. Replayed over months of a real Pager's recon history (about 4,600 access points), the check reports exactly one event, the one real evil twin in it; CYD's rule reports nothing there, because that copy used the real router's own address. On the Pager the check adds about a quarter of a second to a lap. The same work closed a hole in the WiFi reader: a network name holding a line break could forge a second, fake device (a fake Flock camera with a full alert, say). Line breaks are now removed from names before they are read.
 
 Deferred to their own phases:
 - **Drone Remote-ID over WiFi** — needs monitor-mode (`wlan1mon`) frame parsing, its own subsystem.
