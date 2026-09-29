@@ -522,9 +522,24 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
 - Timing on the real 5.9 MB DB, best of 3: the twin query 265 ms with `MATERIALIZED` and 439 ms without
   (SQLite then reads the window twice); one full pass over `ssid` 250 ms; the health check's blind-spot
   count 248 ms; copying the DB 112 ms; starting sqlite3 37 ms.
+- `recon.db` uses a rollback journal (`PRAGMA journal_mode` = `delete`, header bytes 18 and 19 = 1, no
+  `-wal`/`-shm` next to it). A read-only open of a WAL-mode copy would leave `-wal` and `-shm` files
+  behind; `sw_recon_drop` removes them anyway, in case a firmware update switches the mode.
+- bash's `read`, in a UTF-8 locale, swallows the line break after a byte that starts a multi-byte
+  character, so the next line merges into the current one. The Pager's bash 5.2.32 (musl) does this by
+  default, with no locale set (checked 2026-09-29); `LC_ALL=C`, even as `local LC_ALL=C` in a function,
+  stops it, on the Pager and on the dev box. Before the fix a name ending in such a byte hid the next
+  device's line; every loop whose lines end with a free-text name (the WiFi reader, the twin check, the
+  btmon parser) now reads in the C locale.
+- The test stand-in for sqlite3 now prints values as the Pager's CLI does: raw bytes, cut at the first
+  NUL. The old one failed a whole query on a name that is not UTF-8 (the author's history holds one such
+  name) and printed NUL bytes the real CLI never prints.
 - Replaying the author's whole recon history (`tools/replay_evil_twin.sh`: 1,286 minutes that hold
   beacon data, 600 s window) finds exactly one open copy, which fired in 7 minutes. It is the Pager's own
   open access point, run on its first day under the name and address of the owner's router. CYD's rule
   finds nothing in the same history, because its same-maker exemption covers that copy. Ignoring
   capitals would add 22 false finds: a venue's open guest network on 23 radios next to a protected
-  network with the same name in other capitals.
+  network with the same name in other capitals. A replay is a lower bound (each row keeps only its last
+  sighting in a session), so the whole history was also counted directly: exactly one visible, named
+  network was ever seen both open and protected, in any session, and it is that same one. Re-run with the
+  final code and the byte-faithful stand-in (1,336 minutes by then): the same single copy.
