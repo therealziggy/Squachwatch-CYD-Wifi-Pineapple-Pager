@@ -4,7 +4,8 @@
 # the loot dir so a payload redeploy never overwrites it; it is read once at startup.
 
 sw_load_ignore() {
-  # $1 = ignore file: one MAC per line, '#' comments, any case, CRLF tolerated.
+  # $1 = ignore file: one MAC per line, '#' comments, any case, CRLF tolerated. A line
+  # "evil_twin:<MAC>" silences the evil twin with that address, and nothing else (sw_ignored).
   # Prints " MAC1 MAC2 " (upper-case, space-padded) for a fork-free membership test.
   local line out=" "
   if [ -f "$1" ]; then
@@ -18,8 +19,16 @@ sw_load_ignore() {
 
 sw_ignored() {
   # $1 = detection (cat|label|conf|tclass|radio|mac|ident|rssi), $2 = sw_load_ignore set.
-  # rc 0 = drop it. Only the MAC column is compared.
-  local r="${1#*|*|*|*|*|}"
-  case "$2" in *" ${r%%|*} "*) return 0 ;; esac
+  # rc 0 = drop it. Only the MAC column is compared. An evil twin is dropped only by an explicit
+  # "evil_twin:<MAC>" line, never by a plain one: its address is whatever the attacker chose to
+  # broadcast, and a copy made under one of your own addresses (your router's, your Flipper's)
+  # must not be silenced by it (spec 2026-09-29, user decision).
+  local r="${1#*|*|*|*|*|}" mac
+  mac="${r%%|*}"
+  if [ "${1%%|*}" = evil_twin ]; then
+    case "$2" in *" EVIL_TWIN:$mac "*) return 0 ;; esac
+  else
+    case "$2" in *" $mac "*) return 0 ;; esac
+  fi
   return 1
 }

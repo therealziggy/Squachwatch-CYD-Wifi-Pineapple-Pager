@@ -657,15 +657,28 @@ rm -rf "$_tw1"; unset _tw1
 SW_EVIL_TWIN=0 _tw_lap
 assert_empty "$(grep -F 'Evil twin' "$SW_STUB_LOG")" lap_twin_off_silent
 assert_contains "$(cat "$SW_STUB_LOG")" "Flipper" lap_twin_off_control_lap_ran
-# ignore.txt silences an open copy by its MAC
+# a plain ignore.txt address never silences an evil twin (the attacker picks the address; this one
+# could be your own Flipper's); only an explicit evil_twin:<MAC> line does
 SW_IGNORE_SET=" 02:11:22:33:44:55 " _tw_lap
-assert_empty "$(grep -F 'Evil twin' "$SW_STUB_LOG")" lap_twin_ignored_by_mac
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Evil twin 'HomeNet'" lap_twin_not_hidden_by_plain_ignore
+SW_IGNORE_SET=" EVIL_TWIN:02:11:22:33:44:55 " _tw_lap
+assert_empty "$(grep -F 'Evil twin' "$SW_STUB_LOG")" lap_twin_ignored_by_twin_entry
 assert_contains "$(cat "$SW_STUB_LOG")" "Flipper" lap_twin_ignore_control_lap_ran
 # three open copies in one lap: every one gets its CSV row, the kind buzzes once
 sw_test_recon_db "$_twdb" "8,021122334466,0,0,-50,20,HomeNet" "8,ACDE48000009,17184063752,0,-60,30,Office" "8,021122334477,0,0,-45,20,Office"
 _tw_lap
 assert_eq "$(grep -c ',evil_twin,' "$SW_LOOT_DIR/detections.csv")" "3" lap_twins_each_get_a_row
 assert_eq "$(grep -c '^ALERT Evil twin' "$SW_STUB_LOG")" "1" lap_twins_buzz_once
+# decoys cannot hide the real target (the adversarial review's repro): three decoy twins with low
+# addresses, then one radio copying two names; every copied name gets its CSV row, the kind buzzes once
+sw_test_recon_db "$_tw/decoy.db" "8,000000000001,0,0,-50,20,D1" "8,FEFEFE000001,17184063752,0,-50,20,D1" \
+  "8,000000000002,0,0,-50,20,D2" "8,FEFEFE000002,17184063752,0,-50,20,D2" "8,000000000003,0,0,-50,20,D3" \
+  "8,FEFEFE000003,17184063752,0,-50,20,D3" "8,021122334455,0,0,-40,10,AAAA" "8,FEFEFE000009,17184063752,0,-50,20,AAAA" \
+  "8,ACDE48000001,17184063752,0,-70,20,HomeNet" "8,021122334455,0,0,-40,10,HomeNet"
+_tw_reset; SW_RECON_DB="$_tw/decoy.db" SW_BLE_CMD=true sw_scan_once
+assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" ',"HomeNet",' lap_decoys_cannot_hide_the_target
+assert_eq "$(grep -c ',evil_twin,' "$SW_LOOT_DIR/detections.csv")" "5" lap_every_copied_name_logged
+assert_eq "$(grep -c '^ALERT Evil twin' "$SW_STUB_LOG")" "1" lap_decoys_buzz_once
 # the screen cap: one twin line, then "...and 2 more Evil twin"
 SW_LOG_PER_KIND=1 _tw_lap
 assert_eq "$(grep -c "^LOG cyan Evil twin '" "$SW_STUB_LOG")" "1" lap_twin_screen_cap

@@ -77,7 +77,12 @@ EOF
   # It used to gate only the alert, so the loot CSV gained a row per device PER LAP
   # (~every 15s, unbounded) and a device matching two rules wrote two identical rows.
   local fresh=1
-  sw_should_report "$mac" "$cat" "$now" "$cd" "$sf" && fresh=0
+  # An evil twin's evidence is the network it copies, so each copied name is reported on its own:
+  # one radio copying several names, or decoys around a real target, cannot hide one behind another
+  # (spec 2026-09-29, user decision). The kind cooldown below still buzzes once for all of them.
+  local rkey="$cat"
+  [ "$cat" = evil_twin ] && rkey="$cat:$ident"
+  sw_should_report "$mac" "$rkey" "$now" "$cd" "$sf" && fresh=0
   [ "$fresh" -eq 0 ] && sw_log_write "$loot" "$det" "$now"
   # The colored log line still prints every lap: it is the operator's live "still here"
   # signal, and unlike the CSV it does not accumulate on disk. A lap loop that has already

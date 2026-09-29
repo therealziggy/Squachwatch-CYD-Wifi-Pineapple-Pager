@@ -239,6 +239,20 @@ assert_contains "$(cat "$SW_STUB_LOG")" "LOG cyan Flipper Zero 80:E1:26:00:00:09
 assert_empty "$(grep -F "'Flipper aa'" "$SW_STUB_LOG")" plain_label_never_quotes_ident
 rm -rf "$_L6" "$_s6"; unset _L6 _s6
 
+# Every copied name is reported on its own, even from one radio (spec 2026-09-29, user decision):
+# two names from the same MAC inside the cooldown both get a CSV row; the same name again does not
+_L7="$(mktemp -d)"; sw_log_init "$_L7"; _s7="$(mktemp)"; : > "$_s7"; : > "$SW_STUB_LOG"
+sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|HomeNet|-38" 1000 600 "$_s7" "$_L7"
+sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|Office|-38" 1010 600 "$_s7" "$_L7"
+sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|HomeNet|-38" 1020 600 "$_s7" "$_L7"
+assert_eq "$(grep -c ',evil_twin,' "$_L7/detections.csv")" "2" twin_each_name_gets_a_row
+assert_contains "$(cat "$_L7/detections.csv")" '"Office"' twin_second_name_logged
+# control: every other kind keeps one row per device per window, whatever its name
+sw_emit "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:00:00:0A|Flipper a|-60" 1000 600 "$_s7" "$_L7"
+sw_emit "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:00:00:0A|Flipper b|-60" 1010 600 "$_s7" "$_L7"
+assert_eq "$(grep -c ',hacker_flipper,' "$_L7/detections.csv")" "1" other_kinds_one_row_per_device
+rm -rf "$_L7" "$_s7"; unset _L7 _s7
+
 # --- ledger pruning (spec 2026-09-23 §7) ---
 _P="$(mktemp -d)"; _pf="$_P/seen.db"
 printf '%s\n' 'AA:00:00:00:00:01|old_cat|1000' 'AA:00:00:00:00:02|new_cat|1500' '*|kind_old|1000' '*|kind_new|1550' 'garbage-line' 'AA:00:00:00:00:03|bad_ts|12x4' > "$_pf"

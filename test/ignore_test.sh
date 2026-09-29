@@ -22,4 +22,14 @@ printf 'AA:BB:CC:DD:EE:FF\nCC:CC:CC:CC:CC:CC' > "$_T/noeol.txt"
 assert_eq "$(sw_load_ignore "$_T/noeol.txt")" " AA:BB:CC:DD:EE:FF CC:CC:CC:CC:CC:CC " ignore_last_line_without_newline
 printf 'CC:CC:CC:CC:CC:CC' > "$_T/single_noeol.txt"
 assert_eq "$(sw_load_ignore "$_T/single_noeol.txt")" " CC:CC:CC:CC:CC:CC " ignore_single_line_without_newline
-rm -rf "$_T"; unset _T _set _D _X
+# An evil twin is dropped only by an explicit "evil_twin:<MAC>" line: the attacker chooses its
+# address, so a plain line for one of your own devices must not silence a copy made under it.
+printf '02:11:22:33:44:55\nevil_twin:02:11:22:33:44:66  # my Pager, testing its open AP\n' > "$_T/twins.txt"
+_tset="$(sw_load_ignore "$_T/twins.txt")"
+assert_eq "$_tset" " 02:11:22:33:44:55 EVIL_TWIN:02:11:22:33:44:66 " ignore_load_keeps_twin_entries
+sw_ignored 'evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|HomeNet|-38' "$_tset"; assert_eq "$?" "1" ignore_plain_mac_never_hides_a_twin
+sw_ignored 'evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:66|HomeNet|-38' "$_tset"; assert_eq "$?" "0" ignore_twin_entry_hides_that_twin
+# the twin entry is for evil twins only; a plain entry still hides every other kind
+sw_ignored 'hacker_flipper|Flipper Zero|high|attacker|ble|02:11:22:33:44:66|Flipper|-60' "$_tset"; assert_eq "$?" "1" ignore_twin_entry_only_for_twins
+sw_ignored 'hacker_flipper|Flipper Zero|high|attacker|ble|02:11:22:33:44:55|Flipper|-60' "$_tset"; assert_eq "$?" "0" ignore_plain_entry_still_hides_other_kinds
+rm -rf "$_T"; unset _T _set _D _X _tset
