@@ -575,5 +575,7 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
 | What the Pager's sqlite3 CLI prints for a damaged copy (the health check looks for these words) | "not a database", "malformed" | a junk file: `Error: in prepare, file is not a database (26)`; a torn copy: `Error: in prepare, database disk image is malformed (11)` |
 | Plain copies of the live recon DB while recon writes | rarely damaged | 0 of 20 (0.5 s apart) |
 
-Still to do by hand: a launch from the Pager's menu at home, and the live test of spec §9 (an open network under
-the name of a protected one the user owns, once with a hostile-looking name).
+**Live test (2026-10-01, the user, launched from the menu):** an open copy of the user's own protected network
+gave exactly one `Evil twin` row (high, wifi, the open copy's address, -24 dBm) and nothing for the protected
+radios; it is the only evil-twin row in the loot; the menu's Stop ended with `Payload completed`. Still to
+do: the run with a hostile-looking name (quotes, `%s`, `$(x)`), deferred by the user.
