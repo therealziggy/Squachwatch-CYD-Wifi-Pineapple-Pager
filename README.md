@@ -104,7 +104,7 @@ A zero-dependency offline harness runs the whole detection engine on a normal Li
 bash test/run.sh
 ```
 
-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **868 assertions, all passing** (also as root).
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **874 assertions, all passing** (also as root).
 
 ## Status & roadmap
 

@@ -71,6 +71,18 @@ SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck; assert_eq "$?" "0"
 assert_empty "$(grep WARN "$SW_STUB_LOG")" health_twin_ok_silent
 # ...and leaves no copy behind
 assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_recon\.')" health_leaves_no_db_copy
+# a quiet spot, one visible network that the Pager recorded without a name (it does that now and
+# then), is healthy too: names are judged only with five or more visible rows
+sw_test_recon_db "$_hb2/quiet.db" "8,ACDE48000001,17184063752,0,-60,30,"
+: > "$SW_STUB_LOG"
+SW_RECON_DB="$_hb2/quiet.db" SW_RECENCY_SECS=600 sw_healthcheck; assert_eq "$?" "0" health_quiet_blank_row_rc
+assert_empty "$(grep WARN "$SW_STUB_LOG")" health_quiet_blank_row_silent
+# control: five visible networks and none of them named is the blind WARN
+sw_test_recon_db "$_hb2/noname.db" "8,ACDE48000001,17184063752,0,-60,30," "8,ACDE48000002,17184063752,0,-60,30," \
+  "8,ACDE48000003,17184063752,0,-60,30," "8,ACDE48000004,17184063752,0,-60,30," "8,ACDE48000005,17184063752,0,-60,30,"
+: > "$SW_STUB_LOG"
+SW_RECON_DB="$_hb2/noname.db" SW_RECENCY_SECS=600 sw_healthcheck; assert_eq "$?" "1" health_five_blank_rows_rc
+assert_contains "$(cat "$SW_STUB_LOG")" "evil-twin check is blind" health_five_blank_rows_warn
 # a copy that can't be made (a full /tmp, say) turns WiFi detection off: that is a WARN too
 : > "$SW_STUB_LOG"
 SW_TMP_DIR="$_hb2/no-such-dir" SW_RECON_DB="$_hb2/ok.db" SW_RECENCY_SECS=600 sw_healthcheck 2>/dev/null; assert_eq "$?" "1" health_no_copy_rc

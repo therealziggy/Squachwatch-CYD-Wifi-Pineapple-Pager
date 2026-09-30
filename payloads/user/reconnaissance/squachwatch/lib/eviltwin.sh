@@ -80,14 +80,14 @@ sw_evil_twin_scan() {
 sw_evil_twin_blind() {
   # $1 = a recon DB copy (read only). 0 = blind: the evil-twin check cannot work, because the window
   # holds beacon rows but none of them has a usable value in one of the columns the check reads
-  # (hidden, encryption and signal as numbers, a 12-hex address), its visible rows have no names, or
-  # the probe fails for any reason but a damaged copy (a renamed column, an sqlite3 that can't run the
-  # check's query). The check would then find nothing, forever, and read as "all clear". 2 = the copy
-  # is damaged ("malformed", "not a database", "disk I/O"): usually a copy torn by a write in progress,
-  # so the health check looks at one fresh copy before it says anything. 1 = fine, or no verdict: no
-  # rows in the window (the stale-DB check reports that one), or a copy that vanished during the check
-  # (the exit trap after a Stop). Not caught: a firmware change that keeps these columns but changes
-  # what their values mean.
+  # (hidden, encryption and signal as numbers, a 12-hex address), or it holds five or more visible
+  # rows and none of them has a name, or the probe fails for any reason but a damaged copy (a renamed
+  # column, an sqlite3 that can't run the check's query). The check would then find nothing, forever,
+  # and read as "all clear". 2 = the copy is damaged ("malformed", "not a database", "disk I/O"):
+  # usually a copy torn by a write in progress, so the health check looks at one fresh copy before it
+  # says anything. 1 = fine, or no verdict: no rows in the window (the stale-DB check reports that
+  # one), or a copy that vanished during the check (the exit trap after a Stop). Not caught: a
+  # firmware change that keeps these columns but changes what their values mean.
   local now since out rc total hid enc sig mac vis visnamed
   _sw_evil_twin_window
   now="$(date +%s)"; since=$(( now - REPLY ))
@@ -113,6 +113,9 @@ sw_evil_twin_blind() {
      && "$vis" =~ ^[0-9]+$ && "$visnamed" =~ ^[0-9]+$ ]] || return 0
   [ "$total" -gt 0 ] || return 1
   if [ "$hid" -eq 0 ] || [ "$enc" -eq 0 ] || [ "$sig" -eq 0 ] || [ "$mac" -eq 0 ]; then return 0; fi
-  if [ "$vis" -gt 0 ] && [ "$visnamed" -eq 0 ]; then return 0; fi
+  # Names are judged only with five or more visible rows: the Pager now and then records a blank-named
+  # beacon as not hidden (12 of 7,117 visible beacon rows in the author's history, never more than 3 in
+  # one window), so a quiet spot holding only those is no sign that names are gone.
+  if [ "$vis" -ge 5 ] && [ "$visnamed" -eq 0 ]; then return 0; fi
   return 1
 }

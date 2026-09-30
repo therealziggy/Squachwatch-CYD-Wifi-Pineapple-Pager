@@ -550,3 +550,14 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
   such a line in a UTF-8 locale: since an evil twin's cooldown key holds its name, the ledger is read as bytes.
   A damaged copy of the recon DB ("malformed" and the like) is usually one taken during a write, so the health
   check looks at a fresh copy before warning that the DB is damaged.
+- The third review (2026-10-01): the Pager now and then records a blank-named beacon as not hidden: 12 of
+  the 7,117 visible beacon rows in the author's history, from 4 radios, never more than 3 in one window.
+  Replaying the second round's rule (visible rows, none named = blind) over the window of each of the 1,366
+  minutes with beacon data found no false WARN, but 43 of those windows held a single visible row, so one
+  such row alone in a quiet spot would trip it. Names are now judged only with five or more visible rows
+  (937 of the 1,366 windows). Left as they are (minor): the name cleaning strips the C1 controls and
+  U+2028/U+2029 in one pass, so a doubled sequence (`c2 c2 85 85`) leaves one behind (not a regression:
+  `c829e01` stripped none; whether the Pager's screen breaks a line on them is untested); the tests of
+  names that are not UTF-8 only bite when the suite runs in a UTF-8 locale; the damaged-DB WARN needs
+  `SW_EVIL_TWIN=1`; a Stop that lands on the first `...and N more` line still lets the other kinds'
+  summary lines print; and "usually one taken during a write" above is reasoned, not measured.

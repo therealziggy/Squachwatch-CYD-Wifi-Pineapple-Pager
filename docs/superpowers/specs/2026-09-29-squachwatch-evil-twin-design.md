@@ -111,7 +111,7 @@ is the one named, whichever appeared first (this removes the CYD limitation desc
     cannot hide one name behind another (user decision after the final review).
   - `SW_KIND_COOLDOWN`: several twins at once buzz once; the alert names the first one found.
   - `SW_LOG_PER_KIND`: 3 screen lines per lap, then `...and N more Evil twin` (the flood guard: past that, a
-    name shows only in the CSV).
+    name gets no screen line of its own; its CSV row and any alert are unchanged).
   - `ignore.txt`: only a line `evil_twin:<MAC>` silences an evil twin (that one). A plain MAC line never
     does, because the attacker chooses the address and could copy one of the owner's (user decision after
     the final review).
@@ -234,8 +234,9 @@ no default of its own (the recency-window lesson: payload.sh sources its libs be
   `/tmp`, say) is `WARN: can't copy the recon DB ... — WiFi detection OFF`. When `SW_EVIL_TWIN=1`, a probe on
   that copy counts the beacon rows in the window and, among them, those with a usable hidden flag, security
   value and signal (numbers) and a 12-hex address, and, among the visible ones, those with a name. Rows
-  present but none usable in one of those columns, visible rows without a single name, or a probe that fails
-  for any reason but a damaged copy (a renamed column, an sqlite3 that can't run the check's query), is
+  present but none usable in one of those columns, five or more visible rows without a single name (fewer
+  prove nothing: the Pager now and then records a blank-named beacon as not hidden, see P0-findings), or a
+  probe that fails for any reason but a damaged copy (a renamed column, an sqlite3 that can't run the check's query), is
   `WARN: evil-twin check is blind (the recon DB no longer records what it needs)` and DEGRADED. A damaged
   copy ("malformed", "not a database", "disk I/O") is usually one torn by a write in progress, so the check
   looks at one fresh copy; if that one reads as damaged too, it is `WARN: recon DB copy unreadable twice

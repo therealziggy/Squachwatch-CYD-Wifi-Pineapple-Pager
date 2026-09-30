@@ -157,11 +157,14 @@ python3 - "$_eb" <<'PY'
 import sqlite3, sys, time
 d, now = sys.argv[1], int(time.time())
 std = "hash INT PRIMARY KEY, type INT, bssid TEXT, ssid BLOB, hidden INT, time INT, signal INT, encryption INT"
-def mk(name, cols, row):
+def mk(name, cols, *rows):
     c = sqlite3.connect(d + "/" + name)
     c.execute("CREATE TABLE ssid(%s)" % cols)
-    c.execute("INSERT INTO ssid VALUES(%s)" % ",".join("?" * len(row)), row)
+    for row in rows:
+        c.execute("INSERT INTO ssid VALUES(%s)" % ",".join("?" * len(row)), row)
     c.commit()
+def blank(n):  # n visible radios, none named
+    return [(i, 8, b"ACDE4800000%d" % i, b"", 0, now - 30, -60, 0) for i in range(1, n + 1)]
 mk("nobssid.db", std.replace("bssid TEXT", "mac TEXT"), (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
 mk("nosignal.db", std.replace("signal INT", "rssi INT"), (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
 mk("nullbssid.db", std, (1, 8, None, b"HomeNet", 0, now - 30, -60, 0))
@@ -169,7 +172,9 @@ mk("textenc.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, "WPA
 mk("nullhidden.db", std, (1, 8, b"ACDE48000001", b"HomeNet", None, now - 30, -60, 0))
 mk("good.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60, 0))
 mk("realsignal.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now - 30, -60.5, 0))
-mk("noname.db", std, (1, 8, b"ACDE48000001", b"", 0, now - 30, -60, 0))
+mk("noname.db", std, *blank(5))
+mk("fourblank.db", std, *blank(4))
+mk("quietblank.db", std, *blank(1))
 mk("hiddenonly.db", std, (1, 8, b"ACDE48000001", b"", 1, now - 30, -60, 0))
 mk("future.db", std, (1, 8, b"ACDE48000001", b"HomeNet", 0, now + 1000, -60, None))
 PY
@@ -180,6 +185,10 @@ done
 sw_evil_twin_blind "$_eb/good.db"; assert_eq "$?" "1" blind_no_on_good_shape
 # control for noname: hidden radios without names are normal
 sw_evil_twin_blind "$_eb/hiddenonly.db"; assert_eq "$?" "1" blind_no_on_hidden_unnamed_rows
+# ...and so is a quiet spot: the Pager now and then records a blank-named beacon as not hidden, so
+# fewer than five visible rows without a name give no verdict (noname above holds five)
+sw_evil_twin_blind "$_eb/quietblank.db"; assert_eq "$?" "1" blind_no_on_one_quiet_blank_row
+sw_evil_twin_blind "$_eb/fourblank.db"; assert_eq "$?" "1" blind_no_on_four_blank_rows
 # rows last seen after the lap (a clock that stepped back) are outside the window: no verdict
 sw_evil_twin_blind "$_eb/future.db"; assert_eq "$?" "1" blind_no_verdict_on_future_rows
 # hidden radios count too: a window of hidden rows with no security value means the field is gone
