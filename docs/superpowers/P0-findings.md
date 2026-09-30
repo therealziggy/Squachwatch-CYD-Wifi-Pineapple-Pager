@@ -560,4 +560,20 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
   `c829e01` stripped none; whether the Pager's screen breaks a line on them is untested); the tests of
   names that are not UTF-8 only bite when the suite runs in a UTF-8 locale; the damaged-DB WARN needs
   `SW_EVIL_TWIN=1`; a Stop that lands on the first `...and N more` line still lets the other kinds'
-  summary lines print; and "usually one taken during a write" above is reasoned, not measured.
+  summary lines print. "Usually one taken during a write" above is reasoned: on the install day none of
+  20 plain copies of the live DB was damaged (table below).
+
+**Evil-twin install + verify (2026-10-01, `1a31508`):**
+
+| Step | Expected | Observed |
+|---|---|---|
+| Install | device == branch head | the 7 changed files swapped in by rename (payload.sh 755, the rest 644); all 11 payload files' md5 equal to the repository's |
+| Launcher-faithful silent run, health check every lap (the launcher's header after line 1, only `PAYLOAD_HOME` in the environment, screen/sound/LED verbs shadowed, temp loot) | armed, no WARN, no evil twin at home | armed, 0 WARN, 0 stderr lines, no evil twin; the owner's Flipper gave one alert and one CSV row, then only its log line; lap 23.7 s |
+| The same at the default health cadence | as above | laps 22.2–22.6 s |
+| Lap time side by side, same place, alternating runs (the previous build run from RAM, not installed) | the new checks cost well under a second | `c829e01` 20.7–21.5 s (mean 21.0), `1a31508` 20.9–22.5 s (mean 21.7): about +0.7 s a lap, every change of this branch included. The laps are longer than in the tables above because of the place (the previous build takes as long there), not the code |
+| Menu-style Stop (SIGINT to the main shell only) | exit 0 well inside the launcher's 1 s | exit 0 in 31–94 ms over 6 runs; no temp files or processes left, `/tmp` clean |
+| What the Pager's sqlite3 CLI prints for a damaged copy (the health check looks for these words) | "not a database", "malformed" | a junk file: `Error: in prepare, file is not a database (26)`; a torn copy: `Error: in prepare, database disk image is malformed (11)` |
+| Plain copies of the live recon DB while recon writes | rarely damaged | 0 of 20 (0.5 s apart) |
+
+Still to do by hand: a launch from the Pager's menu at home, and the live test of spec §9 (an open network under
+the name of a protected one the user owns, once with a hostile-looking name).
