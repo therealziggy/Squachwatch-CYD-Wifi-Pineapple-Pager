@@ -209,3 +209,99 @@ assert_empty "$(sw_test_rid_line | SW_MAIN_PID="$_rd" _recs)" rid_rec_stopped_no
 assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_stopped_no_csv
 rm -rf "$_rl"; unset _rl _det _v _rd; unset -f _recs _csv1
 
+# --- the per-lap capture (test/stubs/tcpdump models the Pager's tcpdump) ---
+_cap_dir="$(mktemp -d)"; _cap_loot="$(mktemp -d)"
+# _cap FIXTURE [VAR=VALUE...]: one 1-second capture window in its own shell, run as a lap runs it
+# (sw_rid_start and sw_rid_collect in the same shell). FIXTURE "" = a capture with no frames.
+_cap() { local fx="$1"; shift
+  env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_RID_IFACE=wlan1mon \
+      SW_FAKE_TCPDUMP="${fx:+$_RFIX/$fx.txt}" "$@" bash -c '
+    source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
+    sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot"; }
+_cap_state() { head -1 "$_cap_dir/sw_rid.state" 2>/dev/null; }
+_cap_reset() { rm -f "$_cap_dir"/sw_rid.* "$_cap_loot/remoteid.csv"; : > "$SW_STUB_LOG"; }
+
+# a beacon capture: one drone detection and a remoteid.csv row; only the health state is left behind
+_cap_reset; _out="$(_cap beacon)"
+assert_contains "$_out" "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|" cap_beacon_detection
+assert_contains "$(tail -1 "$_cap_loot/remoteid.csv")" "1700000000,beacon,80:E1:26:AA:BB:CC,-47,serial," cap_beacon_csv_row
+assert_eq "$(_cap_state)" "ok" cap_beacon_status_ok
+assert_empty "$(ls -A "$_cap_dir" | grep -v '^sw_rid\.state$')" cap_leaves_no_capture_files
+# tcpdump ran read only (-p), on the configured interface, without clock times (-t), with the frame cap
+assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon -p -l -t -nn -xx -c 1500 type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)" cap_tcpdump_args
+
+# an ordinary beacon only: no drone, no WARN, and the capture was judged healthy (it ran)
+_cap_reset; _out="$(_cap quiet)"
+assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_quiet_no_drone
+assert_eq "$(_cap_state)" "ok" cap_quiet_status_ok
+assert_empty "$(grep -F 'WARN' "$SW_STUB_LOG")" cap_quiet_no_warn
+# no frames at all (a place with no WiFi) is ok too: "listening on" proves the capture ran
+_cap_reset; _cap "" >/dev/null
+assert_eq "$(_cap_state)" "ok" cap_no_frames_is_ok
+
+# a capture that never starts: one WARN, not one per lap; then a green line once it works again
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
+assert_eq "$(_cap_state)" "capture_failed" cap_failed_status
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_failed_warns
+_cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_failed_warns_once
+_cap beacon >/dev/null
+assert_contains "$(cat "$SW_STUB_LOG")" "Remote ID capture recovered" cap_failed_then_recovered
+
+# a link type that is not 802.11 + radiotap: a WARN, and no drone from those bytes
+# (control: the same fixture under the Pager's link type gives the drone, cap_beacon_detection)
+_cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)')"
+assert_eq "$(_cap_state)" "not_understood" cap_wrong_link_status
+assert_contains "$(cat "$SW_STUB_LOG")" "WiFi capture not understood" cap_wrong_link_warns
+assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_wrong_link_no_drone
+
+# the frame cap: tcpdump stops at -c frames; one WARN per SW_COOLDOWN, and what was heard still counts
+_cap_reset; _out="$(_cap multi SW_RID_MAX_FRAMES=1)"
+assert_eq "$(_cap_state)" "capped" cap_capped_status
+assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "1" cap_capped_warns
+assert_eq "$(printf '%s\n' "$_out" | grep -c '^drone_rid')" "1" cap_capped_reports_what_it_heard
+_cap multi SW_RID_MAX_FRAMES=1 >/dev/null
+assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "1" cap_capped_warns_once_per_cooldown
+# ...and again once the cooldown has passed (SW_COOLDOWN=0: every capped lap may warn)
+_cap multi SW_RID_MAX_FRAMES=1 SW_COOLDOWN=0 >/dev/null
+assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "2" cap_capped_warns_again_after_cooldown
+
+# more drones than SW_RID_MAX_DRONES: the strongest are reported, the rest counted on one line
+_cap_reset; _out="$(_cap multi SW_RID_MAX_DRONES=1)"
+assert_eq "$(printf '%s\n' "$_out" | grep -c '^drone_rid')" "1" cap_drone_cap_one_detection
+assert_contains "$_out" "|0000FSWTEST000000001|" cap_drone_cap_keeps_strongest
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta ...and 1 more drones (Remote ID flood?)" cap_drone_cap_more_line
+
+# SW_REMOTE_ID=0: no tcpdump at all (control: cap_tcpdump_args, where the stub logged itself)
+_cap_reset; _cap beacon SW_REMOTE_ID=0 >/dev/null
+assert_empty "$(grep '^tcpdump ' "$SW_STUB_LOG")" cap_off_runs_no_tcpdump
+
+# A Stop during the window: the main shell is gone when the window ends. The capture is dropped unread,
+# nothing is reported or written, and its files go. Control: the capture did start (the stub logged).
+_cap_reset; sleep 30 & _fm=$!
+_out="$(env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_MAIN_PID="$_fm" bash -c '
+  source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
+  sw_rid_start 1700000000
+  kill "$3"; while [ -e "/proc/$3" ] && [ "$(cut -d" " -f3 "/proc/$3/stat" 2>/dev/null)" != Z ]; do sleep 0.01; done
+  sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot" "$_fm")"
+wait "$_fm" 2>/dev/null
+assert_contains "$(cat "$SW_STUB_LOG")" "tcpdump -i wlan1mon" cap_stopped_control_capture_started
+assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_stopped_reports_nothing
+assert_eq "$([ -e "$_cap_loot/remoteid.csv" ] && echo written)" "" cap_stopped_writes_no_csv
+assert_empty "$(ls -A "$_cap_dir")" cap_stopped_leaves_no_files
+
+# The Pager's Stop kills the main shell only, so the capture's helpers must end on their own: SIGKILL the
+# shell that started a capture, then watch tcpdump (the stub) end within SW_RID_SECONDS + 2 s.
+_pids="$_cap_dir/stub.pids"; : > "$_pids"
+env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_STUB_PIDS="$_pids" bash -c '
+  source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
+  sw_rid_start 1700000000; sleep 30' _ "$SW_ROOT" 2>/dev/null &
+_sp=$!
+for _i in $(seq 100); do [ -s "$_pids" ] && break; sleep 0.05; done
+kill -9 "$_sp" 2>/dev/null; wait "$_sp" 2>/dev/null
+_alive() { local p n=0; while read -r p; do kill -0 "$p" 2>/dev/null && n=$((n + 1)); done < "$_pids"; echo "$n"; }
+# control: tcpdump was alive when its shell died, so "none left" below is not vacuous
+assert_eq "$(_alive)" "1" cap_orphan_control_alive_after_kill
+SECONDS=0; while [ "$(_alive)" != 0 ] && [ "$SECONDS" -lt 10 ]; do sleep 0.2; done
+assert_eq "$(_alive)" "0" cap_orphan_ends_by_itself
+rm -rf "$_cap_dir" "$_cap_loot"; unset _cap_dir _cap_loot _out _fm _pids _sp _i; unset -f _cap _cap_state _cap_reset _alive

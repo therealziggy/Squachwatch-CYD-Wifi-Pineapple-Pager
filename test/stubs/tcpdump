@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# test/stubs/tcpdump — models the Pager's tcpdump 4.99.5 for the Remote ID capture (lib/remoteid.sh).
+#   SW_FAKE_TCPDUMP        a fixture (tcpdump -t -nn -xx text) printed as the capture; unset = no frames
+#   SW_FAKE_TCPDUMP_LINK   the link type it reports (default the Pager's: IEEE802_11_RADIO ...)
+#   SW_FAKE_TCPDUMP_FAIL=1 the capture never starts: an error and exit 1, no "listening on" line
+# As the real tool does: "listening on ..." on stderr, at most -c N frames on stdout, then it runs until
+# TERM/INT (the payload's timeout) or the -c limit, and reports "N packets captured" on stderr on the way
+# out. Self-limiting (30 s) if orphaned.
+echo "${0##*/} $*" >> "${SW_STUB_LOG:-/dev/null}"
+[ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
+iface=wlan1mon max=0 prev=""
+for a in "$@"; do
+  case "$prev" in -i) iface="$a" ;; -c) max="$a" ;; esac
+  prev="$a"
+done
+if [ -n "${SW_FAKE_TCPDUMP_FAIL:-}" ]; then
+  echo "tcpdump: $iface: No such device exists" >&2
+  exit 1
+fi
+echo "tcpdump: verbose output suppressed, use -v[v]... for full protocol decode" >&2
+echo "listening on $iface, link-type ${SW_FAKE_TCPDUMP_LINK:-IEEE802_11_RADIO (802.11 plus radiotap header)}, snapshot length 262144 bytes" >&2
+n=0
+if [ -n "${SW_FAKE_TCPDUMP:-}" ]; then
+  # one frame = a header line and its hex lines; at most -c frames, as tcpdump stops there
+  awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } max > 0 && f > max { exit } { print }' "$SW_FAKE_TCPDUMP"
+  n="$(awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } END { print (max > 0 && f > max) ? max : f + 0 }' "$SW_FAKE_TCPDUMP")"
+fi
+summary() { printf '%s packets captured\n%s packets received by filter\n0 packets dropped by kernel\n' "$n" "$n" >&2; }
+if [ "$max" -gt 0 ] && [ "$n" -ge "$max" ]; then summary; exit 0; fi
+trap 'summary; exit 0' TERM INT
+end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done
+summary

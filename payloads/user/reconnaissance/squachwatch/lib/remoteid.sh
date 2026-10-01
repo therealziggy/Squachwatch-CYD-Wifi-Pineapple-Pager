@@ -248,3 +248,88 @@ _sw_rid_csv_row() {
   _sw_csv_cell "$gps"; r+=",$REPLY"
   printf '%s\n' "$r" >> "$csv"
 }
+# --- The per-lap capture: a bounded tcpdump window, run like btmon in lib/ble.sh (spec §6.1, §7.2) ---
+# The kernel filter: beacons, and action frames sent to NAN's address. BPF cannot look inside a beacon's
+# element list, so the decoder picks out the Remote ID beacons. ("subtype action" does not parse on the
+# Pager's libpcap; the frame-control byte does.)
+_sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)'; }
+
+# A WARN when the capture's status changes, like the BLE note; "capped" at most once per SW_COOLDOWN and
+# never a "recovered" line after it. $1 = ok | capture_failed | not_understood | capped, $2 = now (epoch).
+sw_rid_health_note() {
+  local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" cd="${SW_COOLDOWN:-600}"
+  [ -f "$sf" ] && { read -r prev; read -r capt; } < "$sf"
+  case "$cd" in ''|*[!0-9]*) cd=600 ;; esac
+  [[ "$capt" =~ ^[1-9][0-9]{0,11}$ ]] || capt=""
+  case "$st" in
+    capped)
+      if [ -z "$capt" ] || [ "$now" -lt "$capt" ] || [ $(( now - capt )) -ge "$cd" ]; then
+        LOG yellow "WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind" 2>/dev/null
+        capt="$now"
+      fi ;;
+    ok) case "$prev" in capture_failed|not_understood) LOG green "Remote ID capture recovered" 2>/dev/null ;; esac ;;
+    capture_failed) [ "$prev" = capture_failed ] || LOG yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF" 2>/dev/null ;;
+    not_understood) [ "$prev" = not_understood ] || LOG yellow "WARN: WiFi capture not understood — Remote ID over WiFi OFF" 2>/dev/null ;;
+  esac
+  printf '%s\n%s\n' "$st" "$capt" > "$sf"
+}
+
+# $1 = the lap's start (epoch). Starts this lap's capture in the background and leaves SW_RID_PID,
+# SW_RID_CAP and SW_RID_ERR for sw_rid_collect, which must run in the SAME shell (it waits for the PID).
+# Read only: -p, and never -I: recon keeps the interface. -l so no line sits in a buffer at a signal, -t so
+# no clock time is printed. It ends by itself: timeout TERMs tcpdump after SW_RID_SECONDS (awk then reaches
+# the end of its input and prints its lines), or -c stops it; an orphaned capture still ends within
+# SW_RID_SECONDS + 2 s. Nothing here is ever found or stopped by name.
+sw_rid_start() {
+  SW_RID_PID=""; SW_RID_CAP=""; SW_RID_ERR=""
+  [ "${SW_REMOTE_ID:-0}" = 1 ] || return 0
+  command -v tcpdump >/dev/null 2>&1 || return 0
+  sw_stopped && return 0
+  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-1500}" maxd="${SW_RID_MAX_DRONES:-32}" cap err
+  [[ "$secs" =~ ^[1-9][0-9]{0,4}$ ]] || secs=12
+  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
+  [[ "$maxd" =~ ^(0|[1-9][0-9]{0,3})$ ]] || maxd=32
+  cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { sw_rid_health_note capture_failed "$now"; return 0; }
+  err="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { rm -f "$cap"; sw_rid_health_note capture_failed "$now"; return 0; }
+  _sw_rid_filter
+  nice -n 10 timeout -k 2 "$secs" tcpdump -i "${SW_RID_IFACE:-wlan1mon}" -p -l -t -nn -xx -c "$maxf" "$REPLY" 2>"$err" \
+    | nice -n 10 awk -v max="$maxd" "$(_sw_rid_awk_src)" > "$cap" 2>/dev/null &
+  SW_RID_PID=$!; SW_RID_CAP="$cap"; SW_RID_ERR="$err"
+}
+
+# $1 = the lap's start (epoch), $2 = the loot dir. Waits for this lap's capture, notes its health, prints
+# its drones as finished detections (like an evil twin, they skip the matcher) and removes its files.
+sw_rid_collect() {
+  local now="$1" loot="$2" pid="${SW_RID_PID:-}" cap="${SW_RID_CAP:-}" err="${SW_RID_ERR:-}"
+  SW_RID_PID=""; SW_RID_CAP=""; SW_RID_ERR=""
+  [ -n "$pid" ] || return 0
+  wait "$pid" 2>/dev/null
+  # stopped during the window: drop the capture unread and report nothing (a relaunch owns the screen now)
+  if sw_stopped; then rm -f "$cap" "$err"; return 0; fi
+  local l started=0 radio=0 pkts="" frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-1500}" st
+  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
+  while IFS= read -r l || [ -n "$l" ]; do
+    case "$l" in
+      "listening on "*) started=1; case "$l" in *"link-type IEEE802_11_RADIO "*) radio=1 ;; esac ;;
+      [0-9]*" packets captured") pkts="${l%% *}" ;;
+    esac
+  done < "$err"
+  while IFS= read -r l || [ -n "$l" ]; do
+    case "$l" in S$'\t'*) IFS='|' read -r tag frames understood ridf more <<< "${l//$'\t'/|}" ;; esac
+  done < "$cap"
+  [[ "$frames" =~ ^[0-9]{1,9}$ ]] || frames=0; [[ "$understood" =~ ^[0-9]{1,9}$ ]] || understood=0
+  [[ "$more" =~ ^[0-9]{1,9}$ ]] || more=0; [[ "$pkts" =~ ^[0-9]{1,9}$ ]] || pkts=""
+  if [ "$started" -ne 1 ]; then st=capture_failed
+  elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap
+  elif [ -n "$pkts" ] && [ "$frames" -lt "$pkts" ]; then st=not_understood          # frames lost on the way
+  elif [ "$frames" -ge 5 ] && [ "$understood" -eq 0 ]; then st=not_understood       # the format changed
+  elif [ -n "$pkts" ] && [ "$pkts" -ge "$maxf" ]; then st=capped
+  else st=ok; fi                                                                    # a lap with no frames too
+  sw_rid_health_note "$st" "$now"
+  # bytes captured under any other link type are not 802.11 frames: no drones from them
+  if [ "$radio" -eq 1 ]; then
+    sw_rid_records "$now" "$loot" < "$cap"
+    [ "$more" -gt 0 ] && LOG magenta "...and $more more drones (Remote ID flood?)" 2>/dev/null
+  fi
+  rm -f "$cap" "$err"
+}
