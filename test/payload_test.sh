@@ -8,6 +8,9 @@ export SW_LOOT_DIR="$(mktemp -d)"
 export SW_SEEN_FILE="$(mktemp)"; : > "$SW_SEEN_FILE"
 export SW_TMP_DIR="$(mktemp -d)"               # RAM-state seam: keeps track.db out of the real /tmp
 export SW_TEST_SOURCE=1                      # tells payload.sh not to auto-run main
+# Laps here do not capture WiFi frames (each would wait out a Remote ID window); the Remote ID lap
+# tests below turn it on, and its default (on) is read in a clean process.
+export SW_REMOTE_ID=0
 # The COMMITTED fixture's timestamps age with the repo, so pin the window off for the
 # pipeline assertions below. The window itself is tested in wifi_test.sh against a DB
 # rebuilt at test time.
@@ -123,6 +126,7 @@ rm -rf "$_hb2"; unset _hb2 _hbd
 # own helpers end by themselves (ble_test.sh: ble_orphans_end_by_themselves). killall and
 # pkill are stubs that record calls, so the suite never kills real processes on the dev box.
 _ct="$(mktemp -d)"; : > "$_ct/sw_ble.AbC123"; : > "$_ct/sw_ble.state"; : > "$_ct/sw_recon.AbC123"; : > "$_ct/keep.me"; : > "$SW_STUB_LOG"
+: > "$_ct/sw_rid.XyZ789"; : > "$_ct/sw_rid.state"
 # precondition: here these names resolve to the recording stubs, never to the real tools
 _kst="$(command -v killall pkill | sed 's|.*/test/stubs/||' | tr '\n' ' ')"
 assert_eq "$_kst" "killall pkill " cleanup_kill_tools_are_stubs
@@ -133,11 +137,12 @@ assert_eq "$(grep -cE '^(killall|pkill) probe-control$' "$SW_STUB_LOG")" "2" cle
 : > "$SW_STUB_LOG"
 ( SW_TMP_DIR="$_ct" sw_cleanup )
 assert_empty "$(grep -E '^(killall|pkill) ' "$SW_STUB_LOG")" cleanup_kills_nothing_by_name
-# It removes the BLE health state and any recon DB copy, but leaves a BLE capture to the lap that
-# owns it: a lap still running when Stop came reads its capture again (the health check), and
-# removes it itself on every path. The next start sweeps anything a lap could not.
-assert_empty "$(ls "$_ct" | grep -E '^(sw_ble\.state|sw_recon\.)')" cleanup_removes_state_and_db_copy
+# It removes the BLE and Remote ID health states and any recon DB copy, but leaves the BLE and Remote
+# ID captures to the lap that owns them: a lap still running when Stop came reads its capture again (the
+# health check), and removes it itself on every path. The next start sweeps anything a lap could not.
+assert_empty "$(ls "$_ct" | grep -E '^(sw_ble\.state|sw_rid\.state|sw_recon\.)')" cleanup_removes_state_and_db_copy
 assert_eq "$(ls "$_ct" | grep -c '^sw_ble\.AbC123$')" "1" cleanup_leaves_a_live_laps_capture
+assert_eq "$(ls "$_ct" | grep -c '^sw_rid\.XyZ789$')" "1" cleanup_leaves_a_live_laps_rid_capture
 assert_contains "$(ls "$_ct")" "keep.me" cleanup_leaves_other_files   # control: it is not rm -rf
 rm -rf "$_ct"; unset _ct _kst
 # ...and nothing in the payloads finds or kills processes by name at all: a startup "kill the
@@ -392,18 +397,21 @@ rm -rf "$_kt"; unset -f _sw_run_failing_scan; unset _kt _kw _rc
 # Name-agnostic: whatever temp files a lap leaves when it dies before its own cleanup (here every
 # `rm` is shadowed, so nothing is removed), sw_clear_tmp removes them all. A capture, state or DB
 # copy renamed out of the sweep's globs fails this.
-_lt="$(mktemp -d)"
+_lt="$(mktemp -d)"; _ll="$(mktemp -d)"
 (
   export SW_TMP_DIR="$_lt"
   rm() { :; }
   sw_wifi_records "$FIX/recon.db" >/dev/null
   SW_FAKE_BTMON="$FIX/btmon_synthetic.txt" sw_ble_scan 1 hci0 >/dev/null
+  export SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="$FIX/rid/beacon.txt"
+  sw_rid_start 1700000000; SW_RID_FILE= sw_rid_collect 1700000000 "$_ll" >/dev/null
 )
-# control: the lap did leave its files (DB copy, BLE capture, BLE state), so "none left" is not vacuous
-assert_eq "$(ls -A "$_lt" | wc -l | tr -d ' ')" "3" sweep_lap_leaves_three_temp_files
+# control: the lap did leave its files (DB copy, BLE capture, BLE state, Remote ID capture, its tcpdump
+# messages and its state), so "none left" is not vacuous
+assert_eq "$(ls -A "$_lt" | wc -l | tr -d ' ')" "6" sweep_lap_leaves_six_temp_files
 ( SW_TMP_DIR="$_lt" sw_clear_tmp )
 assert_empty "$(ls -A "$_lt")" sweep_clears_every_temp_file_a_lap_leaves
-rm -rf "$_lt"; unset _lt
+rm -rf "$_lt" "$_ll"; unset _lt _ll
 # --- the Pager's Stop (measured 2026-09-27 with a probe payload launched from the menu) ---
 # Stop sends SIGINT and then SIGKILL, ~1 s later, to the payload's MAIN shell only; the lap's
 # subshells get no signal at all. So the trap must run at once, not after the lap, and a lap
@@ -743,10 +751,82 @@ assert_eq "$(env -u SW_EVIL_TWIN bash -c 'SW_TEST_SOURCE=1 . "$1"/payload.sh >/d
 rm -rf "$_tw"; unset _tw _twdb _twd; unset -f _tw_lap _tw_reset
 # --- end evil twin ---
 
+# --- Remote ID over WiFi in the lap (spec 2026-10-01) ---
+_RFIX2="$(cd "$(dirname "${BASH_SOURCE[0]}")/fixtures" && pwd)/rid"
+_rid_reset() { rm -f "$SW_LOOT_DIR/detections.csv" "$SW_LOOT_DIR/remoteid.csv" "$SW_TMP_DIR"/sw_rid.*; : > "$SW_SEEN_FILE"; sw_log_init "$SW_LOOT_DIR"; : > "$SW_STUB_LOG"; }
+# _rid_lap FIXTURE: one lap with the capture on (a 1 s window), no recon DB and no BLE devices
+_rid_lap() { SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="$_RFIX2/$1.txt" SW_RECON_DB=/nonexistent/recon.db SW_BLE_CMD=true sw_scan_once; }
+_rid_reset; _rid_lap beacon
+# the lap collects its capture once the window ends (it waits for it, in the shell that started it)
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'" rid_lap_alerts
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta   87m up, 12m/s, pilot (live) 47.39800,8.54102" rid_lap_detail_line
+assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv")" ",beacon,80:E1:26:AA:BB:CC,-47,serial," rid_lap_track_row
+assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" ',drone_rid,"Drone",high,surveillance,wifi,80:E1:26:AA:BB:CC,"0000FSWTEST000000001",-47,' rid_lap_detections_row
+assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_rid\.' | grep -v '^sw_rid\.state$')" rid_lap_leaves_no_capture
+# the next lap: no second alert or detections row (the cooldown), but a second flight-track row
+_rid_lap beacon
+assert_eq "$(grep -c '^ALERT Drone' "$SW_STUB_LOG")" "1" rid_lap_second_lap_no_second_alert
+assert_eq "$(grep -c ',beacon,' "$SW_LOOT_DIR/remoteid.csv")" "2" rid_lap_track_row_every_lap
+# the owner's own drone (drone:<ID> in ignore.txt) leaves no trace in the lap either
+_rid_reset; SW_IGNORE_SET=" DRONE:0000FSWTEST000000001 " _rid_lap beacon
+assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_ignored_drone_silent
+assert_eq "$([ -e "$SW_LOOT_DIR/remoteid.csv" ] && echo written)" "" rid_lap_ignored_drone_no_track_row
+# SW_REMOTE_ID=0: no capture at all (control: rid_lap_alerts, which had one)
+_rid_reset; SW_REMOTE_ID=0 SW_FAKE_TCPDUMP="$_RFIX2/beacon.txt" SW_RECON_DB=/nonexistent/recon.db SW_BLE_CMD=true sw_scan_once
+assert_empty "$(grep '^tcpdump ' "$SW_STUB_LOG")" rid_lap_off_no_capture
+# a lap of a stopped payload starts no capture and reports no drone
+bash -c 'exit 0' & _rd=$!; wait "$_rd"
+_rid_reset; SW_MAIN_PID="$_rd" _rid_lap beacon
+assert_empty "$(grep -E '^(tcpdump|ALERT|LOG) ' "$SW_STUB_LOG")" rid_lap_stopped_no_capture_no_report
+# the defaults, read in a clean process (a test that sets a value cannot see its default)
+assert_eq "$(env -u SW_REMOTE_ID -u SW_RID_IFACE -u SW_RID_SECONDS -u SW_RID_MAX_FRAMES -u SW_RID_MAX_DRONES -u SW_RID_FILE -u SW_LOOT_DIR \
+  bash -c 'SW_TEST_SOURCE=1 . "$1"/payload.sh >/dev/null 2>&1; echo "$SW_REMOTE_ID|$SW_RID_IFACE|$SW_RID_SECONDS|$SW_RID_MAX_FRAMES|$SW_RID_MAX_DRONES|$SW_RID_FILE"' _ "$SW_ROOT")" \
+  "1|wlan1mon|12|1500|32|/root/loot/squachwatch/remoteid.csv" payload_rid_defaults
+# health: the capture needs tcpdump and the recon radio's interface (spec 2026-10-01 §7.1). A PATH with
+# only what the check needs (the btmon stub too, so tcpdump is the only thing missing).
+_rn="$(mktemp -d)"; mkdir "$_rn/net" "$_rn/bin"; : > "$_rn/net/wlan1mon"
+_stubs="$(cd "$(dirname "${BASH_SOURCE[0]}")/stubs" && pwd)"
+for _t in LOG sqlite3 btmon; do ln -s "$_stubs/$_t" "$_rn/bin/$_t"; done
+for _t in bash cp date mktemp rm python3; do ln -s "$(command -v "$_t")" "$_rn/bin/$_t"; done
+: > "$SW_STUB_LOG"; PATH="$_rn/bin" SW_REMOTE_ID=1 SW_SYSFS_NET="$_rn/net" sw_healthcheck >/dev/null 2>&1
+assert_contains "$(cat "$SW_STUB_LOG")" "WARN: tcpdump missing — Remote ID over WiFi OFF" health_rid_tcpdump_missing
+ln -s "$_stubs/tcpdump" "$_rn/bin/tcpdump"
+: > "$SW_STUB_LOG"; PATH="$_rn/bin" SW_REMOTE_ID=1 SW_SYSFS_NET="$_rn/net" SW_RID_IFACE=wlan9mon sw_healthcheck >/dev/null 2>&1
+assert_contains "$(cat "$SW_STUB_LOG")" "WARN: wlan9mon missing — Remote ID over WiFi OFF" health_rid_iface_missing
+# control: both there, no Remote ID WARN
+: > "$SW_STUB_LOG"; PATH="$_rn/bin" SW_REMOTE_ID=1 SW_SYSFS_NET="$_rn/net" sw_healthcheck >/dev/null 2>&1
+assert_empty "$(grep -F 'Remote ID' "$SW_STUB_LOG")" health_rid_control_all_present
+# ...and none when Remote ID is off, even with the interface missing
+: > "$SW_STUB_LOG"; PATH="$_rn/bin" SW_REMOTE_ID=0 SW_SYSFS_NET="$_rn/net" SW_RID_IFACE=wlan9mon sw_healthcheck >/dev/null 2>&1
+assert_empty "$(grep -F 'Remote ID' "$SW_STUB_LOG")" health_rid_off_silent
+rm -rf "$_rn"; unset _rn _stubs _t _rd
+# The Pager's Stop during the Remote ID window (spec 2026-10-01 §7.3): the trap runs within the grace,
+# and the lap that was running reports nothing when its window ends, and leaves no capture behind.
+_rs="$(mktemp -d)"; : > "$SW_STUB_LOG"
+SW_TEST_SOURCE= SW_SEEN_FILE="$_rs/seen.db" SW_LOOT_DIR="$_rs/loot" SW_TMP_DIR="$_rs" SW_SLEEP=1 SW_HEALTH_EVERY=0 \
+  SW_BLE_CMD=true SW_RECON_DB=/nonexistent/recon.db SW_REMOTE_ID=1 SW_RID_SECONDS=3 SW_FAKE_TCPDUMP="$_RFIX2/beacon.txt" \
+  python3 -c 'import os, signal as s, sys; [s.signal(n, s.SIG_DFL) for n in (s.SIGINT, s.SIGPIPE, s.SIGXFSZ)]; os.execvp("bash", ["bash"] + sys.argv[1:])' \
+  "$SW_ROOT/payload.sh" >/dev/null 2>&1 &
+_sp=$!
+for _i in $(seq 80); do ls "$_rs" | grep -qE '^sw_rid\.[A-Za-z0-9]{6}$' && break; sleep 0.1; done
+_inwin="$(ls "$_rs" | grep -qE '^sw_rid\.[A-Za-z0-9]{6}$' && echo yes || echo no)"
+kill -INT "$_sp"
+for _i in $(seq 20); do kill -0 "$_sp" 2>/dev/null || break; sleep 0.05; done    # the ~1 s grace
+_alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
+{ kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
+assert_eq "$_inwin" "yes" stop_rid_control_was_in_the_window
+assert_eq "$_alive/$_rc" "no/0" stop_rid_trap_runs_within_the_grace
+sleep 4                                   # the lap that was running: its 3 s window runs out
+assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_rid_lap_never_alerts
+assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" stop_rid_lap_reports_nothing
+assert_empty "$(ls "$_rs" | grep -E '^sw_rid\.')" stop_rid_leaves_no_files
+rm -rf "$_rs"; unset _rs _sp _i _inwin _alive _rc _RFIX2; unset -f _rid_reset _rid_lap
+# --- end Remote ID ---
+
 rm -rf "$SW_LOOT_DIR" "$SW_SEEN_FILE"
 
 rm -rf "$SW_TMP_DIR"
-unset SW_RECON_DB SW_BLE_CMD SW_LOOT_DIR SW_SEEN_FILE SW_TEST_SOURCE SW_RECENCY_SECS SW_FOLLOW_SECS SW_FOLLOW_GAP SW_TRACK_FILE SW_IGNORE_FILE SW_IGNORE_SET SW_TMP_DIR SW_SNOOZE_AFTER SW_SNOOZE_MARGIN_DB SW_SNOOZE_RESET_SECS SW_SNOOZE_FILE SW_KIND_COOLDOWN SW_LOG_PER_KIND SW_FOLLOW_MIN_RSSI SW_EVIL_TWIN
+unset SW_RECON_DB SW_BLE_CMD SW_LOOT_DIR SW_SEEN_FILE SW_TEST_SOURCE SW_RECENCY_SECS SW_FOLLOW_SECS SW_FOLLOW_GAP SW_TRACK_FILE SW_IGNORE_FILE SW_IGNORE_SET SW_TMP_DIR SW_SNOOZE_AFTER SW_SNOOZE_MARGIN_DB SW_SNOOZE_RESET_SECS SW_SNOOZE_FILE SW_KIND_COOLDOWN SW_LOG_PER_KIND SW_FOLLOW_MIN_RSSI SW_EVIL_TWIN SW_REMOTE_ID SW_RID_IFACE SW_RID_SECONDS SW_RID_MAX_FRAMES SW_RID_MAX_DRONES SW_RID_FILE
 
 # --- config defaults (regression: a lib default must not pre-empt the payload's) ---
 # lib/wifi.sh used to run `: "${SW_RECENCY_SECS:=0}"`, and payload.sh sources its libs

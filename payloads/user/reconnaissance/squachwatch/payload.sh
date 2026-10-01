@@ -19,7 +19,7 @@ SW_HOME="${PAYLOAD_HOME:-$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )}"
 SW_HOME="${SW_HOME%/}"
 # Without its libs every lap is a silent no-op (each step is "command not found"), so a
 # lib that won't load stops the payload loudly instead of letting it run blind.
-for l in match wifi ble alert log follow ignore snooze eviltwin; do
+for l in match wifi ble alert log follow ignore snooze eviltwin remoteid; do
   . "$SW_HOME/lib/$l.sh" || { LOG red "ERROR: can't load $SW_HOME/lib/$l.sh — SquachWatch NOT running" 2>/dev/null; exit 1; }
 done
 
@@ -78,6 +78,20 @@ done
 # the recency window (600 s when that window is off) reports each open copy as an evil twin, with a
 # full alert like any other high-confidence find. 1 = on; anything else turns it off.
 : "${SW_EVIL_TWIN:=1}"
+# Remote ID over WiFi (spec 2026-10-01): each lap a short, read-only tcpdump window on the recon radio
+# decodes the Remote ID that drones broadcast (their ID, position, height, speed and the pilot's
+# location) into a full alert, plus a row per lap in remoteid.csv. 1 = on; anything else turns it off.
+: "${SW_REMOTE_ID:=1}"
+# The radio it listens on: the recon radio, whose channel hopping it rides (it never retunes it).
+: "${SW_RID_IFACE:=wlan1mon}"
+# The capture window in seconds. It starts with the lap and normally ends before the BLE scan does.
+: "${SW_RID_SECONDS:=12}"
+# At most this many frames per lap (it reads every nearby beacon, so a beacon flood must not eat the
+# CPU), and this many drones per lap (the strongest; the rest are counted on one line; 0 = no cap).
+: "${SW_RID_MAX_FRAMES:=1500}"
+: "${SW_RID_MAX_DRONES:=32}"
+# The flight-track log: one row per drone per lap in which it was heard.
+: "${SW_RID_FILE:=$SW_LOOT_DIR/remoteid.csv}"
 
 SW_SIGS="$(sw_load_signatures "$SW_HOME/signatures.db")"
 SW_IGNORE_SET="$(sw_load_ignore "$SW_IGNORE_FILE")"
@@ -108,6 +122,15 @@ sw_healthcheck() {
   # btmon is the only BLE data source (Tier-3): without it every BLE lap is empty.
   if ! command -v btmon >/dev/null 2>&1; then
     _sw_health_warn "WARN: btmon missing — BLE detection OFF"; degraded=1
+  fi
+  # Remote ID over WiFi (spec 2026-10-01 §7.1) captures with tcpdump on the recon radio: without either,
+  # no capture ever starts. (Recon itself stopping is the stale-DB WARN above.) SW_SYSFS_NET is a test seam.
+  if [ "${SW_REMOTE_ID:-0}" = 1 ]; then
+    if ! command -v tcpdump >/dev/null 2>&1; then
+      _sw_health_warn "WARN: tcpdump missing — Remote ID over WiFi OFF"; degraded=1
+    elif [ ! -e "${SW_SYSFS_NET:-/sys/class/net}/${SW_RID_IFACE:-wlan1mon}" ]; then
+      _sw_health_warn "WARN: ${SW_RID_IFACE:-wlan1mon} missing — Remote ID over WiFi OFF"; degraded=1
+    fi
   fi
   # Every WiFi check reads a copy of the recon DB in ${SW_TMP_DIR:-/tmp}. When no copy can be made
   # (a full /tmp, say) the WiFi sweep and the evil-twin check skip every lap, so that is a WARN. On
@@ -177,12 +200,17 @@ sw_scan_once() {
   # skipped this lap, and the health check says why.
   sw_recon_snapshot "$SW_RECON_DB" && snap="$REPLY"
   {
+    # The Remote ID capture window opens first, so it spans the whole lap, and in THIS shell, which must
+    # also be the one that collects it: it waits for the capture's PID (spec 2026-10-01 §6.1).
+    sw_rid_start "$now"
     # Evil twins are finished detections, so they skip the matcher (spec 2026-09-29 §6.3). They
     # come first: the check is one query, and its alert need not wait for the BLE scan.
     [ -n "$snap" ] && [ "${SW_EVIL_TWIN:-0}" = 1 ] && sw_evil_twin_scan "$snap" "$now"
     # The copy goes as soon as the WiFi sweep has read it, before the BLE scan.
     { if [ -n "$snap" ]; then sw_wifi_records_in "$snap"; sw_recon_drop "$snap"; fi; _sw_ble_records; } \
       | sw_match_stream "$SW_SIGS"
+    # Drones are finished detections too: collected once the BLE scan is over (spec 2026-10-01 §6.1)
+    sw_rid_collect "$now" "$SW_LOOT_DIR"
   } | {
         # Per-lap screen counters (spec 2026-09-23 §5). They live in this pipeline subshell,
         # so they reset every lap.
@@ -212,22 +240,23 @@ sw_scan_once() {
   [ -n "$snap" ] && sw_recon_drop "$snap"
 }
 
-# The scanner's temp files: BLE captures (sw_ble.XXXXXX), the BLE health state (sw_ble.state)
-# and the recon DB copies (sw_recon.XXXXXX, 5.6 MB each on a real Pager, and growing), all in RAM
+# The scanner's temp files: BLE captures (sw_ble.XXXXXX), the BLE health state (sw_ble.state), the
+# Remote ID captures and their health state (sw_rid.XXXXXX, sw_rid.state) and the recon DB copies
+# (sw_recon.XXXXXX, 5.6 MB each on a real Pager, and growing), all in RAM
 # on the Pager; and the ledger prune's temp copy (seen.db.sw-prune-tmp.XXXXXX), in the loot dir on flash,
 # where a leftover would outlive a reboot. Only sw_main runs this, before its own first prune.
-sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_recon.* "$SW_SEEN_FILE".sw-prune-tmp.?????? 2>/dev/null; }
+sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_recon.* "${SW_TMP_DIR:-/tmp}"/sw_rid.* "$SW_SEEN_FILE".sw-prune-tmp.?????? 2>/dev/null; }
 
-# On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE health state, any recon DB copy and
-# the ledger prune's temp copy (only this shell prunes, and a Stop can land between the prune's
-# mktemp and its mv), but leave BLE captures to the lap that owns them. A lap still running reads
-# its capture again for the health check, and it removes the capture itself on every path
-# (sw_stopped); the next start sweeps whatever a lap could not. Nothing is killed here: btmon and
-# hcitool each run under their own `timeout` (lib/ble.sh), so an orphan ends within seconds by
-# itself, while killing by NAME would also stop another program's btmon or hcitool (another
-# payload, an SSH session).
+# On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE and Remote ID health states, any recon
+# DB copy and the ledger prune's temp copy (only this shell prunes, and a Stop can land between the
+# prune's mktemp and its mv), but leave BLE and Remote ID captures to the lap that owns them. A lap
+# still running reads its capture again for the health check, and it removes the capture itself on
+# every path (sw_stopped); the next start sweeps whatever a lap could not. Nothing is killed here:
+# btmon, hcitool and tcpdump each run under their own `timeout` (lib/ble.sh, lib/remoteid.sh), so an
+# orphan ends within seconds by itself, while killing by NAME would also stop another program's
+# btmon, hcitool or tcpdump (another payload, an SSH session).
 sw_cleanup() {
-  rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.state "${SW_TMP_DIR:-/tmp}"/sw_recon.* "$SW_SEEN_FILE".sw-prune-tmp.?????? 2>/dev/null
+  rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.state "${SW_TMP_DIR:-/tmp}"/sw_rid.state "${SW_TMP_DIR:-/tmp}"/sw_recon.* "$SW_SEEN_FILE".sw-prune-tmp.?????? 2>/dev/null
   exit 0
 }
 
