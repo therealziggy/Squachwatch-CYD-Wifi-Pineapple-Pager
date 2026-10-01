@@ -311,7 +311,7 @@ sw_rid_collect() {
   while IFS= read -r l || [ -n "$l" ]; do
     case "$l" in
       "listening on "*) started=1; case "$l" in *"link-type IEEE802_11_RADIO "*) radio=1 ;; esac ;;
-      [0-9]*" packets captured") pkts="${l%% *}" ;;
+      [0-9]*" packet captured"|[0-9]*" packets captured") pkts="${l%% *}" ;;   # "1 packet", "N packets"
     esac
   done < "$err"
   while IFS= read -r l || [ -n "$l" ]; do

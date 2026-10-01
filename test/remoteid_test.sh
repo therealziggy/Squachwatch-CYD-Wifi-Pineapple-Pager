@@ -212,10 +212,12 @@ rm -rf "$_rl"; unset _rl _det _v _rd; unset -f _recs _csv1
 # --- the per-lap capture (test/stubs/tcpdump models the Pager's tcpdump) ---
 _cap_dir="$(mktemp -d)"; _cap_loot="$(mktemp -d)"
 # _cap FIXTURE [VAR=VALUE...]: one 1-second capture window in its own shell, run as a lap runs it
-# (sw_rid_start and sw_rid_collect in the same shell). FIXTURE "" = a capture with no frames.
+# (sw_rid_start and sw_rid_collect in the same shell). FIXTURE "" = a capture with no frames; a name is
+# test/fixtures/rid/NAME.txt, and a path (starting with /) is used as it is.
 _cap() { local fx="$1"; shift
+  case "$fx" in /*) ;; ?*) fx="$_RFIX/$fx.txt" ;; esac
   env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_RID_IFACE=wlan1mon \
-      SW_FAKE_TCPDUMP="${fx:+$_RFIX/$fx.txt}" "$@" bash -c '
+      SW_FAKE_TCPDUMP="$fx" "$@" bash -c '
     source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
     sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot"; }
 _cap_state() { head -1 "$_cap_dir/sw_rid.state" 2>/dev/null; }
@@ -255,7 +257,29 @@ assert_eq "$(_cap_state)" "not_understood" cap_wrong_link_status
 assert_contains "$(cat "$SW_STUB_LOG")" "WiFi capture not understood" cap_wrong_link_warns
 assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_wrong_link_no_drone
 
+# output cut short: tcpdump's summary counts more packets than the decoder saw frames (here 3 against 1), so
+# frames were lost on the way: one WARN. (control: cap_beacon_status_ok, the same capture with an honest summary)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_CAPTURED=3 >/dev/null
+assert_eq "$(_cap_state)" "not_understood" cap_cut_short_status
+assert_eq "$(grep -c 'WiFi capture not understood' "$SW_STUB_LOG")" "1" cap_cut_short_warns
+
+# 5 frames and none of them parses as a beacon or action frame: the format changed under us, the same WARN.
+# The frames are the quiet fixture's, five times, with the radiotap version byte (the first byte) changed from
+# 0 to 1. Controls: the same five unchanged are ok, and so are four changed ones (under 5 frames is no signal).
+_fr="$_cap_dir/frames.txt"
+for _i in 1 2 3 4 5; do cat "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" >/dev/null
+assert_eq "$(_cap_state)" "ok" cap_five_beacons_status_ok
+for _i in 1 2 3 4 5; do sed 's/0x0000:  00/0x0000:  01/' "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" >/dev/null
+assert_eq "$(_cap_state)" "not_understood" cap_format_changed_status
+assert_eq "$(grep -c 'WiFi capture not understood' "$SW_STUB_LOG")" "1" cap_format_changed_warns
+for _i in 1 2 3 4; do sed 's/0x0000:  00/0x0000:  01/' "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" >/dev/null; rm -f "$_fr"
+assert_eq "$(_cap_state)" "ok" cap_four_unparsed_is_ok
+
 # the frame cap: tcpdump stops at -c frames; one WARN per SW_COOLDOWN, and what was heard still counts
+# (one frame: tcpdump's summary says "1 packet captured", so these tests need the parser to read the singular)
 _cap_reset; _out="$(_cap multi SW_RID_MAX_FRAMES=1)"
 assert_eq "$(_cap_state)" "capped" cap_capped_status
 assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "1" cap_capped_warns
@@ -304,4 +328,4 @@ _alive() { local p n=0; while read -r p; do kill -0 "$p" 2>/dev/null && n=$((n +
 assert_eq "$(_alive)" "1" cap_orphan_control_alive_after_kill
 SECONDS=0; while [ "$(_alive)" != 0 ] && [ "$SECONDS" -lt 10 ]; do sleep 0.2; done
 assert_eq "$(_alive)" "0" cap_orphan_ends_by_itself
-rm -rf "$_cap_dir" "$_cap_loot"; unset _cap_dir _cap_loot _out _fm _pids _sp _i; unset -f _cap _cap_state _cap_reset _alive
+rm -rf "$_cap_dir" "$_cap_loot"; unset _cap_dir _cap_loot _out _fm _pids _sp _i _fr; unset -f _cap _cap_state _cap_reset _alive

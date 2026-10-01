@@ -3,9 +3,12 @@
 #   SW_FAKE_TCPDUMP        a fixture (tcpdump -t -nn -xx text) printed as the capture; unset = no frames
 #   SW_FAKE_TCPDUMP_LINK   the link type it reports (default the Pager's: IEEE802_11_RADIO ...)
 #   SW_FAKE_TCPDUMP_FAIL=1 the capture never starts: an error and exit 1, no "listening on" line
+#   SW_FAKE_TCPDUMP_CAPTURED=N
+#                          the summary reports N packets instead of the real count (N above the frames
+#                          printed = output cut short on its way to the decoder)
 # As the real tool does: "listening on ..." on stderr, at most -c N frames on stdout, then it runs until
 # TERM/INT (the payload's timeout) or the -c limit, and reports "N packets captured" on stderr on the way
-# out. Self-limiting (30 s) if orphaned.
+# out ("1 packet captured" for exactly one, as tcpdump words it). Self-limiting (30 s) if orphaned.
 echo "${0##*/} $*" >> "${SW_STUB_LOG:-/dev/null}"
 [ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
 iface=wlan1mon max=0 prev=""
@@ -25,7 +28,10 @@ if [ -n "${SW_FAKE_TCPDUMP:-}" ]; then
   awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } max > 0 && f > max { exit } { print }' "$SW_FAKE_TCPDUMP"
   n="$(awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } END { print (max > 0 && f > max) ? max : f + 0 }' "$SW_FAKE_TCPDUMP")"
 fi
-summary() { printf '%s packets captured\n%s packets received by filter\n0 packets dropped by kernel\n' "$n" "$n" >&2; }
+# tcpdump's own wording is "%u packet%s ...": singular only for exactly 1 ("1 packet", "0 packets", "2 packets")
+summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-$n}" s=s
+  [ "$c" = 1 ] && s=
+  printf '%s packet%s captured\n%s packet%s received by filter\n0 packets dropped by kernel\n' "$c" "$s" "$c" "$s" >&2; }
 if [ "$max" -gt 0 ] && [ "$n" -ge "$max" ]; then summary; exit 0; fi
 trap 'summary; exit 0' TERM INT
 end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done
