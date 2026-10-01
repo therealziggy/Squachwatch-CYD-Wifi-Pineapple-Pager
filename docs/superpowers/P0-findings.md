@@ -579,3 +579,33 @@ Checked on the Pager for the evil-twin design (`specs/2026-09-29-squachwatch-evi
 gave exactly one `Evil twin` row (high, wifi, the open copy's address, -24 dBm) and nothing for the protected
 radios; it is the only evil-twin row in the loot; the menu's Stop ended with `Payload completed`. Still to
 do: the run with a hostile-looking name (quotes, `%s`, `$(x)`), deferred by the user.
+
+## Remote ID over WiFi (2026-10-01)
+
+Checked on the Pager and in a planning spike for the Remote ID design
+(`specs/2026-10-01-squachwatch-remote-id-wifi-design.md`):
+
+- **tcpdump is stock:** tcpdump 4.99.5 and libpcap 1.10.5 are in the firmware image (`/rom/usr/bin/tcpdump`;
+  opkg `tcpdump 4.99.5-r1`), so every Pager has them. The recon radio `wlan1mon` is link type
+  `IEEE802_11_RADIO`; `-xx` prints the whole frame, starting with the radiotap header (read its length
+  from bytes 2-3, little endian, to find the 802.11 header; 56 bytes on this radio).
+- **Filter syntax:** this libpcap rejects `type mgt subtype action` ("can't parse filter expression:
+  syntax error"). The frame-control byte works: `wlan[0] & 0xfc = 0xd0`, and `wlan[]` offsets are taken
+  after the radiotap header (the compiled filter reads its length). A first probe that hid tcpdump's
+  stderr counted that error as "0 action frames": always compile a filter with `tcpdump -d` first.
+- **BPF cannot walk a beacon's element list** (it has no loops), so the kernel filter narrows the capture
+  to beacons plus action frames sent to NAN's address, and awk finds the Remote ID beacons.
+- **Rates and cost (the author's home, recon hopping):** 137 and 194 beacons in two 20 s samples (7 to 10 a
+  second); 1 action frame of any kind in 20 s. Hex-dumping every beacon for 20 s through an awk join:
+  2.03 s user + 0.35 s system CPU, about 12% of the CPU (how it splits between tcpdump and awk is a
+  Phase 0 measurement).
+- **tcpdump's own health lines:** `listening on <iface>, link-type ...` on start and `N packets captured`
+  on exit (TERM included; a KILL skips it), both on stderr.
+- **Radios:** phy1 = `wlan1mon` (monitor), hopped by `pineapd --recon` across 2.4 and 5 GHz; phy0 = `wlan0`
+  (station) plus `wlan0mon`, on the station's channel.
+- **awk:** mawk and BusyBox awk do not parse `0x..` numeric literals, so the decoder compares decimal
+  bytes. The full decode was byte-identical on both, over frames from opendroneid-core-c run through the
+  real tcpdump.
+- **The reference library** (opendroneid-core-c, commit `6484f26545d4f012682524e2d843fab0fbdc0b34`) needs
+  four files to build its frames (`opendroneid.c`, `opendroneid.h`, `wifi.c`, `odid_wifi.h`), and it
+  stamps the generating machine's uptime into every beacon's timestamp: the fixture generator zeroes it.
