@@ -19,11 +19,11 @@ sw_load_ignore() {
 }
 
 sw_ignored() {
-  # $1 = detection (cat|label|conf|tclass|radio|mac|ident|rssi), $2 = sw_load_ignore set.
-  # rc 0 = drop it. Only the MAC column is compared. An evil twin is dropped only by an explicit
-  # "evil_twin:<MAC>" line, never by a plain one: its address is whatever the attacker chose to
-  # broadcast, and a copy made under one of your own addresses (your router's, your Flipper's)
-  # must not be silenced by it (spec 2026-09-29, user decision).
+  # $1 = detection (cat|label|conf|tclass|radio|mac|ident|rssi, and a drone's |detail), $2 = sw_load_ignore
+  # set. rc 0 = drop it. A plain MAC line drops a device by its MAC column. An evil twin is dropped only by an
+  # explicit "evil_twin:<MAC>" line, never by a plain one: its address is whatever the attacker chose to
+  # broadcast, and a copy made under one of your own addresses (your router's, your Flipper's) must not be
+  # silenced by it (spec 2026-09-29, user decision). A WiFi drone is matched on its ID (below).
   local r="${1#*|*|*|*|*|}" mac id
   mac="${r%%|*}"
   if [ "${1%%|*}" = evil_twin ]; then

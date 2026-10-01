@@ -6,10 +6,11 @@
 # lowercase hex only: Remote ID is not authenticated, so no broadcast byte may shift a field. Bash then
 # does the units, the cleaning (sw_sanitize_ident), the remoteid.csv rows and the detections.
 
-# --- The decoder: tcpdump -t -nn -xx text in; a stats line and one line per drone out (spec §6.2) ---
-#   S<TAB>frames<TAB>understood<TAB>rid_frames<TAB>more_drones
+# --- The decoder: tcpdump -t -nn -xx text in; one line per drone, then a stats line, out (spec §6.2) ---
 #   D<TAB>mac rssi forms id_type id_hex id2_type id2_hex ua_type status lat lon alt_geo alt_baro height
 #        height_ref speed vspeed heading pilot_type pilot_lat pilot_lon pilot_alt operator_id_hex self_id_hex
+#   S<TAB>frames<TAB>understood<TAB>rid_frames<TAB>more_drones
+# The stats line comes LAST, at the end of the input: a pass without one did not finish (sw_rid_collect).
 _sw_rid_awk_src() { cat <<'RIDAWK'
 # One frame per tcpdump header line; the hex lines that follow start with an offset like 0x0010:.
 # Every byte test uses a decimal literal: BusyBox awk and mawk do not parse 0x.. constants.
@@ -124,6 +125,7 @@ function emit(  k, j, best, bv, v, kept) { kept = 0
       v = (ord[j] in rs) ? rs[ord[j]] + 0 : -999
       if (!best || v > bv) { best = j; bv = v } }
     used[best] = 1; kept++; line(ord[best]) }
+  # last: the stats line, which tells sw_rid_collect that the pass finished
   print "S\t" frames + 0 "\t" understood + 0 "\t" ridf + 0 "\t" no - kept }
 RIDAWK
 }
@@ -250,7 +252,7 @@ sw_rid_records() {
 }
 # one remoteid.csv row from sw_rid_records' variables (dynamic scope); the header is written first
 _sw_rid_csv_row() {
-  local r c
+  local r
   [ -f "$csv" ] || printf '%s\n' "time,form,mac,rssi,id_type,id,id2_type,id2,ua_type,status,lat,lon,alt_geo_m,alt_baro_m,height_m,height_ref,speed_mps,vspeed_mps,heading_deg,pilot_loc,pilot_lat,pilot_lon,pilot_alt_m,operator_id,self_id,gps" > "$csv"
   r="$now,$form,$MAC,$rssi"
   if [ -n "$id" ]; then _sw_rid_name id "$idt"; r+=",$REPLY"; else r+=","; fi

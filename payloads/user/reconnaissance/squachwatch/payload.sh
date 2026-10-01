@@ -84,7 +84,8 @@ done
 : "${SW_REMOTE_ID:=1}"
 # The radio it listens on: the recon radio, whose channel hopping it rides (it never retunes it).
 : "${SW_RID_IFACE:=wlan1mon}"
-# The capture window in seconds. It starts with the lap and normally ends before the BLE scan does.
+# The capture window in seconds. It starts with the lap and the lap waits for it, so a window longer than the
+# BLE scan (about 13 s) makes every lap longer.
 : "${SW_RID_SECONDS:=12}"
 # At most this many frames per lap (it reads every nearby beacon, so a beacon flood must not eat the
 # CPU), and this many drones per lap (the strongest; the rest are counted on one line; 0 = no cap).
@@ -251,9 +252,10 @@ sw_clear_tmp() { rm -f "${SW_TMP_DIR:-/tmp}"/sw_ble.* "${SW_TMP_DIR:-/tmp}"/sw_r
 
 # On exit (the Pager's Stop, a Ctrl-C, a TERM): remove the BLE and Remote ID health states, any recon
 # DB copy and the ledger prune's temp copy (only this shell prunes, and a Stop can land between the
-# prune's mktemp and its mv), but leave BLE and Remote ID captures to the lap that owns them. A lap
-# still running reads its capture again for the health check, and it removes the capture itself on
-# every path (sw_stopped); the next start sweeps whatever a lap could not. Nothing is killed here:
+# prune's mktemp and its mv), but leave BLE and Remote ID captures to the lap that owns them. A BLE lap
+# still running reads its capture again for the health check, a Remote ID lap drops its capture unread,
+# and each removes its capture itself on every path (sw_stopped); the next start sweeps whatever a lap
+# could not. Nothing is killed here:
 # btmon, hcitool and tcpdump each run under their own `timeout` (lib/ble.sh, lib/remoteid.sh), so an
 # orphan ends within seconds by itself, while killing by NAME would also stop another program's
 # btmon, hcitool or tcpdump (another payload, an SSH session).
