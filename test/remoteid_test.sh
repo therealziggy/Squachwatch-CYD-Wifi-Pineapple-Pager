@@ -389,6 +389,17 @@ bash -c 'exit 0' & _rd=$!; wait "$_rd"
 rm -f "$_rl/remoteid.csv"
 assert_empty "$(sw_test_rid_line | SW_MAIN_PID="$_rd" _recs)" rid_rec_stopped_no_detection
 assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_stopped_no_csv
+# A Stop while the lap reads the GPS (the first drone's row records the Pager's own fix; on the device a gpsd
+# query) drops that drone's row and detection too (spec §7.3). The GPS_GET stub kills the stand-in main shell
+# during the read.
+sleep 30 & _fm=$!
+rm -f "$_rl/remoteid.csv"; : > "$SW_STUB_LOG"
+_det="$(sw_test_rid_line | SW_MAIN_PID="$_fm" SW_STUB_STOP_ON_GPS="$_fm" _recs)"
+wait "$_fm" 2>/dev/null
+assert_contains "$(cat "$SW_STUB_LOG")" "GPS_GET" rid_rec_stop_in_gps_control_gps_read
+assert_empty "$_det" rid_rec_stop_in_gps_no_detection
+assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_stop_in_gps_no_csv
+unset _fm
 rm -rf "$_rl"; unset _rl _det _rd; unset -f _recs _csv1
 
 # --- the per-lap capture (test/stubs/tcpdump models the Pager's tcpdump) ---
@@ -477,6 +488,32 @@ _cap_reset; _out="$(_cap multi SW_RID_MAX_DRONES=1)"
 assert_eq "$(printf '%s\n' "$_out" | grep -c '^drone_rid')" "1" cap_drone_cap_one_detection
 assert_contains "$_out" "|0000FSWTEST000000001|" cap_drone_cap_keeps_strongest
 assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta ...and 1 more drones (Remote ID flood?)" cap_drone_cap_more_line
+# A Stop after the capture's wait (spec §7.3): no health line and no state file (the exit trap removed it). A
+# main shell already gone gets no line at all; one stopped during the line (the LOG stub kills the stand-in
+# then) gets no state file after it. Control: alive, the same note prints and writes.
+_sf="$_cap_dir/sw_rid.state"
+bash -c 'exit 0' & _rd=$!; wait "$_rd"
+_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_rd" sw_rid_health_note capture_failed 1700000000
+assert_empty "$(grep -F 'WiFi capture' "$SW_STUB_LOG")" cap_health_stopped_no_line
+assert_eq "$([ -e "$_sf" ] && echo written)" "" cap_health_stopped_no_state
+sleep 30 & _fm=$!
+_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_fm" SW_STUB_STOP_ON_LOG="$_fm" sw_rid_health_note capture_failed 1700000000
+wait "$_fm" 2>/dev/null
+assert_contains "$(cat "$SW_STUB_LOG")" "WARN: WiFi capture failed" cap_health_stop_mid_line_control_line
+assert_eq "$([ -e "$_sf" ] && echo written)" "" cap_health_stop_mid_line_no_state
+_cap_reset; SW_TMP_DIR="$_cap_dir" sw_rid_health_note capture_failed 1700000000
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(head -1 "$_sf")" "1/capture_failed" cap_health_control_line_and_state
+# The same in a whole capture: a flood lap (2 frames at a cap of 2: "capped"; 2 drones at a cap of 1: the
+# "...and 1 more" line) stopped during its capped WARN reports nothing after it: no state, no drone, no flood
+# line. (control: cap_drone_cap_more_line, the flood line of a lap left alone)
+sleep 30 & _fm=$!
+_cap_reset; _out="$(_cap multi SW_RID_MAX_FRAMES=2 SW_RID_MAX_DRONES=1 SW_MAIN_PID="$_fm" SW_STUB_STOP_ON_LOG="$_fm")"
+wait "$_fm" 2>/dev/null
+assert_contains "$(cat "$SW_STUB_LOG")" "hit its frame limit" cap_stop_in_warn_control_warned
+assert_eq "$([ -e "$_sf" ] && echo written)" "" cap_stop_in_warn_no_state
+assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_stop_in_warn_no_drone
+assert_empty "$(grep -F 'more drones' "$SW_STUB_LOG")" cap_stop_in_warn_no_flood_line
+unset _sf _rd _fm
 
 # SW_REMOTE_ID=0: no tcpdump at all (control: cap_tcpdump_args, where the stub logged itself)
 _cap_reset; _cap beacon SW_REMOTE_ID=0 >/dev/null

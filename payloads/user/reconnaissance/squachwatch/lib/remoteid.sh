@@ -239,6 +239,9 @@ sw_rid_records() {
       sw_rid_coord "$pa" 5; pilot+=" $REPLY"; sw_rid_coord "$po" 5; pilot+=",$REPLY"
     fi
     detail="$air"$'\t'"$motion"$'\t'"$pilot"
+    # a Stop meanwhile (the first drone waited for the GPS read above, a gpsd query on the Pager): no row and no
+    # detection (spec §7.3)
+    sw_stopped && return 0
     _sw_rid_csv_row
     printf 'drone_rid|Drone|high|surveillance|wifi|%s|%s|%s|%s\n' "$MAC" "$id" "$rssi" "$detail"
   done
@@ -273,6 +276,7 @@ _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and 
 
 # A WARN when the capture's status changes, like the BLE note; "capped" at most once per SW_COOLDOWN and
 # never a "recovered" line after it. $1 = ok | capture_failed | not_understood | capped, $2 = now (epoch).
+# Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
   local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" cd="${SW_COOLDOWN:-600}"
   [ -f "$sf" ] && { read -r prev; read -r capt; } < "$sf"
@@ -281,15 +285,18 @@ sw_rid_health_note() {
   case "$st" in
     capped)
       if [ -z "$capt" ] || [ "$now" -lt "$capt" ] || [ $(( now - capt )) -ge "$cd" ]; then
-        LOG yellow "WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind" 2>/dev/null
+        _sw_rid_say yellow "WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind"
         capt="$now"
       fi ;;
-    ok) case "$prev" in capture_failed|not_understood) LOG green "Remote ID capture recovered" 2>/dev/null ;; esac ;;
-    capture_failed) [ "$prev" = capture_failed ] || LOG yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF" 2>/dev/null ;;
-    not_understood) [ "$prev" = not_understood ] || LOG yellow "WARN: WiFi capture not understood — Remote ID over WiFi OFF" 2>/dev/null ;;
+    ok) case "$prev" in capture_failed|not_understood) _sw_rid_say green "Remote ID capture recovered" ;; esac ;;
+    capture_failed) [ "$prev" = capture_failed ] || _sw_rid_say yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF" ;;
+    not_understood) [ "$prev" = not_understood ] || _sw_rid_say yellow "WARN: WiFi capture not understood — Remote ID over WiFi OFF" ;;
   esac
+  sw_stopped && return 0
   printf '%s\n%s\n' "$st" "$capt" > "$sf"
 }
+# a line on the Pager's screen, unless the payload has been stopped (the screen is a relaunch's by then)
+_sw_rid_say() { sw_stopped || LOG "$@" 2>/dev/null; }
 
 # $1 = the lap's start (epoch). Starts this lap's capture in the background and leaves SW_RID_PID,
 # SW_RID_CAP and SW_RID_ERR for sw_rid_collect, which must run in the SAME shell (it waits for the PID).
@@ -346,7 +353,7 @@ sw_rid_collect() {
   # bytes captured under any other link type are not 802.11 frames: no drones from them
   if [ "$radio" -eq 1 ]; then
     sw_rid_records "$now" "$loot" < "$cap"
-    [ "$more" -gt 0 ] && LOG magenta "...and $more more drones (Remote ID flood?)" 2>/dev/null
+    [ "$more" -gt 0 ] && _sw_rid_say magenta "...and $more more drones (Remote ID flood?)"
   fi
   rm -f "$cap" "$err"
 }
