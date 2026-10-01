@@ -179,6 +179,8 @@ _bad elements_65 1 1          # beacon + 62 empty elements (de00) at 0x3c: the R
                               # the walk's 64 (control: elements_64 below)
 _bad asdstan_type 1 1         # beacon 0x41 0d->0c (ASD-STAN type 0x0C), and 0x2f-0x32 "TEST"->fa0bbc0d so the frame
                               # still holds what the pre-test looks for (the header line shows that name)
+_bad parrot_garbage 1 1       # parrot 0x43-0x46 f2190402->5a3c9e17: Parrot's OUI holding no message pack (Parrot
+                              # sends other vendor elements too: only a valid pack makes a drone)
 # NAN: its address and action header, the Service Descriptor attribute, and what its control byte announces
 _bad nan_addr1 1 1            # nan 0x12 00->01: addr1 is not 51:6f:9a:01:00:00
 _bad nan_type 1 1             # nan 0x26 13->12: not the NAN action type
@@ -192,11 +194,11 @@ _bad nan_bitmap 1 1           # nan control 0x32 10->50: a binding bitmap announ
 _bad nan_mfilter 1 1          # nan control 0x32 10->14: a matching filter announced, none there
 _bad nan_srf 1 1              # nan control 0x32 10->18: a service response filter announced, none there
 _bad nan_no_si 1 1            # nan control 0x32 10->00: no service info
-# All 23 together, most from the good drone's own address, then the good beacon: exactly its drone line, and
+# All 24 together, most from the good drone's own address, then the good beacon: exactly its drone line, and
 # every frame counted (spec §8: "a malformed frame before a good one")
-assert_eq "${#_hbad[@]}/$_hfr/$_hun" "23/23/19" rid_hostile_case_count
+assert_eq "${#_hbad[@]}/$_hfr/$_hun" "24/24/20" rid_hostile_case_count
 _o="$(_hd "${_hbad[@]}" "$_RFIX/beacon.txt")"
-assert_eq "$_o" "$_bD"$'\n'"S	24	20	1	0" rid_hostile
+assert_eq "$_o" "$_bD"$'\n'"S	25	21	1	0" rid_hostile
 assert_eq "$(_hdb "${_hbad[@]}" "$_RFIX/beacon.txt")" "$_o" rid_hostile_busybox
 # _good NAME SOURCE: hostile/NAME.txt decodes exactly as SOURCE.txt, the fixture it was edited from
 _good() { local f="$_RH/$1.txt" o
@@ -228,6 +230,10 @@ _hpar vspeed_down "$_RH/vspeed_down.txt"
 # so its header reads "-47dBm signal Beacon (-1dBm signal) ..."
 assert_eq "$(_rf "$(_hd "$_RH/sig_in_name.txt")" rssi)" "-47" rid_h_signal_first_match
 _hpar sig_in_name "$_RH/sig_in_name.txt"
+# The address is addr2, read from the frame's bytes: a network name "SA:02:00:00:00:00:99" does not change it
+# (sa_in_name: 0x2d 000a "TEST-DRONE" -> 0014 and that name)
+assert_eq "$(_rf "$(_hd "$_RH/sa_in_name.txt")" mac)" "80e126aabbcc" rid_h_address_from_bytes_not_name
+_hpar sa_in_name "$_RH/sa_in_name.txt"
 # A frame whose header has no signal has none, even right after one that has (quiet.txt, -55dBm): no_signal is
 # the beacon from a radiotap header with no signal field (0x02 09->08, 0x04 20->00, 0x08 d1 removed)
 assert_eq "$(_rf "$(_hd "$_RFIX/quiet.txt" "$_RH/no_signal.txt")" rssi)/$(_rf "$(_hd "$_RH/no_signal.txt")" id_hex)" "/$_serial1" rid_h_no_signal_no_rssi
@@ -353,6 +359,14 @@ assert_contains "$_det" "|ab,cd\"e|" rid_rec_hostile_cleaned
 assert_contains "$(_csv1)" ',"ab,cd""e",' rid_csv_hostile_one_cell
 #   a zero byte inside the hex: the text ends there (a C string)
 assert_contains "$(sw_test_rid_line id_hex=4142004344 | _recs)" "|AB|" rid_rec_text_stops_at_zero
+#   printf and shell syntax stay plain text all the way (nothing expands them); a byte that is not UTF-8 is
+#   kept as it came; a C1 control (NEL, c2 85) is removed, like any control byte (spec §7.4)
+_det="$(sw_test_rid_line id_hex=2573 | _recs)"
+assert_contains "$_det" "|%s|" rid_rec_printf_id_plain
+assert_contains "$(_csv1)" ',serial,"%s",' rid_csv_printf_id_plain
+assert_contains "$(sw_test_rid_line id_hex=2428782960786060 | _recs)" '|$(x)`x``|' rid_rec_shell_id_plain
+assert_contains "$(sw_test_rid_line id_hex=41ff42 | _recs)" $'|A\xffB|' rid_rec_non_utf8_id_kept
+assert_contains "$(sw_test_rid_line id_hex=41c28542 | _recs)" "|AB|" rid_rec_c1_control_removed
 # malformed lines are dropped: a leading zero (bash would read it as octal), a bad address, a field missing
 assert_empty "$(sw_test_rid_line lat=0473977600 | _recs)" rid_rec_leading_zero_dropped
 assert_empty "$(sw_test_rid_line mac=80e126aabbcz | _recs)" rid_rec_bad_mac_dropped
