@@ -272,7 +272,7 @@ multirotor, 87m up, 12m/s
 pilot (live) 47.39800,8.54102
 80:E1:26:AA:BB:CC -47dBm" drone_alert_body
 assert_contains "$(cat "$SW_STUB_LOG")" "LED M 200" drone_alert_magenta_led
-assert_contains "$(tail -1 "$_L7/detections.csv")" ',drone_rid,"Drone",high,surveillance,wifi,80:E1:26:AA:BB:CC,"0000FSWTEST000000001",-47,' drone_csv_row_without_detail
+assert_eq "$(tail -1 "$_L7/detections.csv")" '1000,drone_rid,"Drone",high,surveillance,wifi,80:E1:26:AA:BB:CC,"0000FSWTEST000000001",-47,""' drone_csv_row_without_detail
 # one drone = one Remote ID: the same ID at a new address is the same drone, with no second row or alert...
 : > "$SW_STUB_LOG"
 sw_emit "drone_rid|Drone|high|surveillance|wifi|80:E1:26:11:22:33|0000FSWTEST000000001|-50|multirotor"$'\t\t'"no pilot location" 1001 600 "$_s7" "$_L7"

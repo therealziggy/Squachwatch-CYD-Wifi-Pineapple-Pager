@@ -766,6 +766,7 @@ assert_empty "$(ls -A "$SW_TMP_DIR" | grep '^sw_rid\.' | grep -v '^sw_rid\.state
 # the next lap: no second alert or detections row (the cooldown), but a second flight-track row
 _rid_lap beacon
 assert_eq "$(grep -c '^ALERT Drone' "$SW_STUB_LOG")" "1" rid_lap_second_lap_no_second_alert
+assert_eq "$(grep -c ',drone_rid,' "$SW_LOOT_DIR/detections.csv")" "1" rid_lap_second_lap_no_second_row
 assert_eq "$(grep -c ',beacon,' "$SW_LOOT_DIR/remoteid.csv")" "2" rid_lap_track_row_every_lap
 # the owner's own drone (drone:<ID> in ignore.txt) leaves no trace in the lap either
 _rid_reset; SW_IGNORE_SET=" DRONE:0000FSWTEST000000001 " _rid_lap beacon
@@ -856,7 +857,8 @@ _alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
 { kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
 assert_eq "$_inwin" "yes" stop_rid_control_was_in_the_window
 assert_eq "$_alive/$_rc" "no/0" stop_rid_trap_runs_within_the_grace
-sleep 4                                   # the lap that was running: its 3 s window runs out
+# the lap that was running ends once its 3 s window runs out, removing its capture: wait for that (bounded)
+for _i in $(seq 120); do ls "$_rs" | grep -qE '^sw_rid\.' || break; sleep 0.1; done
 assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_rid_lap_never_alerts
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" stop_rid_lap_reports_nothing
 assert_empty "$(ls "$_rs" | grep -E '^sw_rid\.')" stop_rid_leaves_no_files

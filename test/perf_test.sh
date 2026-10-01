@@ -103,6 +103,10 @@ for _fn in sw_rid_coord sw_rid_alt sw_rid_m sw_rid_mps sw_rid_mps2 sw_rid_dmps s
   assert_contains "$(_sw_body "$SW_ROOT/lib/remoteid.sh" "$_fn")" "$_fn()" "forkfree_found_$_fn"
   assert_empty "$(_sw_body "$SW_ROOT/lib/remoteid.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
 done
+# sw_rid_records runs once per drone: its one fork is the GPS read, done once a lap (for the first drone)
+assert_contains "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_records)" "sw_rid_records()" forkfree_found_sw_rid_records
+assert_eq "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_records | grep -oE '\$\([^(]|`' | wc -l | tr -d ' ')" "1" forkfree_sw_rid_records_one_fork
+assert_contains "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_records | grep -E '\$\([^(]')" 'gps="$(GPS_GET 2>/dev/null' forkfree_sw_rid_records_fork_is_the_gps_read
 assert_contains "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_start)" " -p -l -t -nn -xx " rid_capture_read_only
 assert_empty "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_start | grep -nE '(^|[^-])-I( |$)|iw |iwconfig|ifconfig|ip link')" rid_capture_never_reconfigures
 # control: the same grep sees a planted -I

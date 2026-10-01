@@ -429,6 +429,14 @@ _cap() { local fx="$1"; shift
     sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot"; }
 _cap_state() { head -1 "$_cap_dir/sw_rid.state" 2>/dev/null; }
 _cap_reset() { rm -f "$_cap_dir"/sw_rid.* "$_cap_loot/remoteid.csv"; : > "$SW_STUB_LOG"; }
+# the stub words its summary as tcpdump 4.99 does ("%u packet%s ..."): the singular for exactly one only
+_sum() { "$@" 2>&1 >/dev/null | grep -E ' (captured|dropped by kernel)$'; }
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n0 packets dropped by kernel' tcpdump_stub_one_packet
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/multi.txt" _sum tcpdump -i wlan1mon -c 2)" $'2 packets captured\n0 packets dropped by kernel' tcpdump_stub_two_packets
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_CAPTURED=0 _sum tcpdump -i wlan1mon -c 1)" $'0 packets captured\n0 packets dropped by kernel' tcpdump_stub_zero_packets
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=1 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n1 packet dropped by kernel' tcpdump_stub_one_dropped
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=7 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n7 packets dropped by kernel' tcpdump_stub_seven_dropped
+unset -f _sum
 
 # a beacon capture: one drone detection and a remoteid.csv row; only the health state is left behind
 _cap_reset; _out="$(_cap beacon)"
@@ -438,6 +446,9 @@ assert_eq "$(_cap_state)" "ok" cap_beacon_status_ok
 assert_empty "$(ls -A "$_cap_dir" | grep -v '^sw_rid\.state$')" cap_leaves_no_capture_files
 # tcpdump ran read only (-p), on the configured interface, without clock times (-t), with the frame cap
 assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon -p -l -t -nn -xx -c 1500 type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)" cap_tcpdump_args
+# ...on the interface SW_RID_IFACE names, not a fixed one
+_cap_reset; _cap beacon SW_RID_IFACE=wlan7mon >/dev/null
+assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan7mon -p " cap_tcpdump_follows_the_setting
 
 # an ordinary beacon only: no drone, no WARN, and the capture was judged healthy (it ran)
 _cap_reset; _out="$(_cap quiet)"
@@ -582,7 +593,7 @@ assert_empty "$(ls -A "$_cap_dir")" cap_stopped_leaves_no_files
 _pids="$_cap_dir/stub.pids"; : > "$_pids"
 env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_STUB_PIDS="$_pids" bash -c '
   source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
-  sw_rid_start 1700000000; sleep 30' _ "$SW_ROOT" 2>/dev/null &
+  sw_rid_start 1700000000; exec sleep 30' _ "$SW_ROOT" 2>/dev/null &
 _sp=$!
 for _i in $(seq 100); do [ -s "$_pids" ] && break; sleep 0.05; done
 kill -9 "$_sp" 2>/dev/null; wait "$_sp" 2>/dev/null

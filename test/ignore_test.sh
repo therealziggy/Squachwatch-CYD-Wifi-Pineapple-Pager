@@ -42,6 +42,10 @@ assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:99:99:9
 assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|0000FSWTEST000000002|-47|a	b	c" "$_igs" && echo drop || echo keep)" "keep" drone_plain_mac_never_silences
 assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:44:55:66||-60|a	b	c" "$_igs" && echo drop || echo keep)" "drop" drone_no_id_ignored_by_address
 assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:99:99:99|0000 FSWTEST 000000001|-47|a	b	c" "$_igs" && echo drop || echo keep)" "drop" drone_id_spaces_ignored
+# drone:<MAC> silences only a drone that sends no ID: one that sends an ID is known by it, at any address
+assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:44:55:66|0000FSWTEST000000002|-60|a	b	c" "$_igs" && echo drop || echo keep)" "keep" drone_mac_line_never_silences_an_id
+# ...and a plain address line silences no drone, with or without an ID
+assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC||-60|a	b	c" "$_igs" && echo drop || echo keep)" "keep" drone_plain_mac_never_silences_no_id
 # control: the plain address line still silences an ordinary device at that address
 assert_eq "$(sw_ignored "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:AA:BB:CC|x|-60" "$_igs" && echo drop || echo keep)" "drop" drone_control_plain_mac_still_works
 rm -f "$_igf"; unset _igf _igs
