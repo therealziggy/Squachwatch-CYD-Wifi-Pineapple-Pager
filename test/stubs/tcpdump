@@ -6,6 +6,8 @@
 #   SW_FAKE_TCPDUMP_CAPTURED=N
 #                          the summary reports N packets instead of the real count (N above the frames
 #                          printed = output cut short on its way to the decoder)
+#   SW_FAKE_TCPDUMP_DROPPED=N
+#                          the summary reports N packets dropped by kernel (default 0)
 # As the real tool does: "listening on ..." on stderr, at most -c N frames on stdout, then it runs until
 # TERM/INT (the payload's timeout) or the -c limit, and reports "N packets captured" on stderr on the way
 # out ("1 packet captured" for exactly one, as tcpdump words it). Self-limiting (30 s) if orphaned.
@@ -29,9 +31,11 @@ if [ -n "${SW_FAKE_TCPDUMP:-}" ]; then
   n="$(awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } END { print (max > 0 && f > max) ? max : f + 0 }' "$SW_FAKE_TCPDUMP")"
 fi
 # tcpdump's own wording is "%u packet%s ...": singular only for exactly 1 ("1 packet", "0 packets", "2 packets")
-summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-$n}" s=s
+summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-$n}" d="${SW_FAKE_TCPDUMP_DROPPED:-0}" s=s ds=s r rs=s
   [ "$c" = 1 ] && s=
-  printf '%s packet%s captured\n%s packet%s received by filter\n0 packets dropped by kernel\n' "$c" "$s" "$c" "$s" >&2; }
+  [ "$d" = 1 ] && ds=
+  r=$(( c + d )); [ "$r" = 1 ] && rs=
+  printf '%s packet%s captured\n%s packet%s received by filter\n%s packet%s dropped by kernel\n' "$c" "$s" "$r" "$rs" "$d" "$ds" >&2; }
 if [ "$max" -gt 0 ] && [ "$n" -ge "$max" ]; then summary; exit 0; fi
 trap 'summary; exit 0' TERM INT
 end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done

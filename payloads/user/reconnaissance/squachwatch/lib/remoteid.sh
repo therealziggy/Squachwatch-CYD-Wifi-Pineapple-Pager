@@ -274,8 +274,9 @@ _sw_rid_csv_row() {
 # Pager's libpcap; the frame-control byte does.)
 _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)'; }
 
-# A WARN when the capture's status changes, like the BLE note; "capped" at most once per SW_COOLDOWN and
-# never a "recovered" line after it. $1 = ok | capture_failed | not_understood | capped, $2 = now (epoch).
+# A WARN when the capture's status changes, like the BLE note. The two "partly blind" ones (capped: the frame
+# cap; lost: frames dropped by the kernel or lost on the way) share one WARN per SW_COOLDOWN and recover
+# silently. $1 = ok | capture_failed | not_understood | capped | lost, $2 = now (epoch).
 # Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
   local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" cd="${SW_COOLDOWN:-600}"
@@ -283,9 +284,10 @@ sw_rid_health_note() {
   case "$cd" in ''|*[!0-9]*) cd=600 ;; esac
   [[ "$capt" =~ ^[1-9][0-9]{0,11}$ ]] || capt=""
   case "$st" in
-    capped)
+    capped|lost)
       if [ -z "$capt" ] || [ "$now" -lt "$capt" ] || [ $(( now - capt )) -ge "$cd" ]; then
-        _sw_rid_say yellow "WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind"
+        if [ "$st" = capped ]; then _sw_rid_say yellow "WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind"
+        else _sw_rid_say yellow "WARN: WiFi capture lost frames (CPU busy?) — Remote ID partly blind"; fi
         capt="$now"
       fi ;;
     ok) case "$prev" in capture_failed|not_understood) _sw_rid_say green "Remote ID capture recovered" ;; esac ;;
@@ -330,12 +332,13 @@ sw_rid_collect() {
   wait "$pid" 2>/dev/null
   # stopped during the window: drop the capture unread and report nothing (a relaunch owns the screen now)
   if sw_stopped; then rm -f "$cap" "$err"; return 0; fi
-  local l started=0 radio=0 pkts="" frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-1500}" st
+  local l started=0 radio=0 pkts="" drops="" frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-1500}" st
   [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
   while IFS= read -r l || [ -n "$l" ]; do
     case "$l" in
       "listening on "*) started=1; case "$l" in *"link-type IEEE802_11_RADIO "*) radio=1 ;; esac ;;
       [0-9]*" packet captured"|[0-9]*" packets captured") pkts="${l%% *}" ;;   # "1 packet", "N packets"
+      [0-9]*" packet dropped by kernel"|[0-9]*" packets dropped by kernel") drops="${l%% *}" ;;
     esac
   done < "$err"
   while IFS= read -r l || [ -n "$l" ]; do
@@ -343,17 +346,22 @@ sw_rid_collect() {
   done < "$cap"
   [[ "$frames" =~ ^[0-9]{1,9}$ ]] || frames=0; [[ "$understood" =~ ^[0-9]{1,9}$ ]] || understood=0
   [[ "$more" =~ ^[0-9]{1,9}$ ]] || more=0; [[ "$pkts" =~ ^[0-9]{1,9}$ ]] || pkts=""
+  [[ "$drops" =~ ^[0-9]{1,9}$ ]] || drops=0
+  # OFF first (nothing usable), then the two ways of being partly blind
   if [ "$started" -ne 1 ]; then st=capture_failed
   elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap
-  elif [ -n "$pkts" ] && [ "$frames" -lt "$pkts" ]; then st=not_understood          # frames lost on the way
   elif [ "$frames" -ge 5 ] && [ "$understood" -eq 0 ]; then st=not_understood       # the format changed
-  elif [ -n "$pkts" ] && [ "$pkts" -ge "$maxf" ]; then st=capped
+  elif [ -n "$pkts" ] && [ "$pkts" -ge "$maxf" ]; then st=capped                    # the frame cap (a flood?)
+  elif [ -n "$pkts" ] && [ "$frames" -lt "$pkts" ]; then st=lost                    # frames lost on the way
+  elif [ "$drops" -gt 0 ]; then st=lost                                             # the kernel dropped some
   else st=ok; fi                                                                    # a lap with no frames too
   sw_rid_health_note "$st" "$now"
-  # bytes captured under any other link type are not 802.11 frames: no drones from them
-  if [ "$radio" -eq 1 ]; then
-    sw_rid_records "$now" "$loot" < "$cap"
-    [ "$more" -gt 0 ] && _sw_rid_say magenta "...and $more more drones (Remote ID flood?)"
-  fi
+  # An OFF status never comes with drones: bytes under another link type are not 802.11 frames. A partly blind
+  # capture reports what it heard.
+  case "$st" in
+    capture_failed|not_understood) ;;
+    *) sw_rid_records "$now" "$loot" < "$cap"
+       [ "$more" -gt 0 ] && _sw_rid_say magenta "...and $more more drones (Remote ID flood?)" ;;
+  esac
   rm -f "$cap" "$err"
 }

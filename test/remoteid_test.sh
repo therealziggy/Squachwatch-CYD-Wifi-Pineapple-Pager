@@ -451,10 +451,13 @@ assert_contains "$(cat "$SW_STUB_LOG")" "WiFi capture not understood" cap_wrong_
 assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_wrong_link_no_drone
 
 # output cut short: tcpdump's summary counts more packets than the decoder saw frames (here 3 against 1), so
-# frames were lost on the way: one WARN. (control: cap_beacon_status_ok, the same capture with an honest summary)
-_cap_reset; _cap beacon SW_FAKE_TCPDUMP_CAPTURED=3 >/dev/null
-assert_eq "$(_cap_state)" "not_understood" cap_cut_short_status
-assert_eq "$(grep -c 'WiFi capture not understood' "$SW_STUB_LOG")" "1" cap_cut_short_warns
+# frames were lost on the way: one WARN, "partly blind", never "OFF" in a lap that still reports its drone.
+# (control: cap_beacon_status_ok, the same capture with an honest summary)
+_cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_CAPTURED=3)"
+assert_eq "$(_cap_state)" "lost" cap_cut_short_status
+assert_eq "$(grep -c 'WiFi capture lost frames (CPU busy?) — Remote ID partly blind' "$SW_STUB_LOG")" "1" cap_cut_short_warns
+assert_contains "$_out" "|0000FSWTEST000000001|" cap_cut_short_reports_what_it_heard
+assert_empty "$(grep -F 'OFF' "$SW_STUB_LOG")" cap_cut_short_never_off
 
 # 5 frames and none of them parses as a beacon or action frame: the format changed under us, the same WARN.
 # The frames are the quiet fixture's, five times, with the radiotap version byte (the first byte) changed from
@@ -482,6 +485,21 @@ assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "1" cap_capped_warns
 # ...and again once the cooldown has passed (SW_COOLDOWN=0: every capped lap may warn)
 _cap multi SW_RID_MAX_FRAMES=1 SW_COOLDOWN=0 >/dev/null
 assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "2" cap_capped_warns_again_after_cooldown
+# Frames the kernel dropped (tcpdump's "N packets dropped by kernel": the CPU did not keep up) leave Remote ID
+# partly blind: a WARN at most once per SW_COOLDOWN, like the frame cap, and what was heard still counts.
+# (control: cap_beacon_status_ok, the same capture with 0 dropped)
+_cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_DROPPED=900)"
+assert_eq "$(_cap_state)" "lost" cap_dropped_status
+assert_eq "$(grep -c 'WiFi capture lost frames (CPU busy?) — Remote ID partly blind' "$SW_STUB_LOG")" "1" cap_dropped_warns
+assert_contains "$_out" "|0000FSWTEST000000001|" cap_dropped_reports_what_it_heard
+_cap beacon SW_FAKE_TCPDUMP_DROPPED=900 >/dev/null
+assert_eq "$(grep -c 'lost frames' "$SW_STUB_LOG")" "1" cap_dropped_warns_once_per_cooldown
+# one partly-blind WARN per SW_COOLDOWN whichever the reason: a frame cap right after is silent too
+_cap multi SW_RID_MAX_FRAMES=1 >/dev/null
+assert_eq "$(grep -c 'partly blind' "$SW_STUB_LOG")" "1" cap_partly_blind_shares_one_cooldown
+# tcpdump's singular for exactly one ("1 packet dropped by kernel")
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_DROPPED=1 >/dev/null
+assert_eq "$(_cap_state)" "lost" cap_dropped_one_status
 
 # more drones than SW_RID_MAX_DRONES: the strongest are reported, the rest counted on one line
 _cap_reset; _out="$(_cap multi SW_RID_MAX_DRONES=1)"
