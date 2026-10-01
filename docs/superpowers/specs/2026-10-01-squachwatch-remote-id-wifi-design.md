@@ -527,3 +527,41 @@ Results go into `docs/superpowers/P0-findings.md`.
 - DJI's older proprietary DroneID beacons (pre-Remote-ID models; not ASTM; CYD does not decode them either).
 - Authentication messages (type 2), EU class and category, and the area fields (swarms).
 - Karma radios (the evil-twin round's leftover; unrelated).
+
+## 14. Notes from the verified dry run (2026-10-01, before implementation)
+
+The implementation plan was proven in full on a copy of the repository before any task was dispatched:
+every task left the suite green on its own (1,105 assertions at the end, none failing, also as root),
+and deliberately broken variants of each guard were caught. That run settled these details, which the
+plan follows:
+
+1. **The fixtures carry no time.** tcpdump runs with `-t`, so their text holds no clock times, and the
+   generator zeroes each beacon's 8-byte timestamp, where the reference library writes the generating
+   machine's uptime. The fixtures come out byte-identical on every run and say nothing about the machine
+   that made them. `build.sh` downloads four upstream files (`opendroneid.c`, `opendroneid.h`, `wifi.c`
+   and `odid_wifi.h`, which `wifi.c` needs), each checked against its sha256.
+2. **Ten fixtures:** beacon, nan, parrot, multi (two drones, the weaker one heard first, so "strongest
+   first" is not the same as arrival order), unknowns, equator (latitude 0 with a real longitude is a
+   place, not "unknown"), order (the Order bit's 4 extra header bytes), quiet (an ordinary beacon),
+   truncated, badlink.
+3. **`sw_rid_start` takes the lap's start time** and is the first step of the lap's producer group;
+   `sw_rid_collect` is its last step, in the same shell, because it waits for the capture's PID. A wait
+   from any other shell returns at once and would read the capture before its window ends.
+4. **The ignore list is applied in `sw_rid_records`,** before any `remoteid.csv` row is written, so the
+   owner's own drone leaves no row at all (the emit loop's check comes too late for the flight track).
+5. **`_sw_csv_cell`** (`lib/log.sh`) gives `_sw_csv_field`'s quoting and formula guard in `REPLY`, with
+   builtins only. `_sw_csv_field` now wraps it, so `detections.csv` is written exactly as before (a test
+   compares the two on tricky values), and a drone's 26-cell row costs no fork per cell.
+6. **Each D line is checked before use:** exactly 24 TABs, and every field against its own pattern,
+   with no leading zeros (bash reads `0473977600` as octal and aborts the arithmetic). The line is split
+   on `|` after its TABs are turned into `|`, because `read` treats TAB as whitespace and would merge
+   runs of empty fields.
+7. **A capture whose link type is not 802.11 + radiotap reports no drones,** only its `not_understood`
+   WARN: those bytes are not 802.11 frames.
+8. **`SW_SYSFS_NET`** (default `/sys/class/net`) is a test seam for the interface check (§7.1).
+   **`SW_RID_MAX_DRONES=0` means no cap.**
+9. **Tests load their own dependencies.** `test/remoteid_test.sh` sources every library that
+   `lib/remoteid.sh` uses, so it passes on its own (it first passed only because an earlier test file
+   had loaded `lib/match.sh`). `test/payload_test.sh` exports `SW_REMOTE_ID=0`, so its other laps don't
+   each wait out a capture window, and unsets every `SW_RID_*` that `payload.sh` gives it: one of them
+   had leaked a deleted folder into a later test file.
