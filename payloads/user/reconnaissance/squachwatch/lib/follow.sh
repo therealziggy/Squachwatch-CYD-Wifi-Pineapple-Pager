@@ -24,7 +24,8 @@ sw_follow_update() {
   tclass="${r%%|*}"; r="${r#*|}"
   radio="${r%%|*}";  r="${r#*|}"
   mac="${r%%|*}";    r="${r#*|}"
-  ident="${r%%|*}";  rssi="${r#*|}"
+  ident="${r%%|*}";  r="${r#*|}"
+  rssi="${r%%|*}"
   [ "$tclass" = tracker ] || return 0
   # Follow floor (spec 2026-09-23 §6): a sighting weaker than SW_FOLLOW_MIN_RSSI does not count,
   # so a stationary neighbour's tracker heard through a wall never "follows" you at home. It

@@ -65,8 +65,8 @@ sw_emit() {
   # When given, a repeat full-screen alert may be HELD; the CSV row and log line never are.
   local det="$1" now="$2" cd="$3" sf="$4" loot="$5"
   local snz="${6:-}" snz_after="${7:-0}" snz_margin="${8:-7}" snz_reset="${9:-1800}"
-  local cat label conf tclass radio mac ident rssi
-  IFS='|' read -r cat label conf tclass radio mac ident rssi <<EOF
+  local cat label conf tclass radio mac ident rssi detail
+  IFS='|' read -r cat label conf tclass radio mac ident rssi detail <<EOF
 $det
 EOF
   local color; color="$(sw_color_for "$tclass")"
@@ -75,6 +75,18 @@ EOF
   # copied, so it names that network: "Evil twin 'HomeNet'" (spec 2026-09-29 §6.4).
   local shown="$label"
   [ "$cat" = evil_twin ] && shown="$label '$ident'"
+  # A drone is named by its Remote ID, or says it sent none (spec 2026-10-01 §4). Its detail, from
+  # lib/remoteid.sh (airframe TAB motion TAB pilot), adds a second screen line and the alert's body.
+  local dline="" abody=""
+  if [ "$cat" = drone_rid ]; then
+    if [ -n "$ident" ]; then shown="$label '$ident'"; else shown="$label (no ID)"; fi
+    local d_air="${detail%%$'\t'*}" d_rest="${detail#*$'\t'}" d_motion d_pilot
+    d_motion="${d_rest%%$'\t'*}"; d_pilot="${d_rest#*$'\t'}"
+    dline="$d_motion"; [ -n "$d_pilot" ] && dline="${dline:+$dline, }$d_pilot"
+    abody="$d_air"; [ -n "$d_motion" ] && abody="${abody:+$abody, }$d_motion"
+    [ -n "$abody" ] && abody="$abody"$'\n'
+    [ -n "$d_pilot" ] && abody="$abody$d_pilot"$'\n'
+  fi
   # The cooldown is evaluated ONCE, for every confidence level, and gates persistence.
   # It used to gate only the alert, so the loot CSV gained a row per device PER LAP
   # (~every 15s, unbounded) and a device matching two rules wrote two identical rows.
@@ -82,15 +94,21 @@ EOF
   # An evil twin's evidence is the network it copies, so each copied name is reported on its own:
   # one radio copying several names, or decoys around a real target, cannot hide one behind another
   # (spec 2026-09-29, user decision). The kind cooldown below still buzzes once for all of them.
-  local rkey="$cat"
+  local rkey="$cat" rmac="$mac"
   [ "$cat" = evil_twin ] && rkey="$cat:$ident"
-  sw_should_report "$mac" "$rkey" "$now" "$cd" "$sf" && fresh=0
+  # One drone = one Remote ID (user decision 2026-10-01): its key leaves out the address, which can
+  # change. A drone that sends no ID is keyed by its address, like any device.
+  if [ "$cat" = drone_rid ] && [ -n "$ident" ]; then rmac=drone; rkey="$cat:$ident"; fi
+  sw_should_report "$rmac" "$rkey" "$now" "$cd" "$sf" && fresh=0
   [ "$fresh" -eq 0 ] && sw_log_write "$loot" "$det" "$now"
   # The colored log line still prints every lap: it is the operator's live "still here"
   # signal, and unlike the CSV it does not accumulate on disk. A lap loop that has already
   # shown enough lines of this kind sets SW_EMIT_NOLOG=1 for the call (spec 2026-09-23 §5):
   # only this line is skipped, never the CSV row or the alert.
-  [ -n "${SW_EMIT_NOLOG:-}" ] || LOG "$color" "$shown $mac$rssitag" 2>/dev/null
+  if [ -z "${SW_EMIT_NOLOG:-}" ]; then
+    LOG "$color" "$shown $mac$rssitag" 2>/dev/null
+    [ -n "$dline" ] && LOG "$color" "  $dline" 2>/dev/null
+  fi
   # Full alert + hardware additionally requires high confidence, and (when snooze is on)
   # the device must not have used up its free alerts without coming closer.
   if [ "$fresh" -eq 0 ] && [ "$conf" = high ]; then
@@ -119,7 +137,7 @@ EOF
       [ "$gate" -eq 2 ] && note="
 snoozing: re-alerts only if closer"
       ALERT "$shown
-$mac$rssitag$note" 2>/dev/null
+$abody$mac$rssitag$note" 2>/dev/null
       sw_hw_notify "$tclass"
     fi
   fi

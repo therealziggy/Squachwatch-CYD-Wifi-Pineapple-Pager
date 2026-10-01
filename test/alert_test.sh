@@ -261,6 +261,48 @@ sw_seen_prune "$_s8" 1100 600
 assert_eq "$(grep -a -c 'evil_twin:Caf' "$_s8")" "1" prune_keeps_non_utf8_name_line
 rm -rf "$_L8" "$_s8"; unset _L8 _s8 _t
 
+# A drone is named by its Remote ID, with a detail line and a two-line alert body (spec 2026-10-01 §4)
+_L7="$(mktemp -d)"; sw_log_init "$_L7"; _s7="$(mktemp)"; : > "$_s7"; : > "$SW_STUB_LOG"
+_drone="drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|multirotor"$'\t'"87m up, 12m/s"$'\t'"pilot (live) 47.39800,8.54102"
+sw_emit "$_drone" 1000 600 "$_s7" "$_L7"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta Drone '0000FSWTEST000000001' 80:E1:26:AA:BB:CC -47dBm" drone_line_names_id
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta   87m up, 12m/s, pilot (live) 47.39800,8.54102" drone_detail_line
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'
+multirotor, 87m up, 12m/s
+pilot (live) 47.39800,8.54102
+80:E1:26:AA:BB:CC -47dBm" drone_alert_body
+assert_contains "$(cat "$SW_STUB_LOG")" "LED M 200" drone_alert_magenta_led
+assert_contains "$(tail -1 "$_L7/detections.csv")" ',drone_rid,"Drone",high,surveillance,wifi,80:E1:26:AA:BB:CC,"0000FSWTEST000000001",-47,' drone_csv_row_without_detail
+# one drone = one Remote ID: the same ID at a new address is the same drone, with no second row or alert...
+: > "$SW_STUB_LOG"
+sw_emit "drone_rid|Drone|high|surveillance|wifi|80:E1:26:11:22:33|0000FSWTEST000000001|-50|multirotor"$'\t\t'"no pilot location" 1001 600 "$_s7" "$_L7"
+assert_eq "$(grep -c ',drone_rid,' "$_L7/detections.csv")" "1" drone_new_address_same_id_no_row
+assert_empty "$(grep '^ALERT' "$SW_STUB_LOG")" drone_new_address_same_id_no_alert
+# ...though its screen line still prints (the live "still here" signal)
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta Drone '0000FSWTEST000000001' 80:E1:26:11:22:33 -50dBm" drone_new_address_still_on_screen
+assert_contains "$(cat "$_s7")" "drone|drone_rid:0000FSWTEST000000001|1000" drone_ledger_key_is_the_id
+# control: a different ID at that address is a different drone
+sw_emit "drone_rid|Drone|high|surveillance|wifi|80:E1:26:11:22:33|0000FSWTEST000000002|-50|multirotor"$'\t\t'"no pilot location" 1002 600 "$_s7" "$_L7"
+assert_eq "$(grep -c ',drone_rid,' "$_L7/detections.csv")" "2" drone_other_id_new_row
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000002'" drone_other_id_alerts
+# a drone that sends no ID says so and is keyed by its address
+: > "$SW_STUB_LOG"
+sw_emit "drone_rid|Drone|high|surveillance|wifi|80:E1:26:44:55:66||-60|multirotor"$'\t\t'"no pilot location" 1003 600 "$_s7" "$_L7"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta Drone (no ID) 80:E1:26:44:55:66 -60dBm" drone_no_id_line
+assert_contains "$(cat "$_s7")" "80:E1:26:44:55:66|drone_rid|1003" drone_no_id_keyed_by_address
+# the per-lap screen cap hides both of a drone's lines, never its alert
+: > "$SW_STUB_LOG"
+SW_EMIT_NOLOG=1 sw_emit "drone_rid|Drone|high|surveillance|wifi|80:E1:26:77:88:99|0000FSWTEST000000003|-55|multirotor"$'\t'"87m up"$'\t'"no pilot location" 1004 600 "$_s7" "$_L7"
+assert_empty "$(grep '^LOG ' "$SW_STUB_LOG")" drone_nolog_hides_both_lines
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000003'" drone_nolog_alert_unchanged
+# control: every other kind keeps one screen line and its two-line alert
+: > "$SW_STUB_LOG"
+sw_emit "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:00:00:09|Flipper aa|-60" 1005 600 "$_s7" "$_L7"
+assert_eq "$(grep -c '^LOG ' "$SW_STUB_LOG")" "1" plain_kind_one_screen_line
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Flipper Zero
+80:E1:26:00:00:09 -60dBm" plain_kind_alert_unchanged
+rm -rf "$_L7" "$_s7"; unset _L7 _s7 _drone
+
 # --- ledger pruning (spec 2026-09-23 §7) ---
 _P="$(mktemp -d)"; _pf="$_P/seen.db"
 printf '%s\n' 'AA:00:00:00:00:01|old_cat|1000' 'AA:00:00:00:00:02|new_cat|1500' '*|kind_old|1000' '*|kind_new|1550' 'garbage-line' 'AA:00:00:00:00:03|bad_ts|12x4' > "$_pf"

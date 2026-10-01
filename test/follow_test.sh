@@ -103,3 +103,11 @@ assert_empty "$_o" floor_negative_85_gates_control
 rm -rf "$_F3"; unset _F3 _tf3 _strong40 _weak95 _t _o
 
 rm -rf "$_T"; unset _T _tf _D _E _W _before _out _rc _body
+
+# a record with a 9th field (drones carry one) parses too: the signal stops at the next |
+_f9="$(mktemp)"; : > "$_f9"
+_o="$(sw_follow_update "tracker_tile|Tile|med|tracker|ble|AA:00:00:00:00:F9|t|-60|x	y	z" 1000 "$_f9" 0 300)"
+assert_eq "${_o##*|}" "-60" follow_ninth_field_signal_clean
+# control: the update did escalate (the check above read a real line)
+assert_contains "$_o" "tracker_tile_follow|" follow_ninth_field_control_escalated
+rm -f "$_f9"; unset _f9 _o

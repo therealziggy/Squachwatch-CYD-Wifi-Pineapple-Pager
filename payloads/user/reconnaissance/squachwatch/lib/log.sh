@@ -31,8 +31,8 @@ sw_log_write() {
   local dir="$1" det="$2" now="$3" gps
   [ -f "$dir/detections.csv" ] || sw_log_init "$dir"   # self-init if caller skipped sw_log_init
   gps="$(GPS_GET 2>/dev/null | tr ' ' ',' )"   # stub prints SW_FAKE_GPS; device prints coords
-  local cat label conf tclass radio mac ident rssi
-  IFS='|' read -r cat label conf tclass radio mac ident rssi <<EOF
+  local cat label conf tclass radio mac ident rssi detail
+  IFS='|' read -r cat label conf tclass radio mac ident rssi detail <<EOF
 $det
 EOF
   # Quote/escape the free-text + attacker-influenced fields. gps must be quoted because real
