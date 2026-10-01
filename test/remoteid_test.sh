@@ -1,18 +1,39 @@
 #!/bin/bash
 # test/remoteid_test.sh — Remote ID over WiFi (spec 2026-10-01). Reads the committed fixtures in
-# test/fixtures/rid/ (made by tools/rid_fixtures/build.sh from opendroneid-core-c).
+# test/fixtures/rid/ (made by tools/rid_fixtures/build.sh from opendroneid-core-c), and the crafted frames in
+# test/fixtures/rid/hostile/ (byte edits of those fixtures, each documented with its test below).
 SW_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../payloads/user/reconnaissance/squachwatch" && pwd)"
 _RFIX="$(cd "$(dirname "${BASH_SOURCE[0]}")/fixtures" && pwd)/rid"
 
 # --- the fixtures: tcpdump -t -nn -xx text, radiotap with a signal, no clock times ---
-for _f in beacon nan parrot multi unknowns equator order quiet truncated badlink; do
+for _f in beacon nan parrot multi unknowns equator order quiet truncated badlink full emptyserial; do
   assert_eq "$([ -s "$_RFIX/$_f.txt" ] && echo ok)" "ok" "rid_fixture_present_$_f"
 done
 assert_contains "$(cat "$_RFIX/beacon.txt")" "-47dBm signal Beacon (TEST-DRONE)" rid_fixture_signal_header
-assert_empty "$(grep -lE '^[0-9]{2}:[0-9]{2}:[0-9]{2}\.' "$_RFIX"/*.txt)" rid_fixtures_no_clock_times
-# control: the same check does see a clock time at the start of a line
-assert_contains "$(printf '22:13:20.000000 Beacon\n' | grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2}\.')" "22:13:20" rid_fixture_clock_check_works
-unset _f
+# no time stamp of any kind tcpdump prints: its default (HH:MM:SS.micro), -tt (epoch.micro) and -tttt (a date)
+_clock_re='^([0-9]{2}:[0-9]{2}:[0-9]{2}\.|[0-9]{9,}\.[0-9]{6} |[0-9]{4}-[0-9]{2}-[0-9]{2} )'
+assert_empty "$(grep -lE "$_clock_re" "$_RFIX"/*.txt "$_RFIX"/hostile/*.txt)" rid_fixtures_no_clock_times
+# control: the same regex sees each of the three at the start of a line
+for _l in '00:00:00.000000 Beacon' '0000000000.000000 Beacon' '0000-00-00 00:00:00.000000 Beacon'; do
+  assert_contains "$(printf '%s\n' "$_l" | grep -E "$_clock_re")" "Beacon" "rid_fixture_clock_check_works_[${_l%% *}]"
+done
+# The beacon timestamp (the 8 bytes after the 802.11 header, in beacons and probe responses) is zero in every
+# fixture: the reference library writes the generating machine's uptime there, and gen.c zeroes it.
+# _tsf FILE...: prints FILE:N for each such frame (the Nth in its file) whose timestamp is not zero
+_tsf() { awk 'function b(i) { return hx[substr(h, 1 + i * 2, 1)] * 16 + hx[substr(h, 2 + i * 2, 1)] }
+  function chk(  off, fc, hl, j) { if (h == "") return; off = b(2) + b(3) * 256; fc = b(off); fc -= fc % 4
+    if (fc != 128 && fc != 80) return
+    hl = (b(off + 1) >= 128) ? 28 : 24
+    for (j = 0; j < 8; j++) if (b(off + hl + j)) { print fn ":" n; return } }
+  BEGIN { for (k = 0; k <= 9; k++) hx[k] = k; hx["a"] = 10; hx["b"] = 11; hx["c"] = 12; hx["d"] = 13; hx["e"] = 14; hx["f"] = 15 }
+  $1 !~ /^0x[0-9a-f]+:$/ { chk(); h = ""; fn = FILENAME; n = (FNR == 1) ? 1 : n + 1; next }
+  { for (k = 2; k <= NF; k++) h = h $k }
+  END { chk() }' "$@"; }
+assert_empty "$(_tsf "$_RFIX"/*.txt "$_RFIX"/hostile/*.txt)" rid_fixtures_no_uptime
+# control: the check does see a timestamp that is not zero (the beacon's bytes 0x21-0x22 set)
+_f="$(mktemp)"; sed $'s/^\t0x0020:  0000 0000/\t0x0020:  0012 3400/' "$_RFIX/beacon.txt" > "$_f"
+assert_eq "$(_tsf "$_f")" "$_f:1" rid_fixture_uptime_check_works
+rm -f "$_f"; unset _f _l _clock_re; unset -f _tsf
 
 # --- the decoder: tcpdump -t -nn -xx text -> S/D lines ---
 # lib/remoteid.sh uses sw_sanitize_ident (match.sh), sw_wifi_colonize (wifi.sh), _sw_csv_cell (log.sh),
@@ -103,9 +124,134 @@ _o="$( { cat "$_RFIX/truncated.txt"; cat "$_RFIX/beacon.txt"; } | _sw_rid_decode
 assert_eq "$(_rf "$_o" id_hex)" "$_serial1" rid_bad_frame_does_not_hide_next
 assert_eq "$(_rs "$_o" 2)" "2" rid_bad_frame_both_counted
 
+# a reference frame holding every message the decoder reads, with values no other fixture uses (gen.c's "full")
+_o="$(_dec full)"
+assert_eq "$(_rf "$_o" mac)/$(_rf "$_o" rssi)" "80e126ff0001/-52" rid_full_address_signal
+assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)" "2/4653572d4341412d544553542d30303031" rid_full_first_id_caa   # "FSW-CAA-TEST-0001"
+assert_eq "$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1/3030303046535754455354303030303030303034" rid_full_second_id_serial   # "0000FSWTEST000000004"
+assert_eq "$(_rf "$_o" ua_type)" "15" rid_full_airframe_other
+assert_eq "$(_rf "$_o" status)" "3" rid_full_status_emergency
+assert_eq "$(_rf "$_o" lat)/$(_rf "$_o" lon)" "473901234/85301234" rid_full_position
+assert_eq "$(_rf "$_o" alt_baro)/$(_rf "$_o" alt_geo)/$(_rf "$_o" height)/$(_rf "$_o" height_ref)" "3020/3040/2060/1" rid_full_altitudes_height_over_ground   # 510 m, 520 m, 30 m
+assert_eq "$(_rf "$_o" speed)/$(_rf "$_o" vspeed)/$(_rf "$_o" heading)" "6975/-25/90" rid_full_motion   # 69.75 m/s (the multiplier), -2.5 m/s, 90 degrees
+assert_eq "$(_rf "$_o" pilot_type)/$(_rf "$_o" pilot_lat)/$(_rf "$_o" pilot_lon)/$(_rf "$_o" pilot_alt)" "0/473900000/85300000/3030" rid_full_takeoff_point   # at 515 m
+assert_eq "$(_rf "$_o" self_id)" "5357544553542d53454c462d49442d46554c4c2d323343" rid_full_self_id   # "SWTEST-SELF-ID-FULL-23C", all 23 bytes
+assert_eq "$(_rf "$_o" operator_id)" "5357544553544f50455241544f523032" rid_full_operator_id   # "SWTESTOPERATOR02"
+# a serial number with no text, then a CAA registration (gen.c's "emptyserial"): both kept, as sent
+_o="$(_dec emptyserial)"
+assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1//2/4653572d4341412d544553542d30303032" rid_emptyserial_both_ids_kept   # "FSW-CAA-TEST-0002"
+
+# --- crafted frames (spec §8): test/fixtures/rid/hostile/ holds byte edits of the fixtures above, as tcpdump
+# text only (no pcap of them exists, and no tool makes them). Each edit is written next to its test: offsets
+# are tcpdump's 0x.. byte offsets, counted from the start of the radiotap header. Every case is decoded by this
+# box's awk and by BusyBox awk (the Pager's), which must agree byte for byte.
+_RH="$_RFIX/hostile"
+_bD="$(_dec beacon | grep '^D')"               # the reference beacon's drone line
+_hd() { cat "$@" | _sw_rid_decode_awk; }        # _hd FILE...: the decoder over the files
+_hdb() { cat "$@" | busybox awk -v max="${SW_RID_MAX_DRONES:-32}" "$(_sw_rid_awk_src)"; }   # ...on BusyBox awk
+# controls: every frame below was edited from beacon, nan or quiet, which decode unpatched (quiet: understood)
+assert_eq "$(_dec beacon | grep -c '^D')/$(_dec nan | grep -c '^D')/$(_rs "$(_dec quiet)" 3)" "1/1/1" rid_h_sources_decode_unpatched
+# _bad NAME FRAMES UNDERSTOOD: hostile/NAME.txt is rejected. Alone it gives no drone line, only the stats line
+# S FRAMES UNDERSTOOD 0 0; and the reference beacon right after it decodes exactly as it does alone.
+_hbad=(); _hfr=0; _hun=0
+_bad() { local f="$_RH/$1.txt" o n
+  o="$(_hd "$f")"; n="$(_hd "$f" "$_RFIX/beacon.txt")"
+  assert_eq "$o" "S	$2	$3	0	0" "rid_h_${1}_rejected"
+  assert_eq "$n" "$_bD"$'\n'"S	$(( $2 + 1 ))	$(( $3 + 1 ))	1	0" "rid_h_${1}_next_frame_decodes"
+  assert_eq "$(_hdb "$f")|$(_hdb "$f" "$_RFIX/beacon.txt")" "$o|$n" "rid_h_${1}_busybox"
+  _hbad+=("$f"); _hfr=$(( _hfr + $2 )); _hun=$(( _hun + $3 )); }
+# the pack check (okpack): type nibble F, message size 25, 1 to 9 messages, all inside their container
+_bad pack_type 1 1            # beacon 0x43 f2->e2: the pack's type nibble is E
+_bad pack_size 1 1            # beacon 0x44 19->18: message size 24
+_bad pack_count0 1 1          # beacon 0x45 04->00: a pack of no messages
+_bad pack_count5 1 1          # beacon 0x45 04->05: five messages declared, four sent (it runs past the element)
+_bad pack_short_element 1 1   # beacon 0x3d 6c->6b: the element is one byte shorter than its pack
+_bad pack_count10 1 1         # nan: ten messages (count 0x37 04->0a; six copies of the 4th inserted at 0x9c), its
+                              # service info (0x33 68->fe) and attribute (0x28 7200->0801) grown to hold them: only
+                              # NAN has room for a pack of more than 9
+# the frame: whole bytes, a radiotap header of at least 8 bytes, a beacon or action frame, room for its header
+_bad odd_hex 1 0              # beacon with its last hex digit removed
+_bad radiotap_short 1 0       # beacon 0x02 09->04, bytes 0x04-0x08 removed: a 4-byte radiotap header (no signal)
+_bad probe_response 1 0       # quiet 0x09 80->50: a probe response
+_bad order_cut 1 0            # quiet 0x0a 00->80 (the Order bit: a 28-byte header), the frame cut at 35 bytes
+# the beacon's element walk
+_bad elements_65 1 1          # beacon + 62 empty elements (de00) at 0x3c: the Remote ID element is the 65th, past
+                              # the walk's 64 (control: elements_64 below)
+_bad asdstan_type 1 1         # beacon 0x41 0d->0c (ASD-STAN type 0x0C), and 0x2f-0x32 "TEST"->fa0bbc0d so the frame
+                              # still holds what the pre-test looks for (the header line shows that name)
+# NAN: its address and action header, the Service Descriptor attribute, and what its control byte announces
+_bad nan_addr1 1 1            # nan 0x12 00->01: addr1 is not 51:6f:9a:01:00:00
+_bad nan_type 1 1             # nan 0x26 13->12: not the NAN action type
+_bad nan_attr_id 1 1          # nan 0x27 03->04: the attribute with the service id is not a Service Descriptor
+_bad attrs_65 1 1             # nan + 64 empty attributes (0e0000) at 0x27: the Service Descriptor is the 65th
+                              # (control: attrs_64 below)
+_bad attr_overrun 1 1         # nan 0x28 72->ff: the Service Descriptor runs past the frame's end
+_bad si_short 1 1             # nan 0x33 68->60: the service info is shorter than its pack
+_bad si_overrun 1 1           # nan 0x33 68->70: the service info runs past the Service Descriptor
+_bad nan_bitmap 1 1           # nan control 0x32 10->50: a binding bitmap announced, none there
+_bad nan_mfilter 1 1          # nan control 0x32 10->14: a matching filter announced, none there
+_bad nan_srf 1 1              # nan control 0x32 10->18: a service response filter announced, none there
+_bad nan_no_si 1 1            # nan control 0x32 10->00: no service info
+# All 23 together, most from the good drone's own address, then the good beacon: exactly its drone line, and
+# every frame counted (spec §8: "a malformed frame before a good one")
+assert_eq "${#_hbad[@]}/$_hfr/$_hun" "23/23/19" rid_hostile_case_count
+_o="$(_hd "${_hbad[@]}" "$_RFIX/beacon.txt")"
+assert_eq "$_o" "$_bD"$'\n'"S	24	20	1	0" rid_hostile
+assert_eq "$(_hdb "${_hbad[@]}" "$_RFIX/beacon.txt")" "$_o" rid_hostile_busybox
+# _good NAME SOURCE: hostile/NAME.txt decodes exactly as SOURCE.txt, the fixture it was edited from
+_good() { local f="$_RH/$1.txt" o
+  o="$(_hd "$f")"
+  assert_eq "$o" "$(_dec "$2")" "rid_h_${1}_decodes"
+  assert_eq "$(_hdb "$f")" "$o" "rid_h_${1}_busybox"; }
+_good elements_64 beacon      # beacon + 61 empty elements at 0x3c: the Remote ID element is the 64th
+_good attrs_64 nan            # nan + 63 empty attributes at 0x27: the Service Descriptor is the 64th
+_good nan_bitmap_ok nan       # nan control 0x32 10->50, a 2-byte binding bitmap (5a5a) at 0x33, length 0x28 72->74
+_good nan_mfilter_ok nan      # nan control 0x32 10->14, a matching filter (025a5a) at 0x33, length 0x28 72->75
+_good nan_srf_ok nan          # nan control 0x32 10->18, a service response filter (035a5a5a) at 0x33, 0x28 72->76
+# _hpar NAME FILE...: the files decode the same on BusyBox awk
+_hpar() { local n="$1"; shift; assert_eq "$(_hdb "$@")" "$(_hd "$@")" "rid_h_${n}_busybox"; }
+# values the decoder must clean (each still decodes its drone: the ID is there)
+_o="$(_hd "$_RH/id_trailing_spaces.txt")"     # beacon 0x5a-0x5b 3031->2020: the ID ends in two spaces
+assert_eq "$(_rf "$_o" id_hex)" "303030304653575445535430303030303030" rid_h_id_trailing_spaces_dropped
+_hpar id_trailing_spaces "$_RH/id_trailing_spaces.txt"
+_o="$(_hd "$_RH/lat_out_of_range.txt")"       # beacon 0x64-0x67 0053401c->01e9a435: latitude 90.0000001
+assert_eq "$(_rf "$_o" lat)/$(_rf "$_o" lon)/$(_rf "$_o" id_hex)" "//$_serial1" rid_h_lat_out_of_range_empty
+_hpar lat_out_of_range "$_RH/lat_out_of_range.txt"
+_o="$(_hd "$_RH/lon_out_of_range.txt")"       # beacon 0x68-0x6b 78ed1705->ff2db694: longitude -180.0000001
+assert_eq "$(_rf "$_o" lat)/$(_rf "$_o" lon)/$(_rf "$_o" id_hex)" "//$_serial1" rid_h_lon_out_of_range_empty
+_hpar lon_out_of_range "$_RH/lon_out_of_range.txt"
+_o="$(_hd "$_RH/vspeed_down.txt")"            # beacon 0x63 06->82: falling at 63 m/s, the standard's "unknown"
+assert_eq "$(_rf "$_o" vspeed)/$(_rf "$_o" speed)/$(_rf "$_o" id_hex)" "/1200/$_serial1" rid_h_vspeed_down_unknown_empty
+_hpar vspeed_down "$_RH/vspeed_down.txt"
+# The signal is the header's FIRST "-NNdBm signal": tcpdump prints the radiotap field before any frame text.
+# sig_in_name: the beacon's network name made "-1dBm signal" (0x2d 000a "TEST-DRONE" -> 000c "-1dBm signal"),
+# so its header reads "-47dBm signal Beacon (-1dBm signal) ..."
+assert_eq "$(_rf "$(_hd "$_RH/sig_in_name.txt")" rssi)" "-47" rid_h_signal_first_match
+_hpar sig_in_name "$_RH/sig_in_name.txt"
+# A frame whose header has no signal has none, even right after one that has (quiet.txt, -55dBm): no_signal is
+# the beacon from a radiotap header with no signal field (0x02 09->08, 0x04 20->00, 0x08 d1 removed)
+assert_eq "$(_rf "$(_hd "$_RFIX/quiet.txt" "$_RH/no_signal.txt")" rssi)/$(_rf "$(_hd "$_RH/no_signal.txt")" id_hex)" "/$_serial1" rid_h_no_signal_no_rssi
+_hpar no_signal "$_RFIX/quiet.txt" "$_RH/no_signal.txt"
+# Per address, the strongest signal: a weaker copy heard later (beacon 0x08 d1->ba, header -70dBm) does not
+# lower it; a stronger one heard later (nan 0x08 d1->e2, header -30dBm) raises it
+assert_eq "$(_rf "$(_hd "$_RFIX/beacon.txt" "$_RH/sig_weaker_copy.txt")" rssi)" "-47" rid_h_signal_weaker_copy_ignored
+_hpar sig_weaker_copy "$_RFIX/beacon.txt" "$_RH/sig_weaker_copy.txt"
+assert_eq "$(_rf "$(_hd "$_RFIX/beacon.txt" "$_RH/sig_stronger_nan.txt")" rssi)" "-30" rid_h_signal_stronger_copy_wins
+_hpar sig_stronger_nan "$_RFIX/beacon.txt" "$_RH/sig_stronger_nan.txt"
+# one address, two forms: the drone's beacon and its NAN frame merge into ONE line, with forms 1 + 2 = 3
+_o="$(_hd "$_RFIX/beacon.txt" "$_RFIX/nan.txt")"
+assert_eq "$_o" "$(printf '%s\n' "$_bD" | awk -F'\t' -v OFS='\t' '{ $4 = 3; print }')"$'\n'"S	2	2	2	0" rid_h_one_address_two_forms_one_line
+_hpar two_forms "$_RFIX/beacon.txt" "$_RFIX/nan.txt"
+# The first two distinct Basic IDs per address: the beacon twice, then with ID ...0002 (0x5b 31->32), then with
+# ID ...0003 (0x5b 31->33): the ID is ...0001 and the second ID ...0002, each a serial number (type 1)
+_o="$(_hd "$_RFIX/beacon.txt" "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt")"
+assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1/$_serial1/1/$_serial2" rid_h_first_two_distinct_ids
+_hpar two_ids "$_RFIX/beacon.txt" "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt"
+unset _RH _bD _hbad _hfr _hun; unset -f _hd _hdb _bad _good _hpar
+
 # the decoder runs the same on BusyBox awk (the Pager) as on this box's awk
 if command -v busybox >/dev/null 2>&1; then
-  for _f in beacon nan parrot multi unknowns equator order quiet truncated badlink; do
+  for _f in beacon nan parrot multi unknowns equator order quiet truncated badlink full emptyserial; do
     assert_eq "$(busybox awk -v max=32 "$(_sw_rid_awk_src)" < "$_RFIX/$_f.txt")" "$(_dec "$_f")" "rid_busybox_parity_$_f"
   done
 else
@@ -207,7 +353,7 @@ bash -c 'exit 0' & _rd=$!; wait "$_rd"
 rm -f "$_rl/remoteid.csv"
 assert_empty "$(sw_test_rid_line | SW_MAIN_PID="$_rd" _recs)" rid_rec_stopped_no_detection
 assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_stopped_no_csv
-rm -rf "$_rl"; unset _rl _det _v _rd; unset -f _recs _csv1
+rm -rf "$_rl"; unset _rl _det _rd; unset -f _recs _csv1
 
 # --- the per-lap capture (test/stubs/tcpdump models the Pager's tcpdump) ---
 _cap_dir="$(mktemp -d)"; _cap_loot="$(mktemp -d)"
@@ -329,3 +475,4 @@ assert_eq "$(_alive)" "1" cap_orphan_control_alive_after_kill
 SECONDS=0; while [ "$(_alive)" != 0 ] && [ "$SECONDS" -lt 10 ]; do sleep 0.2; done
 assert_eq "$(_alive)" "0" cap_orphan_ends_by_itself
 rm -rf "$_cap_dir" "$_cap_loot"; unset _cap_dir _cap_loot _out _fm _pids _sp _i _fr; unset -f _cap _cap_state _cap_reset _alive
+unset _RFIX
