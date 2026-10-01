@@ -232,6 +232,17 @@ _hpar sig_in_name "$_RH/sig_in_name.txt"
 # the beacon from a radiotap header with no signal field (0x02 09->08, 0x04 20->00, 0x08 d1 removed)
 assert_eq "$(_rf "$(_hd "$_RFIX/quiet.txt" "$_RH/no_signal.txt")" rssi)/$(_rf "$(_hd "$_RH/no_signal.txt")" id_hex)" "/$_serial1" rid_h_no_signal_no_rssi
 _hpar no_signal "$_RFIX/quiet.txt" "$_RH/no_signal.txt"
+# A radiotap signal is one signed byte (-128..127): anything else matched on the header line came from frame
+# text, a network name read on a radio whose radiotap header has no signal field, so the frame has no signal.
+# Each sig_name_* is the beacon from such a header (as no_signal), its network name made "1000dBm signal",
+# "-0dBm signal" or "128dBm signal" (0x2d 000a "TEST-DRONE" -> 000e/000c/000d and the name).
+for _n in 1000 minus0 128; do
+  assert_eq "$(_rf "$(_hd "$_RH/sig_name_$_n.txt")" rssi)/$(_rf "$(_hd "$_RH/sig_name_$_n.txt")" id_hex)" "/$_serial1" "rid_h_sig_name_${_n}_no_rssi"
+  # ...and after the drone's own frame with a signal, its signal stands (not raised to a made-up one)
+  assert_eq "$(_rf "$(_hd "$_RFIX/beacon.txt" "$_RH/sig_name_$_n.txt")" rssi)" "-47" "rid_h_sig_name_${_n}_signal_stands"
+  _hpar "sig_name_$_n" "$_RFIX/beacon.txt" "$_RH/sig_name_$_n.txt"
+done
+unset _n
 # Per address, the strongest signal: a weaker copy heard later (beacon 0x08 d1->ba, header -70dBm) does not
 # lower it; a stronger one heard later (nan 0x08 d1->e2, header -30dBm) raises it
 assert_eq "$(_rf "$(_hd "$_RFIX/beacon.txt" "$_RH/sig_weaker_copy.txt")" rssi)" "-47" rid_h_signal_weaker_copy_ignored
@@ -351,6 +362,9 @@ assert_empty "$(sw_test_rid_line self_id='61|62' | _recs)" rid_rec_extra_field_d
 assert_contains "$(sw_test_rid_line self_id=6162 | _recs)" "drone_rid|" rid_rec_extra_field_control
 # control: the same helper, unbroken, does produce a detection (the drops above are the checks, not the helper)
 assert_contains "$(sw_test_rid_line | _recs)" "drone_rid|" rid_rec_control_valid_line
+# a frame whose network name posed as a signal still makes a drone (the decoder drops the made-up signal; here
+# the reference beacon after it with its name "1000dBm signal", as the decoder now prints it)
+assert_contains "$(cat "$_RFIX/hostile/sig_name_1000.txt" | _sw_rid_decode_awk | _recs)" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001||" rid_rec_name_posing_as_signal_reported
 # S lines and anything else are ignored
 assert_empty "$(printf 'S\t1\t1\t1\t0\n' | _recs)" rid_rec_stats_line_ignored
 # the CSV cell helper writes the cells the old _sw_csv_field wrote: each value is pinned to its literal cell

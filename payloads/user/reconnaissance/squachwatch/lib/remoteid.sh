@@ -34,8 +34,10 @@ function okpack(pk, end,  c) { if (pk + 3 > end) return 0   # redundant: the fit
   return pk + 3 + 25 * c <= end }
 BEGIN { for (k = 0; k <= 9; k++) hx[k] = k; hx["a"] = 10; hx["b"] = 11; hx["c"] = 12; hx["d"] = 13; hx["e"] = 14; hx["f"] = 15 }
 $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
-  # tcpdump prints the radiotap fields before any frame text, so a network name cannot supply this
-  if (match($0, /-?[0-9]+dBm signal/)) sig = substr($0, RSTART, RLENGTH - 10)
+  # tcpdump prints the radiotap fields before any frame text, so a network name cannot supply this. A radiotap
+  # signal is one signed byte: a match outside -128..127 came from frame text (a radio with no signal field)
+  if (match($0, /-?[0-9]+dBm signal/)) { sig = substr($0, RSTART, RLENGTH - 10)
+    if (sig !~ /^(0|-?[1-9][0-9]?[0-9]?)$/ || sig + 0 < -128 || sig + 0 > 127) sig = "" }
   next }
 { for (k = 2; k <= NF; k++) hex = hex $k }
 END { if (hex != "") decode(); emit() }
