@@ -2,7 +2,8 @@
  * LINKTYPE_IEEE802_11_RADIO pcap. Dev box only; never installed on the Pager. Frames go to a FILE
  * only: nothing here touches a radio. See build.sh.
  * Usage: gen <kind> <out.pcap>
- *   kind = beacon | nan | parrot | multi | unknowns | equator | order | quiet | truncated */
+ *   kind = beacon | nan | parrot | multi | unknowns | equator | order | quiet | truncated | full | emptyserial
+ * Any other kind prints the usage and exits 2 without writing a file. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,13 @@ static FILE *open_pcap(const char *path) {
     put32(f, 0xa1b2c3d4); put16(f, 2); put16(f, 4); put32(f, 0); put32(f, 0);
     put32(f, 262144); put32(f, 127);                 /* snaplen, LINKTYPE_IEEE802_11_RADIO */
     return f;
+}
+
+/* a text field of `size` bytes (plus the struct's spare byte): zero-filled, then the text, which may fill it */
+static void put_text(char *field, size_t size, const char *text) {
+    size_t n = strlen(text);
+    memset(field, 0, size + 1);
+    memcpy(field, text, n < size ? n : size);
 }
 
 /* a made-up drone: serial, airframe, airborne location, live pilot location, operator id */
@@ -61,8 +69,18 @@ static int beacon(const ODID_UAS_Data *d, const char *mac, const char *ssid, uin
     return l;
 }
 
+static const char *const kinds[] = { "beacon", "nan", "parrot", "multi", "unknowns", "equator", "order", "quiet",
+                                     "truncated", "full", "emptyserial", NULL };
+static int known(const char *k) { for (int i = 0; kinds[i]; i++) if (!strcmp(k, kinds[i])) return 1; return 0; }
+
 int main(int argc, char **argv) {
-    if (argc < 3) { fprintf(stderr, "usage: gen <kind> <out.pcap>\n"); return 2; }
+    /* a typo in build.sh's kind list must stop the build, not quietly write a plain beacon */
+    if (argc < 3 || !known(argv[1])) {
+        fprintf(stderr, "usage: gen <kind> <out.pcap>\n  kind:");
+        for (int i = 0; kinds[i]; i++) fprintf(stderr, " %s", kinds[i]);
+        fprintf(stderr, "\n");
+        return 2;
+    }
     const char *kind = argv[1];
     const char *mac1 = "\x80\xE1\x26\xAA\xBB\xCC", *mac2 = "\x80\xE1\x26\x11\x22\x33";
     ODID_UAS_Data d;
@@ -84,6 +102,41 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(kind, "equator"))              /* latitude exactly 0 is a real place when longitude is not 0 */
         d.Location.Latitude = 0;
+    if (!strcmp(kind, "full")) {               /* every message the decoder reads, with values no other fixture uses */
+        const char *mac3 = "\x80\xE1\x26\xFF\x00\x01";
+        /* two Basic IDs, a CAA registration first and the serial second, both airframe "other" */
+        put_text(d.BasicID[0].UASID, ODID_ID_SIZE, "FSW-CAA-TEST-0001");
+        d.BasicID[0].IDType = ODID_IDTYPE_CAA_REGISTRATION_ID; d.BasicID[0].UAType = ODID_UATYPE_OTHER;
+        put_text(d.BasicID[1].UASID, ODID_ID_SIZE, "0000FSWTEST000000004");
+        d.BasicID[1].IDType = ODID_IDTYPE_SERIAL_NUMBER; d.BasicID[1].UAType = ODID_UATYPE_OTHER;
+        d.BasicIDValid[1] = 1;
+        /* heading under 180, speed over 63.75 m/s (the multiplier), sinking, height above ground */
+        d.Location.Status = ODID_STATUS_EMERGENCY;
+        d.Location.Direction = 90.0f; d.Location.SpeedHorizontal = 70.0f; d.Location.SpeedVertical = -2.5f;
+        d.Location.Latitude = 47.3901234; d.Location.Longitude = 8.5301234;
+        d.Location.AltitudeBaro = 510.0f; d.Location.AltitudeGeo = 520.0f; d.Location.Height = 30.0f;
+        d.Location.HeightType = ODID_HEIGHT_REF_OVER_GROUND;
+        /* a Self-ID that fills all 23 bytes; the pilot's take-off point, with its altitude */
+        d.SelfID.DescType = ODID_DESC_TYPE_TEXT;
+        put_text(d.SelfID.Desc, ODID_STR_SIZE, "SWTEST-SELF-ID-FULL-23C");
+        d.SelfIDValid = 1;
+        d.System.OperatorLocationType = ODID_OPERATOR_LOCATION_TYPE_TAKEOFF;
+        d.System.OperatorLatitude = 47.3900000; d.System.OperatorLongitude = 8.5300000;
+        d.System.OperatorAltitudeGeo = 515.0f;
+        put_text(d.OperatorID.OperatorId, ODID_ID_SIZE, "SWTESTOPERATOR02");
+        n = beacon(&d, mac3, "TEST-FULL", fr, sizeof(fr));
+        put_packet(f, 1700000000, fr, n, -52); fclose(f); return 0;
+    }
+    if (!strcmp(kind, "emptyserial")) {        /* a serial-number Basic ID with no text, then a CAA registration */
+        const char *mac4 = "\x80\xE1\x26\xFF\x00\x02";
+        put_text(d.BasicID[0].UASID, ODID_ID_SIZE, "");
+        put_text(d.BasicID[1].UASID, ODID_ID_SIZE, "FSW-CAA-TEST-0002");
+        d.BasicID[1].IDType = ODID_IDTYPE_CAA_REGISTRATION_ID;
+        d.BasicID[1].UAType = ODID_UATYPE_HELICOPTER_OR_MULTIROTOR;
+        d.BasicIDValid[1] = 1;
+        n = beacon(&d, mac4, "TEST-EMPTY", fr, sizeof(fr));
+        put_packet(f, 1700000000, fr, n, -47); fclose(f); return 0;
+    }
     if (!strcmp(kind, "nan")) {
         n = odid_wifi_build_message_pack_nan_action_frame(&d, mac1, 0, fr, sizeof(fr));
         if (n < 0) { fprintf(stderr, "nan build failed %d\n", n); return 1; }
