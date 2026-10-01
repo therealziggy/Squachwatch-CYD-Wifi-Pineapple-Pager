@@ -181,10 +181,21 @@ assert_empty "$(sw_test_rid_line | cut -f1-24 | _recs)" rid_rec_short_line_dropp
 assert_contains "$(sw_test_rid_line | _recs)" "drone_rid|" rid_rec_control_valid_line
 # S lines and anything else are ignored
 assert_empty "$(printf 'S\t1\t1\t1\t0\n' | _recs)" rid_rec_stats_line_ignored
-# the CSV cell helper gives exactly what _sw_csv_field gives
-for _v in "plain" "=SUM(1)" "+1" "-1" "@x" $'\tlead' $'\rlead' 'q"uote' $'trail\n\n' "" "a,b"; do
-  _sw_csv_cell "$_v"; assert_eq "$REPLY" "$(_sw_csv_field "$_v")" "csv_cell_matches_field_[$_v]"
-done
+# the CSV cell helper writes the cells the old _sw_csv_field wrote: each value is pinned to its literal cell
+# (a ' before a leading = + - @ TAB or CR, quotes doubled, trailing line breaks dropped)
+_pin() { _sw_csv_cell "$1"; assert_eq "$REPLY" "$2" "csv_cell_matches_field_[$1]"; }
+_pin "plain"      '"plain"'
+_pin "=SUM(1)"    $'"\'=SUM(1)"'
+_pin "+1"         $'"\'+1"'
+_pin "-1"         $'"\'-1"'
+_pin "@x"         $'"\'@x"'
+_pin $'\tlead'    $'"\'\tlead"'
+_pin $'\rlead'    $'"\'\rlead"'
+_pin 'q"uote'     '"q""uote"'
+_pin $'trail\n\n' '"trail"'
+_pin ""           '""'
+_pin "a,b"        '"a,b"'
+unset -f _pin
 # the owner's own drone (ignore.txt: drone:<its ID>) leaves no detection and no row
 rm -f "$_rl/remoteid.csv"
 assert_empty "$(sw_test_rid_line | SW_IGNORE_SET=" DRONE:0000FSWTEST000000001 " _recs)" rid_rec_ignored_no_detection
