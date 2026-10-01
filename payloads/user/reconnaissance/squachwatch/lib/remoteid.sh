@@ -199,7 +199,7 @@ _sw_rid_line_ok() {
 sw_rid_records() {
   local now="$1" csv="${SW_RID_FILE:-$2/remoteid.csv}" gps="" gps_read=0 line tabs
   local tag mac rssi forms it1 ih1 it2 ih2 ua st la lo ag ab ht hr sp vs hd pt pa po pl oi si extra
-  local MAC idt id idt2 id2 form air motion pilot detail
+  local MAC idt id idt2 id2 t1 t2 form air motion pilot detail
   local LC_ALL=C
   while IFS= read -r line || [ -n "$line" ]; do
     [ "${line:0:2}" = $'D\t' ] || continue
@@ -210,11 +210,19 @@ sw_rid_records() {
     sw_stopped && return 0
     if [ "$gps_read" -eq 0 ]; then gps="$(GPS_GET 2>/dev/null | tr ' ' ',')"; gps_read=1; fi
     sw_wifi_colonize "$mac"; MAC="$REPLY"
-    # the drone's ID: its serial number when it sends one (ID type 1), else its first Basic ID
-    if [ "$it2" = 1 ] && [ "$it1" != 1 ]; then idt="$it2"; sw_rid_text "$ih2"; id="$REPLY"; idt2="$it1"; sw_rid_text "$ih1"; id2="$REPLY"
-    else idt="$it1"; sw_rid_text "$ih1"; id="$REPLY"; idt2="$it2"; sw_rid_text "$ih2"; id2="$REPLY"; fi
-    # the owner's own drone (ignore.txt: drone:<ID>, or drone:<MAC> when it sends no ID) leaves no trace
-    sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id|$rssi" "${SW_IGNORE_SET:-}" && continue
+    # the drone's ID: the first one it sent with any text, a serial number (ID type 1) preferred; the other
+    # one, if any, is its second ID. An empty ID, or one of spaces only, is no ID.
+    sw_rid_text "$ih1"; t1="$REPLY"; sw_rid_text "$ih2"; t2="$REPLY"
+    if [ -n "$t2" ] && { [ -z "$t1" ] || { [ "$it2" = 1 ] && [ "$it1" != 1 ]; }; }; then
+      idt="$it2"; id="$t2"; idt2="$it1"; id2="$t1"
+    else idt="$it1"; id="$t1"; idt2="$it2"; id2="$t2"; fi
+    # The owner's own drone (ignore.txt) leaves no trace, but only when EVERY ID it sent is listed as
+    # drone:<ID>, or, when it sent none, its address as drone:<MAC>: a spoofer can send a copy of the owner's ID
+    # from another drone's address, and must not hide that drone with it (spec §4). id is empty only when id2 is.
+    if sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id|$rssi" "${SW_IGNORE_SET:-}" \
+       && { [ -z "$id2" ] || sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id2|$rssi" "${SW_IGNORE_SET:-}"; }; then
+      continue
+    fi
     form=""; [ $(( forms & 1 )) -ne 0 ] && form=beacon
     [ $(( forms & 2 )) -ne 0 ] && form="${form:+$form+}nan"; [ $(( forms & 4 )) -ne 0 ] && form="${form:+$form+}parrot"
     # the screen and alert detail: airframe, motion, pilot

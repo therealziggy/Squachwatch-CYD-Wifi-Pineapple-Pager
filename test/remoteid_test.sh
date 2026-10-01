@@ -306,6 +306,12 @@ assert_contains "$_det" "|0000FSWTEST000000001|" rid_rec_prefers_serial
 assert_contains "$(_csv1)" ',serial,"0000FSWTEST000000001",caa,"CAA",' rid_csv_second_id
 # forms: every form heard is named
 assert_contains "$(sw_test_rid_line forms=7 | _recs >/dev/null; _csv1)" ",beacon+nan+parrot," rid_csv_all_forms
+# The ID is the first one with any text, a serial number preferred (spec §3): an empty serial gives way to the
+# other ID, which then names the drone everywhere (screen, ledger, ignore list, remoteid.csv)
+_det="$(sw_test_rid_line id_type=1 id_hex= id2_type=2 id2_hex=434141 | _recs)"
+assert_contains "$_det" "|80:E1:26:AA:BB:CC|CAA|-47|" rid_rec_empty_serial_gives_way
+assert_contains "$(_csv1)" ',-47,caa,"CAA",,"",' rid_csv_empty_serial_gives_way
+assert_contains "$(sw_test_rid_line id_type=2 id_hex=434141 id2_type=1 id2_hex= | _recs)" "|CAA|" rid_rec_empty_second_serial_not_preferred
 
 # hostile IDs: they cannot forge a field, a line or a spreadsheet formula
 #   "=HYPERLINK(1)" -> the CSV cell starts with a quote mark, so a spreadsheet keeps it as text
@@ -348,6 +354,16 @@ assert_empty "$(sw_test_rid_line | SW_IGNORE_SET=" DRONE:0000FSWTEST000000001 " 
 assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_ignored_no_row
 # control: a plain address line never silences a drone (its address can change; anyone can send any)
 assert_contains "$(sw_test_rid_line | SW_IGNORE_SET=" 80:E1:26:AA:BB:CC " _recs)" "drone_rid|" rid_rec_plain_mac_not_ignored
+# A drone is silenced only when EVERY ID it sent is listed (user decision 2026-10-02): a spoofer can send a copy
+# of the owner's ID from another drone's address, and must not hide that drone with it
+_ign=" DRONE:0000FSWTEST000000001 "
+rm -f "$_rl/remoteid.csv"
+assert_contains "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign" _recs)" "|0000FSWTEST000000001|" rid_rec_shown_id_listed_other_not_reported
+assert_contains "$(_csv1)" ',serial,"0000FSWTEST000000001",caa,"CAA",' rid_rec_shown_id_listed_row_has_both
+assert_contains "$(sw_test_rid_line id_type=2 id_hex=434141 id2_type=1 id2_hex=3030303046535754455354303030303030303031 | SW_IGNORE_SET="$_ign" _recs)" "drone_rid|" rid_rec_serial_listed_caa_not_reported
+# control: with both listed it is silenced
+assert_empty "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign DRONE:CAA " _recs)" rid_rec_both_ids_listed_silenced
+unset _ign
 # a stopped payload writes and reports nothing
 bash -c 'exit 0' & _rd=$!; wait "$_rd"
 rm -f "$_rl/remoteid.csv"

@@ -221,7 +221,9 @@ sw_scan_once() {
           [ -n "$det" ] || continue
           # the payload was stopped mid-lap: nothing more on screen, in the CSV, or buzzing
           sw_stopped && exit 0
-          sw_ignored "$det" "$SW_IGNORE_SET" && continue
+          # A WiFi drone was checked against ignore.txt with every ID it sent, before its flight-track row
+          # (lib/remoteid.sh): its line carries only the ID it shows, so it is not checked again here.
+          case "$det" in "drone_rid|"*) ;; *) sw_ignored "$det" "$SW_IGNORE_SET" && continue ;; esac
           _sw_emit_capped "$det" "$now" "$SW_COOLDOWN" "$SW_SEEN_FILE" "$SW_LOOT_DIR"
           # a Stop that landed during that report: no follow escalation either
           sw_stopped && exit 0
