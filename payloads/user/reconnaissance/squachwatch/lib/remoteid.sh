@@ -162,18 +162,19 @@ sw_rid_dmps() {    # $1 = signed deci-m/s -> REPLY m/s, one decimal (the CSV)
   case "$a" in ''|*[!0-9]*) REPLY=""; return ;; esac
   REPLY="$sign$(( a / 10 )).$(( a % 10 ))"
 }
-sw_rid_text() {    # $1 = lowercase hex -> REPLY = text, cleaned by sw_sanitize_ident (the one boundary)
+sw_rid_text() {    # $1 = lowercase hex -> REPLY = text, cleaned by sw_sanitize_ident (the one boundary), and
+  # only then trimmed of spaces at both ends, so a control byte cannot shield one (all spaces: no text at all)
   local h="$1" e="" i
   for (( i = 0; i + 1 < ${#h}; i += 2 )); do e+="\\x${h:i:2}"; done
   printf -v REPLY '%b' "$e"
-  REPLY="${REPLY%"${REPLY##*[! ]}"}"
   sw_sanitize_ident "$REPLY"
+  REPLY="${REPLY#"${REPLY%%[! ]*}"}"; REPLY="${REPLY%"${REPLY##*[! ]}"}"
 }
 _sw_rid_name() {   # $1 = table, $2 = code -> REPLY = the standard's name, or the code when not in the table
   REPLY="$2"
   case "$1:$2" in
     id:0) REPLY=none ;; id:1) REPLY=serial ;; id:2) REPLY=caa ;; id:3) REPLY=utm ;; id:4) REPLY=session ;;
-    ua:0) REPLY="" ;; ua:1) REPLY=aeroplane ;; ua:2) REPLY=multirotor ;; ua:3) REPLY=gyroplane ;; ua:4) REPLY=vtol ;;
+    ua:0) REPLY=none ;; ua:1) REPLY=aeroplane ;; ua:2) REPLY=multirotor ;; ua:3) REPLY=gyroplane ;; ua:4) REPLY=vtol ;;
     ua:5) REPLY=ornithopter ;; ua:6) REPLY=glider ;; ua:7) REPLY=kite ;; ua:8) REPLY="free balloon" ;;
     ua:9) REPLY="captive balloon" ;; ua:10) REPLY=airship ;; ua:11) REPLY=parachute ;; ua:12) REPLY=rocket ;;
     ua:13) REPLY=tethered ;; ua:14) REPLY="ground obstacle" ;; ua:15) REPLY=other ;;
@@ -184,6 +185,7 @@ _sw_rid_name() {   # $1 = table, $2 = code -> REPLY = the standard's name, or th
 }
 # A D line's 24 fields, each checked before use (no leading zeros either: bash reads those as octal)
 _sw_rid_line_ok() {
+  [ -z "$extra" ] || return 1                               # a | inside a field split it: not the decoder's line
   local n='-?[1-9][0-9]{0,9}|0' u='[1-9][0-9]{0,4}' h='([0-9a-f]{2})'
   [[ "$mac" =~ ^[0-9a-f]{12}$ && "$rssi" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$forms" =~ ^[1-7]$ ]] || return 1
   [[ "$it1" =~ ^([0-9]|1[0-5])?$ && "$it2" =~ ^([0-9]|1[0-5])?$ && "$ua" =~ ^([0-9]|1[0-5])?$ ]] || return 1
@@ -225,8 +227,8 @@ sw_rid_records() {
     fi
     form=""; [ $(( forms & 1 )) -ne 0 ] && form=beacon
     [ $(( forms & 2 )) -ne 0 ] && form="${form:+$form+}nan"; [ $(( forms & 4 )) -ne 0 ] && form="${form:+$form+}parrot"
-    # the screen and alert detail: airframe, motion, pilot
-    air=""; [ -n "$ua" ] && { _sw_rid_name ua "$ua"; air="$REPLY"; }
+    # the screen and alert detail: airframe (nothing for a declared "none"), motion, pilot
+    air=""; [ -n "$ua" ] && [ "$ua" != 0 ] && { _sw_rid_name ua "$ua"; air="$REPLY"; }
     motion=""
     if [ -n "$ht" ]; then sw_rid_m "$ht"; motion="${REPLY}m up"
     elif [ -n "$ag" ]; then sw_rid_m "$ag"; motion="alt ${REPLY}m"; fi
@@ -250,7 +252,7 @@ _sw_rid_csv_row() {
   _sw_csv_cell "$id"; r+=",$REPLY"
   if [ -n "$id2" ]; then _sw_rid_name id "$idt2"; r+=",$REPLY"; else r+=","; fi
   _sw_csv_cell "$id2"; r+=",$REPLY"
-  r+=",$air"
+  if [ -n "$ua" ]; then _sw_rid_name ua "$ua"; r+=",$REPLY"; else r+=","; fi
   if [ -n "$st" ]; then _sw_rid_name st "$st"; r+=",$REPLY"; else r+=","; fi
   sw_rid_coord "$la" 7; r+=",$REPLY"; sw_rid_coord "$lo" 7; r+=",$REPLY"
   sw_rid_alt "$ag"; r+=",$REPLY"; sw_rid_alt "$ab"; r+=",$REPLY"; sw_rid_alt "$ht"; r+=",$REPLY"

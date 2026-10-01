@@ -277,6 +277,9 @@ sw_rid_mps 1200;          assert_eq "$REPLY" "12" rid_fmt_mps
 sw_rid_mps2 1225;         assert_eq "$REPLY" "12.25" rid_fmt_mps2
 sw_rid_dmps -25;          assert_eq "$REPLY" "-2.5" rid_fmt_dmps_negative
 sw_rid_text 3030303046535754455354303030303030303031; assert_eq "$REPLY" "0000FSWTEST000000001" rid_fmt_text
+# spaces trimmed at both ends AFTER the cleaning, so a control byte cannot shield one
+sw_rid_text 20414220;     assert_eq "$REPLY" "AB" rid_fmt_text_trimmed_both_ends
+sw_rid_text 41422001;     assert_eq "$REPLY" "AB" rid_fmt_text_trimmed_after_cleaning
 
 # a full drone: one detection (ID = the serial) and a remoteid.csv row with the full precision
 _det="$(sw_test_rid_line | _recs)"
@@ -306,6 +309,20 @@ assert_contains "$_det" "|0000FSWTEST000000001|" rid_rec_prefers_serial
 assert_contains "$(_csv1)" ',serial,"0000FSWTEST000000001",caa,"CAA",' rid_csv_second_id
 # forms: every form heard is named
 assert_contains "$(sw_test_rid_line forms=7 | _recs >/dev/null; _csv1)" ",beacon+nan+parrot," rid_csv_all_forms
+# an ID of a space and a control byte is no ID: the drone is known by its address, on screen, in the ledger and
+# on the ignore list alike (and a blank serial gives way to a CAA ID)
+_det="$(sw_test_rid_line id_hex=2001 | _recs)"
+assert_contains "$_det" "|80:E1:26:AA:BB:CC||-47|" rid_rec_blank_id_is_no_id
+assert_contains "$(_csv1)" ',-47,,"",' rid_csv_blank_id_is_no_id
+assert_empty "$(sw_test_rid_line id_hex=2001 | SW_IGNORE_SET=" DRONE:80:E1:26:AA:BB:CC " _recs)" rid_rec_blank_id_ignored_by_address
+assert_contains "$(sw_test_rid_line id_type=1 id_hex=2001 id2_type=2 id2_hex=434141 | _recs)" "|CAA|" rid_rec_blank_serial_gives_way
+# airframe "none" (ua_type 0) is a declared value: "none" in remoteid.csv and nothing on screen; no Basic ID at
+# all leaves the cell empty (spec §6.5)
+_det="$(sw_test_rid_line ua_type=0 | _recs)"
+assert_contains "$_det" "|-47|	87m up" rid_rec_airframe_none_not_shown
+assert_contains "$(_csv1)" ',"",none,airborne,' rid_csv_airframe_none
+sw_test_rid_line ua_type= | _recs >/dev/null
+assert_contains "$(_csv1)" ',"",,airborne,' rid_csv_airframe_unknown_empty
 # The ID is the first one with any text, a serial number preferred (spec §3): an empty serial gives way to the
 # other ID, which then names the drone everywhere (screen, ledger, ignore list, remoteid.csv)
 _det="$(sw_test_rid_line id_type=1 id_hex= id2_type=2 id2_hex=434141 | _recs)"
@@ -329,6 +346,9 @@ assert_contains "$(sw_test_rid_line id_hex=4142004344 | _recs)" "|AB|" rid_rec_t
 assert_empty "$(sw_test_rid_line lat=0473977600 | _recs)" rid_rec_leading_zero_dropped
 assert_empty "$(sw_test_rid_line mac=80e126aabbcz | _recs)" rid_rec_bad_mac_dropped
 assert_empty "$(sw_test_rid_line | cut -f1-24 | _recs)" rid_rec_short_line_dropped
+# a | inside the last field (the decoder never writes one) splits off an extra field: the line is dropped
+assert_empty "$(sw_test_rid_line self_id='61|62' | _recs)" rid_rec_extra_field_dropped
+assert_contains "$(sw_test_rid_line self_id=6162 | _recs)" "drone_rid|" rid_rec_extra_field_control
 # control: the same helper, unbroken, does produce a detection (the drops above are the checks, not the helper)
 assert_contains "$(sw_test_rid_line | _recs)" "drone_rid|" rid_rec_control_valid_line
 # S lines and anything else are ignored

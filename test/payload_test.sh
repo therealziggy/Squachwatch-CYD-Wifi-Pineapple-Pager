@@ -813,6 +813,11 @@ assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i" rid_lap_empty_
 _rid_reset; _rid_lap emptyserial
 assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone 'FSW-CAA-TEST-0002'" rid_lap_empty_serial_named_by_caa
 assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv")" ',beacon,80:E1:26:FF:00:02,-47,caa,"FSW-CAA-TEST-0002",,"",multirotor,' rid_lap_empty_serial_row
+# an ID that is a space and a control byte (hostile/blank_id.txt: 0x48-0x49 -> 2001, the rest zero) is no ID:
+# "Drone (no ID)" on screen, and the ledger keys it by its address
+_rid_reset; _rid_lap hostile/blank_id
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta Drone (no ID) 80:E1:26:AA:BB:CC -47dBm" rid_lap_blank_id_no_id
+assert_contains "$(cat "$SW_SEEN_FILE")" "80:E1:26:AA:BB:CC|drone_rid|" rid_lap_blank_id_keyed_by_address
 # the defaults, read in a clean process (a test that sets a value cannot see its default)
 assert_eq "$(env -u SW_REMOTE_ID -u SW_RID_IFACE -u SW_RID_SECONDS -u SW_RID_MAX_FRAMES -u SW_RID_MAX_DRONES -u SW_RID_FILE -u SW_LOOT_DIR \
   bash -c 'SW_TEST_SOURCE=1 . "$1"/payload.sh >/dev/null 2>&1; echo "$SW_REMOTE_ID|$SW_RID_IFACE|$SW_RID_SECONDS|$SW_RID_MAX_FRAMES|$SW_RID_MAX_DRONES|$SW_RID_FILE"' _ "$SW_ROOT")" \
