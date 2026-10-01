@@ -121,3 +121,130 @@ RIDAWK
 # stdin = tcpdump -t -nn -xx text -> the lines above; at most SW_RID_MAX_DRONES D lines (0 = no cap)
 _sw_rid_decode_awk() { awk -v max="${SW_RID_MAX_DRONES:-32}" "$(_sw_rid_awk_src)"; }
 
+# --- From the decoder's lines to detections and remoteid.csv rows (spec §6.3, §6.5) ---
+# Formatters: builtins only, bash integer arithmetic (no floats), answer in REPLY.
+sw_rid_coord() {   # $1 = raw 1e7 int, $2 = decimals (1-7) -> REPLY; "" when $1 is empty
+  local r="$1" sign="" a frac
+  case "$r" in -*) sign="-"; a="${r#-}" ;; *) a="$r" ;; esac
+  case "$a" in ''|*[!0-9]*) REPLY=""; return ;; esac
+  printf -v frac '%07d' $(( a % 10000000 ))
+  REPLY="$sign$(( a / 10000000 )).${frac:0:$2}"
+}
+sw_rid_alt() {     # $1 = raw uint16 encoding -> REPLY metres (enc * 0.5 - 1000), one decimal
+  case "$1" in ''|*[!0-9]*) REPLY=""; return ;; esac
+  local d=$(( $1 * 5 - 10000 )) sign="" a
+  case "$d" in -*) sign="-"; a="${d#-}" ;; *) a="$d" ;; esac
+  REPLY="$sign$(( a / 10 )).$(( a % 10 ))"
+}
+sw_rid_m() {       # $1 = raw uint16 encoding -> REPLY whole metres, rounded (the screen)
+  case "$1" in ''|*[!0-9]*) REPLY=""; return ;; esac
+  local d=$(( $1 * 5 - 10000 ))
+  if [ "$d" -ge 0 ]; then REPLY=$(( (d + 5) / 10 )); else REPLY=-$(( (5 - d) / 10 )); fi
+}
+sw_rid_mps() {     # $1 = centi-m/s -> REPLY whole m/s, rounded (the screen)
+  case "$1" in ''|*[!0-9]*) REPLY=""; return ;; esac
+  REPLY=$(( ($1 + 50) / 100 ))
+}
+sw_rid_mps2() {    # $1 = centi-m/s -> REPLY m/s, two decimals (the CSV)
+  case "$1" in ''|*[!0-9]*) REPLY=""; return ;; esac
+  printf -v REPLY '%d.%02d' $(( $1 / 100 )) $(( $1 % 100 ))
+}
+sw_rid_dmps() {    # $1 = signed deci-m/s -> REPLY m/s, one decimal (the CSV)
+  local d="$1" sign="" a
+  case "$d" in -*) sign="-"; a="${d#-}" ;; *) a="$d" ;; esac
+  case "$a" in ''|*[!0-9]*) REPLY=""; return ;; esac
+  REPLY="$sign$(( a / 10 )).$(( a % 10 ))"
+}
+sw_rid_text() {    # $1 = lowercase hex -> REPLY = text, cleaned by sw_sanitize_ident (the one boundary)
+  local h="$1" e="" i
+  for (( i = 0; i + 1 < ${#h}; i += 2 )); do e+="\\x${h:i:2}"; done
+  printf -v REPLY '%b' "$e"
+  REPLY="${REPLY%"${REPLY##*[! ]}"}"
+  sw_sanitize_ident "$REPLY"
+}
+_sw_rid_name() {   # $1 = table, $2 = code -> REPLY = the standard's name, or the code when not in the table
+  REPLY="$2"
+  case "$1:$2" in
+    id:0) REPLY=none ;; id:1) REPLY=serial ;; id:2) REPLY=caa ;; id:3) REPLY=utm ;; id:4) REPLY=session ;;
+    ua:0) REPLY="" ;; ua:1) REPLY=aeroplane ;; ua:2) REPLY=multirotor ;; ua:3) REPLY=gyroplane ;; ua:4) REPLY=vtol ;;
+    ua:5) REPLY=ornithopter ;; ua:6) REPLY=glider ;; ua:7) REPLY=kite ;; ua:8) REPLY="free balloon" ;;
+    ua:9) REPLY="captive balloon" ;; ua:10) REPLY=airship ;; ua:11) REPLY=parachute ;; ua:12) REPLY=rocket ;;
+    ua:13) REPLY=tethered ;; ua:14) REPLY="ground obstacle" ;; ua:15) REPLY=other ;;
+    st:0) REPLY=undeclared ;; st:1) REPLY=ground ;; st:2) REPLY=airborne ;; st:3) REPLY=emergency ;; st:4) REPLY=failure ;;
+    hr:0) REPLY=takeoff ;; hr:1) REPLY=ground ;;
+    pl:0) REPLY=takeoff ;; pl:1) REPLY=live ;; pl:2) REPLY=fixed ;;
+  esac
+}
+# A D line's 24 fields, each checked before use (no leading zeros either: bash reads those as octal)
+_sw_rid_line_ok() {
+  local n='-?[1-9][0-9]{0,9}|0' u='[1-9][0-9]{0,4}' h='([0-9a-f]{2})'
+  [[ "$mac" =~ ^[0-9a-f]{12}$ && "$rssi" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$forms" =~ ^[1-7]$ ]] || return 1
+  [[ "$it1" =~ ^([0-9]|1[0-5])?$ && "$it2" =~ ^([0-9]|1[0-5])?$ && "$ua" =~ ^([0-9]|1[0-5])?$ ]] || return 1
+  [[ "$st" =~ ^([0-9]|1[0-5])?$ && "$hr" =~ ^[01]?$ && "$pt" =~ ^[0-3]?$ ]] || return 1
+  [[ "$ih1" =~ ^$h{0,20}$ && "$ih2" =~ ^$h{0,20}$ && "$oi" =~ ^$h{0,20}$ && "$si" =~ ^$h{0,23}$ ]] || return 1
+  [[ "$la" =~ ^($n)?$ && "$lo" =~ ^($n)?$ && "$pa" =~ ^($n)?$ && "$po" =~ ^($n)?$ ]] || return 1
+  [[ "$ag" =~ ^($u)?$ && "$ab" =~ ^($u)?$ && "$ht" =~ ^($u)?$ && "$pl" =~ ^($u)?$ ]] || return 1
+  [[ "$sp" =~ ^(0|[1-9][0-9]{0,4})?$ && "$vs" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$hd" =~ ^(0|[1-9][0-9]{0,2})?$ ]]
+}
+# sw_rid_records <now> <loot dir>: stdin = the decoder's lines (only D lines are used) -> one remoteid.csv row
+# per drone, and one detection per drone on stdout:
+#   drone_rid|Drone|high|surveillance|wifi|<MAC>|<ID or empty>|<rssi>|<airframe>TAB<motion>TAB<pilot>
+sw_rid_records() {
+  local now="$1" csv="${SW_RID_FILE:-$2/remoteid.csv}" gps="" gps_read=0 line tabs
+  local tag mac rssi forms it1 ih1 it2 ih2 ua st la lo ag ab ht hr sp vs hd pt pa po pl oi si extra
+  local MAC idt id idt2 id2 form air motion pilot detail
+  local LC_ALL=C
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ "${line:0:2}" = $'D\t' ] || continue
+    tabs="${line//[^$'\t']/}"; [ "${#tabs}" -eq 24 ] || continue
+    # TAB is whitespace to `read`, so runs of empty fields would collapse: split on | (no field holds one)
+    IFS='|' read -r tag mac rssi forms it1 ih1 it2 ih2 ua st la lo ag ab ht hr sp vs hd pt pa po pl oi si extra <<< "${line//$'\t'/|}"
+    _sw_rid_line_ok || continue
+    sw_stopped && return 0
+    if [ "$gps_read" -eq 0 ]; then gps="$(GPS_GET 2>/dev/null | tr ' ' ',')"; gps_read=1; fi
+    sw_wifi_colonize "$mac"; MAC="$REPLY"
+    # the drone's ID: its serial number when it sends one (ID type 1), else its first Basic ID
+    if [ "$it2" = 1 ] && [ "$it1" != 1 ]; then idt="$it2"; sw_rid_text "$ih2"; id="$REPLY"; idt2="$it1"; sw_rid_text "$ih1"; id2="$REPLY"
+    else idt="$it1"; sw_rid_text "$ih1"; id="$REPLY"; idt2="$it2"; sw_rid_text "$ih2"; id2="$REPLY"; fi
+    # the owner's own drone (ignore.txt: drone:<ID>, or drone:<MAC> when it sends no ID) leaves no trace
+    sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id|$rssi" "${SW_IGNORE_SET:-}" && continue
+    form=""; [ $(( forms & 1 )) -ne 0 ] && form=beacon
+    [ $(( forms & 2 )) -ne 0 ] && form="${form:+$form+}nan"; [ $(( forms & 4 )) -ne 0 ] && form="${form:+$form+}parrot"
+    # the screen and alert detail: airframe, motion, pilot
+    air=""; [ -n "$ua" ] && { _sw_rid_name ua "$ua"; air="$REPLY"; }
+    motion=""
+    if [ -n "$ht" ]; then sw_rid_m "$ht"; motion="${REPLY}m up"
+    elif [ -n "$ag" ]; then sw_rid_m "$ag"; motion="alt ${REPLY}m"; fi
+    [ -n "$sp" ] && { sw_rid_mps "$sp"; motion="${motion:+$motion, }${REPLY}m/s"; }
+    pilot="no pilot location"
+    if [ -n "$pa" ] && [ -n "$po" ]; then
+      case "$pt" in 0) pilot="takeoff point" ;; 1) pilot="pilot (live)" ;; 2) pilot="pilot (fixed)" ;; *) pilot="pilot" ;; esac
+      sw_rid_coord "$pa" 5; pilot+=" $REPLY"; sw_rid_coord "$po" 5; pilot+=",$REPLY"
+    fi
+    detail="$air"$'\t'"$motion"$'\t'"$pilot"
+    _sw_rid_csv_row
+    printf 'drone_rid|Drone|high|surveillance|wifi|%s|%s|%s|%s\n' "$MAC" "$id" "$rssi" "$detail"
+  done
+}
+# one remoteid.csv row from sw_rid_records' variables (dynamic scope); the header is written first
+_sw_rid_csv_row() {
+  local r c
+  [ -f "$csv" ] || printf '%s\n' "time,form,mac,rssi,id_type,id,id2_type,id2,ua_type,status,lat,lon,alt_geo_m,alt_baro_m,height_m,height_ref,speed_mps,vspeed_mps,heading_deg,pilot_loc,pilot_lat,pilot_lon,pilot_alt_m,operator_id,self_id,gps" > "$csv"
+  r="$now,$form,$MAC,$rssi"
+  if [ -n "$id" ]; then _sw_rid_name id "$idt"; r+=",$REPLY"; else r+=","; fi
+  _sw_csv_cell "$id"; r+=",$REPLY"
+  if [ -n "$id2" ]; then _sw_rid_name id "$idt2"; r+=",$REPLY"; else r+=","; fi
+  _sw_csv_cell "$id2"; r+=",$REPLY"
+  r+=",$air"
+  if [ -n "$st" ]; then _sw_rid_name st "$st"; r+=",$REPLY"; else r+=","; fi
+  sw_rid_coord "$la" 7; r+=",$REPLY"; sw_rid_coord "$lo" 7; r+=",$REPLY"
+  sw_rid_alt "$ag"; r+=",$REPLY"; sw_rid_alt "$ab"; r+=",$REPLY"; sw_rid_alt "$ht"; r+=",$REPLY"
+  if [ -n "$hr" ]; then _sw_rid_name hr "$hr"; r+=",$REPLY"; else r+=","; fi
+  sw_rid_mps2 "$sp"; r+=",$REPLY"; sw_rid_dmps "$vs"; r+=",$REPLY"; r+=",$hd"
+  if [ -n "$pt" ]; then _sw_rid_name pl "$pt"; r+=",$REPLY"; else r+=","; fi
+  sw_rid_coord "$pa" 7; r+=",$REPLY"; sw_rid_coord "$po" 7; r+=",$REPLY"; sw_rid_alt "$pl"; r+=",$REPLY"
+  sw_rid_text "$oi"; _sw_csv_cell "$REPLY"; r+=",$REPLY"
+  sw_rid_text "$si"; _sw_csv_cell "$REPLY"; r+=",$REPLY"
+  _sw_csv_cell "$gps"; r+=",$REPLY"
+  printf '%s\n' "$r" >> "$csv"
+}

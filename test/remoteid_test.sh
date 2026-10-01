@@ -113,3 +113,88 @@ else
 fi
 unset _o _k _f _serial1 _serial2; unset -f _dec _rf _rs
 
+# --- from the decoder's lines to detections and remoteid.csv rows ---
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/rid.sh"    # sw_test_rid_line
+_rl="$(mktemp -d)"
+_recs() { SW_FAKE_GPS= SW_RID_FILE= sw_rid_records 1700000000 "$_rl"; }   # stdin = decoder lines; no GPS fix; rows in $_rl
+_csv1() { tail -1 "$_rl/remoteid.csv"; }
+
+# formatters
+sw_rid_coord 473977600 5; assert_eq "$REPLY" "47.39776" rid_fmt_coord5
+sw_rid_coord 473977600 7; assert_eq "$REPLY" "47.3977600" rid_fmt_coord7
+sw_rid_coord -1234567 7;  assert_eq "$REPLY" "-0.1234567" rid_fmt_coord_negative
+sw_rid_coord 0 5;         assert_eq "$REPLY" "0.00000" rid_fmt_coord_zero
+sw_rid_alt 2174;          assert_eq "$REPLY" "87.0" rid_fmt_alt
+sw_rid_alt 1999;          assert_eq "$REPLY" "-0.5" rid_fmt_alt_below_zero
+sw_rid_m 2174;            assert_eq "$REPLY" "87" rid_fmt_metres
+sw_rid_mps 1200;          assert_eq "$REPLY" "12" rid_fmt_mps
+sw_rid_mps2 1225;         assert_eq "$REPLY" "12.25" rid_fmt_mps2
+sw_rid_dmps -25;          assert_eq "$REPLY" "-2.5" rid_fmt_dmps_negative
+sw_rid_text 3030303046535754455354303030303030303031; assert_eq "$REPLY" "0000FSWTEST000000001" rid_fmt_text
+
+# a full drone: one detection (ID = the serial) and a remoteid.csv row with the full precision
+_det="$(sw_test_rid_line | _recs)"
+assert_eq "$_det" "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|multirotor	87m up, 12m/s	pilot (live) 47.39800,8.54102" rid_rec_detection
+assert_eq "$(head -1 "$_rl/remoteid.csv")" "time,form,mac,rssi,id_type,id,id2_type,id2,ua_type,status,lat,lon,alt_geo_m,alt_baro_m,height_m,height_ref,speed_mps,vspeed_mps,heading_deg,pilot_loc,pilot_lat,pilot_lon,pilot_alt_m,operator_id,self_id,gps" rid_csv_header
+assert_eq "$(_csv1)" '1700000000,beacon,80:E1:26:AA:BB:CC,-47,serial,"0000FSWTEST000000001",,"",multirotor,airborne,47.3977600,8.5454200,520.0,,87.0,takeoff,12.00,3.0,215,live,47.3980000,8.5410200,,"SWTESTOPERATOR01","",""' rid_csv_row
+assert_eq "$(wc -l < "$_rl/remoteid.csv" | tr -d ' ')" "2" rid_csv_one_row_one_header
+# with a GPS attached, every row also records the Pager's own fix (GPS_GET), so distances can be worked out later
+sw_test_rid_line | SW_FAKE_GPS="1.5 2.5" SW_RID_FILE= sw_rid_records 1700000000 "$_rl" >/dev/null
+assert_eq "$(_csv1 | awk -F'"' '{print $(NF-1)}')" "1.5,2.5" rid_csv_records_own_gps_fix
+# the pilot's location kinds, as the alert words them
+assert_contains "$(sw_test_rid_line pilot_type=0 | _recs)" "takeoff point 47.39800,8.54102" rid_rec_takeoff_point
+assert_contains "$(sw_test_rid_line pilot_type=2 | _recs)" "pilot (fixed) 47.39800,8.54102" rid_rec_pilot_fixed
+# no height: the geodetic altitude instead; no System message: "no pilot location"
+assert_contains "$(sw_test_rid_line height= | _recs)" "	alt 520m, 12m/s	" rid_rec_altitude_fallback
+_det="$(sw_test_rid_line pilot_type= pilot_lat= pilot_lon= | _recs)"
+assert_contains "$_det" "	no pilot location" rid_rec_no_pilot_location
+assert_eq "$(_csv1 | cut -d, -f20-22)" ",," rid_csv_no_pilot_cells_empty
+# every motion value unknown: the motion piece is empty, never "m up" with no number
+_det="$(sw_test_rid_line height= alt_geo= speed= | _recs)"
+assert_contains "$_det" "|multirotor		pilot (live)" rid_rec_unknown_motion_empty
+# no Basic ID: an empty ID (the drone is then known by its address)
+assert_eq "$(sw_test_rid_line id_type= id_hex= | _recs | cut -d'|' -f6-8)" "80:E1:26:AA:BB:CC||-47" rid_rec_no_id
+# two Basic IDs, the serial second: the serial is the ID, the other one goes in id2
+_det="$(sw_test_rid_line id_type=2 id_hex=434141 id2_type=1 id2_hex=3030303046535754455354303030303030303031 | _recs)"
+assert_contains "$_det" "|0000FSWTEST000000001|" rid_rec_prefers_serial
+assert_contains "$(_csv1)" ',serial,"0000FSWTEST000000001",caa,"CAA",' rid_csv_second_id
+# forms: every form heard is named
+assert_contains "$(sw_test_rid_line forms=7 | _recs >/dev/null; _csv1)" ",beacon+nan+parrot," rid_csv_all_forms
+
+# hostile IDs: they cannot forge a field, a line or a spreadsheet formula
+#   "=HYPERLINK(1)" -> the CSV cell starts with a quote mark, so a spreadsheet keeps it as text
+_det="$(sw_test_rid_line id_hex=3d48595045524c494e4b283129 | _recs)"
+assert_contains "$_det" "|=HYPERLINK(1)|" rid_rec_formula_id_in_detection
+assert_contains "$(_csv1)" ",\"'=HYPERLINK(1)\"," rid_csv_formula_guarded
+#   "a|b,c<LF>d\"e" -> the pipe and the line break are removed, the comma and the quote stay inside one cell
+_det="$(sw_test_rid_line id_hex=617c622c630a642265 | _recs)"
+assert_eq "$(printf '%s\n' "$_det" | grep -c .)" "1" rid_rec_hostile_one_line
+assert_contains "$_det" "|ab,cd\"e|" rid_rec_hostile_cleaned
+assert_contains "$(_csv1)" ',"ab,cd""e",' rid_csv_hostile_one_cell
+#   a zero byte inside the hex: the text ends there (a C string)
+assert_contains "$(sw_test_rid_line id_hex=4142004344 | _recs)" "|AB|" rid_rec_text_stops_at_zero
+# malformed lines are dropped: a leading zero (bash would read it as octal), a bad address, a field missing
+assert_empty "$(sw_test_rid_line lat=0473977600 | _recs)" rid_rec_leading_zero_dropped
+assert_empty "$(sw_test_rid_line mac=80e126aabbcz | _recs)" rid_rec_bad_mac_dropped
+assert_empty "$(sw_test_rid_line | cut -f1-24 | _recs)" rid_rec_short_line_dropped
+# control: the same helper, unbroken, does produce a detection (the drops above are the checks, not the helper)
+assert_contains "$(sw_test_rid_line | _recs)" "drone_rid|" rid_rec_control_valid_line
+# S lines and anything else are ignored
+assert_empty "$(printf 'S\t1\t1\t1\t0\n' | _recs)" rid_rec_stats_line_ignored
+# the CSV cell helper gives exactly what _sw_csv_field gives
+for _v in "plain" "=SUM(1)" "+1" "-1" "@x" $'\tlead' $'\rlead' 'q"uote' $'trail\n\n' "" "a,b"; do
+  _sw_csv_cell "$_v"; assert_eq "$REPLY" "$(_sw_csv_field "$_v")" "csv_cell_matches_field_[$_v]"
+done
+# the owner's own drone (ignore.txt: drone:<its ID>) leaves no detection and no row
+rm -f "$_rl/remoteid.csv"
+assert_empty "$(sw_test_rid_line | SW_IGNORE_SET=" DRONE:0000FSWTEST000000001 " _recs)" rid_rec_ignored_no_detection
+assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_ignored_no_row
+# control: a plain address line never silences a drone (its address can change; anyone can send any)
+assert_contains "$(sw_test_rid_line | SW_IGNORE_SET=" 80:E1:26:AA:BB:CC " _recs)" "drone_rid|" rid_rec_plain_mac_not_ignored
+# a stopped payload writes and reports nothing
+bash -c 'exit 0' & _rd=$!; wait "$_rd"
+rm -f "$_rl/remoteid.csv"
+assert_empty "$(sw_test_rid_line | SW_MAIN_PID="$_rd" _recs)" rid_rec_stopped_no_detection
+assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_stopped_no_csv
+rm -rf "$_rl"; unset _rl _det _v _rd; unset -f _recs _csv1
+

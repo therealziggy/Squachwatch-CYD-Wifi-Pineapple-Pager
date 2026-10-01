@@ -11,14 +11,19 @@ sw_log_init() {
 # (or a TAB/CR) is prefixed with a single quote so Excel/Sheets/LibreOffice treat it as
 # text, not a formula. The loot CSV is reviewed in spreadsheets and its ident field is an
 # attacker-chosen SSID/BLE name, so this closes an =HYPERLINK/DDE/WEBSERVICE vector.
-_sw_csv_field() {
+_sw_csv_field() { _sw_csv_cell "$1"; printf '%s' "$REPLY"; }
+
+# _sw_csv_cell: the same cell in REPLY, with builtins only, for callers that build many cells per row
+# (lib/remoteid.sh) and must not fork for each one.
+_sw_csv_cell() {
   local v="$1"
   case "$v" in
     [=+@-]*) v="'$v" ;;
     $'\t'*)  v="'$v" ;;
     $'\r'*)  v="'$v" ;;
   esac
-  printf '"%s"' "$(printf '%s' "$v" | sed 's/"/""/g')"
+  while [ "${v%$'\n'}" != "$v" ]; do v="${v%$'\n'}"; done   # as $( ) did: trailing line breaks dropped
+  REPLY="\"${v//\"/\"\"}\""
 }
 
 sw_log_write() {

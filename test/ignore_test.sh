@@ -33,3 +33,15 @@ sw_ignored 'evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:66|HomeNet|-38
 sw_ignored 'hacker_flipper|Flipper Zero|high|attacker|ble|02:11:22:33:44:66|Flipper|-60' "$_tset"; assert_eq "$?" "1" ignore_twin_entry_only_for_twins
 sw_ignored 'hacker_flipper|Flipper Zero|high|attacker|ble|02:11:22:33:44:55|Flipper|-60' "$_tset"; assert_eq "$?" "0" ignore_plain_entry_still_hides_other_kinds
 rm -rf "$_T"; unset _T _set _D _X _tset
+
+# A drone is silenced only by "drone:<its Remote ID>", or "drone:<MAC>" when it sends no ID (spec 2026-10-01
+# §4): any case, spaces ignored, as sw_load_ignore stores every line. A plain address never silences one.
+_igf="$(mktemp)"; printf '%s\n' '# my own drone' 'drone:0000fswtest000000001' 'drone:80:e1:26:44:55:66' '80:E1:26:AA:BB:CC' > "$_igf"
+_igs="$(sw_load_ignore "$_igf")"
+assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:99:99:99|0000FSWTEST000000001|-47|a	b	c" "$_igs" && echo drop || echo keep)" "drop" drone_ignored_by_id_at_any_address
+assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|0000FSWTEST000000002|-47|a	b	c" "$_igs" && echo drop || echo keep)" "keep" drone_plain_mac_never_silences
+assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:44:55:66||-60|a	b	c" "$_igs" && echo drop || echo keep)" "drop" drone_no_id_ignored_by_address
+assert_eq "$(sw_ignored "drone_rid|Drone|high|surveillance|wifi|80:E1:26:99:99:99|0000 FSWTEST 000000001|-47|a	b	c" "$_igs" && echo drop || echo keep)" "drop" drone_id_spaces_ignored
+# control: the plain address line still silences an ordinary device at that address
+assert_eq "$(sw_ignored "hacker_flipper|Flipper Zero|high|attacker|ble|80:E1:26:AA:BB:CC|x|-60" "$_igs" && echo drop || echo keep)" "drop" drone_control_plain_mac_still_works
+rm -f "$_igf"; unset _igf _igs
