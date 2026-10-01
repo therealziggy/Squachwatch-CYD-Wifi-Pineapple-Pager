@@ -38,7 +38,7 @@ $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
   next }
 { for (k = 2; k <= NF; k++) hex = hex $k }
 END { if (hex != "") decode(); emit() }
-function decode(  off, fc, hl, ie, id, ln, f, i, pk) {
+function decode(  off, fc, hl, ie, id, ln, f, i, pk, steps) {
   frames++
   if (length(hex) % 2) return
   off = le16(2)                                              # the radiotap length = where 802.11 starts
@@ -48,8 +48,10 @@ function decode(  off, fc, hl, ie, id, ln, f, i, pk) {
   hl = (b(off + 1) >= 128) ? 28 : 24                         # 4 more header bytes when the Order bit is set
   if (off + hl > nb()) return
   understood++
+  # cheap pre-test: only a frame holding ASD-STAN FA0BBC0D, the Parrot OUI or the NAN service id hash gets the walk
+  if (!index(hex, "fa0bbc0d") && !index(hex, "903ae6") && !index(hex, "8869199d9209")) return
   if (fc == 128) { ie = off + hl + 12                        # beacon: walk its elements
-    while (ie + 2 <= nb()) { id = b(ie); ln = b(ie + 1)
+    while (ie + 2 <= nb() && steps++ < 64) { id = b(ie); ln = b(ie + 1)   # at most 64 elements per frame
       if (ie + 2 + ln > nb()) break                          # one running past the end ends the walk
       if (id == 221 && ln >= 8) { f = 0
         if (b(ie + 2) == 250 && b(ie + 3) == 11 && b(ie + 4) == 188 && b(ie + 5) == 13) f = 1   # ASD-STAN FA:0B:BC, 0x0D
@@ -62,7 +64,7 @@ function decode(  off, fc, hl, ie, id, ln, f, i, pk) {
   i = off + hl
   if (b(i) != 4 || b(i + 1) != 9 || b(i + 2) != 80 || b(i + 3) != 111 || b(i + 4) != 154 || b(i + 5) != 19) return
   i = i + 6                                                  # the NAN attributes: id, 2-byte length, body
-  while (i + 3 <= nb()) { ln = le16(i + 1)
+  while (i + 3 <= nb() && steps++ < 64) { ln = le16(i + 1)   # at most 64 attributes per frame
     if (i + 3 + ln > nb()) break
     if (b(i) == 3 && ln >= 9 && b(i + 3) == 136 && b(i + 4) == 105 && b(i + 5) == 25 && b(i + 6) == 157 && b(i + 7) == 146 && b(i + 8) == 9) {
       pk = nanpack(i + 9, i + 3 + ln)                        # just after the service id hash
