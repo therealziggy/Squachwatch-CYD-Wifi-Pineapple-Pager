@@ -332,7 +332,7 @@ sw_rid_collect() {
   wait "$pid" 2>/dev/null
   # stopped during the window: drop the capture unread and report nothing (a relaunch owns the screen now)
   if sw_stopped; then rm -f "$cap" "$err"; return 0; fi
-  local l started=0 radio=0 pkts="" drops="" frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-1500}" st
+  local l started=0 radio=0 pkts="" drops="" stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-1500}" st
   [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
   while IFS= read -r l || [ -n "$l" ]; do
     case "$l" in
@@ -341,8 +341,9 @@ sw_rid_collect() {
       [0-9]*" packet dropped by kernel"|[0-9]*" packets dropped by kernel") drops="${l%% *}" ;;
     esac
   done < "$err"
+  # the decoder prints its stats line last, after its drone lines: without one it did not finish
   while IFS= read -r l || [ -n "$l" ]; do
-    case "$l" in S$'\t'*) IFS='|' read -r tag frames understood ridf more <<< "${l//$'\t'/|}" ;; esac
+    case "$l" in S$'\t'*) stats=1; IFS='|' read -r tag frames understood ridf more <<< "${l//$'\t'/|}" ;; esac
   done < "$cap"
   [[ "$frames" =~ ^[0-9]{1,9}$ ]] || frames=0; [[ "$understood" =~ ^[0-9]{1,9}$ ]] || understood=0
   [[ "$more" =~ ^[0-9]{1,9}$ ]] || more=0; [[ "$pkts" =~ ^[0-9]{1,9}$ ]] || pkts=""
@@ -350,14 +351,15 @@ sw_rid_collect() {
   # OFF first (nothing usable), then the two ways of being partly blind
   if [ "$started" -ne 1 ]; then st=capture_failed
   elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap
+  elif [ "$stats" -ne 1 ]; then st=not_understood                                   # the decoder did not finish
   elif [ "$frames" -ge 5 ] && [ "$understood" -eq 0 ]; then st=not_understood       # the format changed
   elif [ -n "$pkts" ] && [ "$pkts" -ge "$maxf" ]; then st=capped                    # the frame cap (a flood?)
   elif [ -n "$pkts" ] && [ "$frames" -lt "$pkts" ]; then st=lost                    # frames lost on the way
   elif [ "$drops" -gt 0 ]; then st=lost                                             # the kernel dropped some
   else st=ok; fi                                                                    # a lap with no frames too
   sw_rid_health_note "$st" "$now"
-  # An OFF status never comes with drones: bytes under another link type are not 802.11 frames. A partly blind
-  # capture reports what it heard.
+  # An OFF status never comes with drones: bytes under another link type are not 802.11 frames, and a decoder
+  # that did not finish is not trusted. A partly blind capture reports what it heard.
   case "$st" in
     capture_failed|not_understood) ;;
     *) sw_rid_records "$now" "$loot" < "$cap"

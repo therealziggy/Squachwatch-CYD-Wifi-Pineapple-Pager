@@ -433,6 +433,18 @@ assert_empty "$(grep -F 'WARN' "$SW_STUB_LOG")" cap_quiet_no_warn
 # no frames at all (a place with no WiFi) is ok too: "listening on" proves the capture ran
 _cap_reset; _cap "" >/dev/null
 assert_eq "$(_cap_state)" "ok" cap_no_frames_is_ok
+# A decoder that never finished (no stats line, which it prints last) is not understood, also in a lap with no
+# frames, where tcpdump's summary cannot show it. The test swaps in a decoder that prints nothing.
+# (controls: cap_no_frames_is_ok and cap_beacon_status_ok, the same captures with the real decoder)
+for _fx in "" beacon; do
+  _cap_reset
+  env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="${_fx:+$_RFIX/$_fx.txt}" bash -c '
+    source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
+    _sw_rid_awk_src() { echo "END { }"; }
+    sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot" >/dev/null
+  assert_eq "$(_cap_state)" "not_understood" "cap_dead_decoder_not_understood_[${_fx:-no frames}]"
+done
+unset _fx
 
 # a capture that never starts: one WARN, not one per lap; then a green line once it works again
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
