@@ -145,8 +145,10 @@ Then, per lap:
 - **Messages decoded** (25 bytes each, the type in the first byte's high nibble): Basic ID (`0x0`),
   Location/Vector (`0x1`), Self-ID (`0x3`), System (`0x4`), Operator ID (`0x5`). Authentication (`0x2`) and
   unknown types are skipped. A pack that holds none of these still counts: Remote ID was heard.
-- **Merging:** the frames of **one address** merge (the latest message of each type, the first two Basic
-  IDs, the strongest signal, every form it used). The decoder does **not** merge across addresses: that is
+- **Merging:** the frames of **one address** merge (the latest message of each type, the first two distinct
+  Basic IDs that hold text, the strongest signal, every form it used). A Basic ID with no text takes no
+  place, and one more distinct Basic ID flags the address (§6.2; user decision 2026-10-02, after the
+  re-review). The decoder does **not** merge across addresses: that is
   left to the ID-keyed cooldown (§4), which already collapses a drone whose address changes to one alert,
   within a lap and across laps alike. The only visible effect of an address change inside a single lap is
   one extra `remoteid.csv` row that lap (both rows carry the same ID). This keeps the decoder a single
@@ -157,7 +159,10 @@ Then, per lap:
   a UTM UUID or a session ID). The other one, if any, is its second ID. The text is cut at the first zero
   byte, cleaned, and trimmed of spaces at both ends: an ID left empty (an empty serial, or spaces and control
   bytes only) is **no ID**, so it gives way to the other one. A drone with no ID at all is known by its
-  address.
+  address. **When one of its two IDs is listed in `ignore.txt` and the other is not, the one not listed is
+  its ID** (user decision 2026-10-02, after the re-review): named by the owner's own ID, the alert would read
+  as the owner's drone with an ignore list that misfired. Its ID is the same everywhere: the screen, the
+  alert, the ledger key, `detections.csv` and the `id` cell of `remoteid.csv` (the other one is `id2`).
 - **Grade:** HIGH, class `surveillance` (magenta line and LED), with the buzz (user decision).
 
 ## 4. What the user sees
@@ -166,11 +171,14 @@ Then, per lap:
   `drone_rid|Drone|high|surveillance|wifi|<MAC>|<ID, or empty>|<signal>|<detail>`
   The detail field holds three pieces separated by TAB (a byte that cannot occur inside them, because every
   piece of text in them went through `sw_sanitize_ident`): the airframe type, the motion
-  (`87m up, 12m/s`) and the pilot (`pilot (live) 47.39776,8.54102`). Any piece may be empty.
+  (`87m up, 12m/s`) and the pilot (`pilot (live) 47.39776,8.54102`). Any piece may be empty. A drone whose
+  address sent more IDs than the decoder keeps (the flag, §6.2) has `also sends other IDs` first in its motion
+  piece, the piece shown both on the screen line and in the alert body (the airframe is only in the alert).
 - **Screen lines** (magenta), the second one printed only with the first:
   `Drone '0000FSWTEST000000001' AA:BB:CC:00:00:02 -61dBm`
   `  87m up, 12m/s, pilot (live) 47.39776,8.54102`
-  With no ID: `Drone (no ID) AA:BB:CC:00:00:02 -61dBm`.
+  With no ID: `Drone (no ID) AA:BB:CC:00:00:02 -61dBm`. Flagged: `  also sends other IDs, 87m up, 12m/s, …`
+  on the second line, and `multirotor, also sends other IDs, 87m up, 12m/s` in the alert.
 - **Full alert**, with the buzz and the magenta LED:
   ```
   Drone '0000FSWTEST000000001'
@@ -204,6 +212,17 @@ Then, per lap:
     gets no screen line and no row in either CSV. (`ignore.txt` lines lose their spaces and are upper-cased
     when loaded, so the ID is compared the same way.) The rule applies in `sw_rid_records`, which sees both
     IDs; the lap's emit loop does not check a drone again (its line carries only the one ID).
+  - **Never silenced: an address that sent more IDs than are kept** (the flag, §6.2), whatever is listed (user
+    decision 2026-10-02, after the re-review). The decoder keeps two IDs per address, and a spoofer whose
+    frames are heard first can fill both places with IDs that the list silences: the owner's ID twice, under
+    two ID types, as copies that only clean to it (lower case, a leading space, a control byte), or the
+    owner's two listed IDs. The other drone's own ID is then a third, so whenever it is heard the address is
+    flagged and the drone reported. With both kept IDs listed it is named by one of them (serial first, §3),
+    and `also sends other IDs` tells the owner it is not theirs. With the empty-ID rule (§3: an ID with no
+    text takes no place, so it cannot fill one), a copy of the owner's ID cannot hide another drone whose
+    own, different ID is heard. Limits: a drone that sends no ID of its own can still be hidden by a copy of
+    a listed ID sent from its address (the frames merge), and the owner's own drone is never silenced while
+    its address sends three or more different IDs.
   - AUTO SNOOZE and "following you" do not apply: a drone is not a tracker.
 - **Your own drone:** add `drone:<its ID>` to `ignore.txt`.
 - **Bluetooth Remote ID** is unchanged: the `fffa` rule (`surveillance_drone`, med) stays presence only. A
@@ -294,6 +313,11 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
     more either way; a heading above 360.
   - **Text** (IDs, operator ID, self-ID) leaves awk as lowercase hex, cut at the first zero byte, with
     trailing spaces dropped. awk never turns attacker bytes into text.
+- **Basic IDs, per address:** the first two distinct ones that hold text are kept, as `id` and `id2`
+  (distinct: another text, as bytes before any cleaning, or another ID type). One with no text takes no
+  place; it still gives the airframe when it is the address's first Basic ID. One more distinct ID sets the
+  address's flag, forms bit 8: it sent more IDs than are kept (§4 says why such a drone is never silenced).
+  The kept IDs heard again set nothing (added 2026-10-02, after the re-review).
 - **Merging** as in §3 (per address only), keeping at most `SW_RID_MAX_DRONES` addresses per lap (the
   strongest signals); the rest are only counted (`more_drones`).
 - **awk writes integers, empty, or lowercase hex only — never a float or decoded text.** Coordinates leave
@@ -306,7 +330,9 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
   no field can shift another:
   `D mac rssi forms id_type id_hex id2_type id2_hex ua_type status lat lon alt_geo alt_baro height height_ref speed vspeed heading pilot_type pilot_lat pilot_lon pilot_alt operator_id_hex self_id_hex`
   `S frames understood rid_frames more_drones`
-  (`forms` is a bit mask: 1 ASD-STAN beacon, 2 NAN, 4 Parrot beacon.)
+  (`forms` is a bit mask: the forms heard, 1 ASD-STAN beacon, 2 NAN, 4 Parrot beacon, plus 8 when the address
+  sent more distinct Basic IDs than the two kept: a flag, not a form. So it is 1 to 15; the 8 was added on
+  2026-10-02, the smallest change to the line, which keeps its 24 fields.)
 - Runs unchanged on mawk (the dev box) and BusyBox awk 1.36.1 (the Pager): hex digits through a lookup
   table, no gawk-only functions; a signed 32-bit value is built from its four bytes in floating point.
 
@@ -315,12 +341,15 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
 Per drone line (a handful per lap at most, never per frame):
 
 - Read with `LC_ALL=C`; check the line's shape (exactly 24 fields, nothing after the last, and each field
-  against its own pattern); drop any other line (defence in depth, as in the evil-twin check).
+  against its own pattern, `forms` 1 to 15); drop any other line (defence in depth, as in the evil-twin check).
 - `sw_stopped`: stop here, write nothing (before the lap's one `GPS_GET`, shared by its drones).
-- Hex text to bytes (`${h//??/\\x&}`, then `printf -v … %b`), then `sw_sanitize_ident`, the one cleaning
-  boundary, then the spaces at both ends trimmed (after the cleaning, so a control byte cannot shield one).
-- Choose the ID (§3); the ignore list (§4) checks every ID heard: a silenced drone is skipped entirely.
-- Build the three detail pieces (§4).
+- Hex text to bytes (a loop of builtins that writes each byte as `\xHH`, then `printf -v … %b`), then
+  `sw_sanitize_ident`, the one cleaning boundary, then the spaces at both ends trimmed (after the cleaning, so
+  a control byte cannot shield one).
+- Choose the ID (§3); the ignore list (§4) checks both kept IDs: a silenced drone is skipped entirely, and a
+  flagged one (forms bit 8) is never silenced. When exactly one of the two is listed, the other one becomes
+  the ID (§3).
+- Build the three detail pieces (§4); a flagged drone's motion piece starts with `also sends other IDs`.
 - `sw_stopped` again, right before the row: a Stop during the GPS read (a gpsd query on the device) writes
   nothing either.
 - Build and append its `remoteid.csv` row, and print the 9-field detection into the lap's detection stream
@@ -353,7 +382,8 @@ the capture code, so it shows above the drones it summarises; moving it to the e
 Header:
 `time,form,mac,rssi,id_type,id,id2_type,id2,ua_type,status,lat,lon,alt_geo_m,alt_baro_m,height_m,height_ref,speed_mps,vspeed_mps,heading_deg,pilot_loc,pilot_lat,pilot_lon,pilot_alt_m,operator_id,self_id,gps`
 
-- `form`: `beacon`, `nan`, `parrot`, joined with `+`.
+- `form`: `beacon`, `nan`, `parrot`, joined with `+` (the more-IDs flag is no form and is not written).
+- `id`, `id2`: the drone's ID and its second ID, as chosen in §3, so `id` is the ID of its alert.
 - Code fields are written as names from the standard's tables (`id_type`: none, serial, caa, utm, session;
   `ua_type`: none, aeroplane, multirotor, gyroplane, vtol, ornithopter, glider, kite, free balloon, captive
   balloon, airship, parachute, rocket, tethered, ground obstacle, other; `status`: undeclared, ground,
@@ -390,8 +420,9 @@ Header:
 
 ### 7.2 Per-lap capture status
 
-Like the Bluetooth note: a WARN only when the status **changes**, silent `ok` on the first lap, a green
-"recovered" line afterwards. State file `${SW_TMP_DIR:-/tmp}/sw_rid.state`.
+Like the Bluetooth note: a WARN only when the status **changes**, silent `ok` on the first lap, and after an
+OFF status a green "recovered" line in the next lap that captures, also when that lap is only partly blind
+(re-review 2026-10-02). State file `${SW_TMP_DIR:-/tmp}/sw_rid.state`.
 
 | Status | When | Line |
 |---|---|---|
@@ -462,10 +493,13 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   tcpdump text only, each edit written next to its test; `rid_hostile` decodes all the rejected ones before a
   good beacon): element lengths running past the frame; a pack with count 0 or 10,
   message size 24, or a declared size that does not fit; a NAN frame with the hash but a broken pack; the
-  ASD-STAN OUI with a type other than `0x0D`; Parrot's OUI with a random payload; IDs holding `|`, commas,
-  quotes, a line break, `%s`, `$(x)`, control bytes and bytes that are not UTF-8; coordinates out of range;
-  a beacon whose network name holds `-1dBm signal` and `SA:…`; and **a malformed frame before a good one**,
-  where the good one must still decode.
+  ASD-STAN OUI with a type other than `0x0D`; Parrot's OUI with a random payload; coordinates out of range;
+  a beacon whose network name holds `-1dBm signal` and `SA:…`; IDs that are empty or blank, and copies of a
+  listed ID (under another ID type, in lower case, after a space, with a control byte) sent before a real
+  drone's, in laps (§4); and **a malformed frame before a good one**, where the good one must still decode.
+  Each crafted frame decodes the same on BusyBox awk. Hostile ID **text** (`|`, commas, quotes, a line
+  break, `%s`, `$(x)`, control bytes, bytes that are not UTF-8) is tested on decoder lines in bash
+  (`sw_rid_records`), since the decoder passes any text on as hex.
 - **Unit tests:** exact decoded values against the generator's inputs; units and unknown values; merging;
   caps; the shape gate; sanitizing; the ignore lines; the ID-only ledger key; `remoteid.csv` quoting and the
   formula guard.
@@ -482,8 +516,10 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   step.
 - **Mutation:** each guard mutated must fail a test: the pack check, the bounds checks, the unknown-value
   handling, the sanitize call, the `drone:` ignore prefix, the ID-only ledger key, the shape gate, the
-  first-signal rule. (Twelve bounds checks in the decoder can never change its output, because a later
-  check catches the same input; they are marked "redundant" in the code and left out of this list, §15.)
+  first-signal rule, the empty-ID rule, the more-IDs flag and its never-silenced rule, the naming by the ID
+  not listed. (Twelve checks in the decoder can never change its output: for each, another check catches the
+  same input, or, for the cheap pre-test, it is only there for speed. They are marked "redundant" in the code
+  and left out of this list, §15.)
 - Every "nothing happened" assertion has a positive control in the same test: the fixture that must decode
   does.
 
@@ -549,6 +585,9 @@ Results go into `docs/superpowers/P0-findings.md`.
   `SW_COOLDOWN`).
 - At most 64 elements or attributes are read per frame: Remote ID after the 64th is not seen.
 - A drone that sends two IDs is silenced only by a line for each (§4).
+- A drone whose address sends three or more different IDs in a lap is never silenced, the owner's own
+  included; and a drone that sends no ID of its own can be hidden by a copy of a listed ID sent from its
+  address (§4).
 
 ## 13. Out of scope (later rounds)
 
@@ -616,7 +655,25 @@ round of fixes, each described in place above:
 6. **Tests:** every decoder guard that can change the output is pinned by a crafted frame
    (`test/fixtures/rid/hostile/`, tcpdump text only), on mawk and BusyBox awk, and removing any one of them
    fails a test. Twelve cannot change the output (20,000 fuzzed frames decoded the same without each, while
-   removing a real guard changed it): they stay as cheap belt-and-braces, each marked "redundant" in the code.
+   removing a real guard changed it): for each, another check catches the same input, or, for the cheap
+   pre-test, it is only there for speed; each is marked "redundant" in the code.
    Two more reference frames (`full`: every message type the decoder reads, two IDs, airframe "other";
    `emptyserial`) come from the reference library like the first ten.
 7. **Phase 0** gained the checks the reviews asked for (`P0-findings.md`, "Still to do on the Pager").
+
+## 16. After the re-review of those fixes (2026-10-02)
+
+The re-review found the ignore rule of §15 item 1 still beatable: a spoofer whose frames are heard first
+fills the decoder's two ID places with IDs the list silences, so the real drone's own ID is never seen. The
+user decided, and this round built, each described in place above:
+
+1. **More IDs than kept:** a third distinct Basic ID from one address sets the flag, forms bit 8 (§6.2), and a
+   flagged drone is never silenced; its alert and second screen line say `also sends other IDs` (§4).
+2. **An ID with no text takes no place** (§3, §6.2), so it cannot fill one.
+3. **The name:** when one of a drone's two IDs is listed and the other is not, the other names it (§3).
+4. **Health:** after an OFF status, the green "recovered" line also in a partly blind lap (§7.2).
+5. **Tests:** the re-review's four ways to hide a drone (the owner's ID with an empty one; the owner's ID
+   under two ID types; one frame holding both; the owner's two listed IDs) and three copies that only clean
+   to the owner's ID, each as a full lap that must alert, against a control lap with the real drone alone;
+   the owner's own drone sending its IDs again and again stays silent. Every crafted frame is decoded on
+   BusyBox awk too.

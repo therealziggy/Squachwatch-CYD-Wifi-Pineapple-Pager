@@ -641,8 +641,16 @@ Added by the final review (2026-10-02):
   1500. It needs the spread of beacon sizes on the Pager first, since the Remote ID data must then sit in the
   first 1024 bytes, radiotap header included. Not changed until measured.
 - Radiotap on `wlan1mon`: whether every header carries a `dBm signal` (without one, a network name could
-  only ever supply an out-of-range "signal", which the decoder now ignores), and whether the FCS flag is
-  set (up to 4 bytes of slack in the bounds checks).
+  supply the signal: an out-of-range one is now ignored, an in-range one is still taken), and whether the
+  FCS flag is set (up to 4 bytes of slack in the bounds checks).
+
+Added after the re-review (2026-10-02), for the "more IDs than kept" flag (an address that sends a third
+different Remote ID is never silenced by `ignore.txt`):
+
+- Whether `wlan1mon` passes frames that fail their checksum (FCS): a corrupted copy of a drone's ID would
+  count as one more ID and keep the owner's own drone from being silenced in that lap.
+- In the live test: how many different Basic IDs a real drone sends from one address within a lap. More than
+  two (a session ID that changes, say) would mean the owner can never silence that drone.
 - Awk parity: the md5 of the decoded fixtures (`test/fixtures/rid/*.txt` and `hostile/*.txt`) on the Pager's
   BusyBox awk against the dev box's.
 - A launcher-faithful probe with `test/stubs/tcpdump` and a hostile-ID fixture (no radio): whether the real
