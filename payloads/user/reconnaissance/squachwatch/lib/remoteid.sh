@@ -361,9 +361,10 @@ _sw_rid_csv_row() {
 _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)'; }
 
 # A WARN when the capture's status changes, like the BLE note. The two "partly blind" ones (capped: the frame
-# cap; lost: frames dropped by the kernel or lost on the way) share one WARN per SW_COOLDOWN and recover
-# silently. After an OFF status (capture_failed, not_understood) the next lap that captures, ok or partly blind,
-# says it recovered. $1 = ok | capture_failed | not_understood | capped | lost, $2 = now (epoch).
+# cap; lost: frames dropped by the kernel or lost on the way, or no summary from tcpdump to count them by) share
+# one WARN per SW_COOLDOWN and recover silently. After an OFF status (capture_failed, not_understood) the next
+# lap that captures, ok or partly blind, says it recovered. $1 = ok | capture_failed | not_understood | capped |
+# lost, $2 = now (epoch).
 # Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
   local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" cd="${SW_COOLDOWN:-600}"
@@ -440,13 +441,17 @@ sw_rid_collect() {
   [[ "$frames" =~ ^[0-9]{1,9}$ ]] || frames=0; [[ "$understood" =~ ^[0-9]{1,9}$ ]] || understood=0
   [[ "$more" =~ ^[0-9]{1,9}$ ]] || more=0; [[ "$pkts" =~ ^[0-9]{1,9}$ ]] || pkts=""
   [[ "$drops" =~ ^[0-9]{1,9}$ ]] || drops=0
-  # OFF first (nothing usable), then the two ways of being partly blind
+  # OFF first (nothing usable), then the ways of being partly blind. tcpdump prints its summary on the way out,
+  # at the TERM too, unless it was stuck writing to the decoder then (the decoder had fallen behind: a busy CPU, a
+  # flood, costly frames; Phase 0 on the Pager): with none, what was lost cannot be counted, and the rules after
+  # it cannot run, so it is "lost" itself (it used to read "ok")
   if [ "$started" -ne 1 ]; then st=capture_failed
   elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap
   elif [ "$stats" -ne 1 ]; then st=not_understood                                   # the decoder did not finish
   elif [ "$frames" -ge 5 ] && [ "$understood" -eq 0 ]; then st=not_understood       # the format changed
-  elif [ -n "$pkts" ] && [ "$pkts" -ge "$maxf" ]; then st=capped                    # the frame cap (a flood?)
-  elif [ -n "$pkts" ] && [ "$frames" -lt "$pkts" ]; then st=lost                    # frames lost on the way
+  elif [ -z "$pkts" ]; then st=lost                                                 # no summary from tcpdump
+  elif [ "$pkts" -ge "$maxf" ]; then st=capped                                      # the frame cap (a flood?)
+  elif [ "$frames" -lt "$pkts" ]; then st=lost                                      # frames lost on the way
   elif [ "$drops" -gt 0 ]; then st=lost                                             # the kernel dropped some
   else st=ok; fi                                                                    # a lap with no frames too
   sw_rid_health_note "$st" "$now"

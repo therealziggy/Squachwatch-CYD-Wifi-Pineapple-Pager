@@ -701,6 +701,11 @@ assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/multi.txt" _sum tcpdump -i wlan1mon -c 2)" 
 assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_CAPTURED=0 _sum tcpdump -i wlan1mon -c 1)" $'0 packets captured\n0 packets dropped by kernel' tcpdump_stub_zero_packets
 assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=1 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n1 packet dropped by kernel' tcpdump_stub_one_dropped
 assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=7 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n7 packets dropped by kernel' tcpdump_stub_seven_dropped
+# ...and, stuck writing to the decoder at the TERM (Phase 0 on the Pager), no summary: only the write error, after
+# the frames it printed (control: tcpdump_stub_one_packet, the same capture with its summary)
+assert_empty "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_NOSUMMARY=1 _sum tcpdump -i wlan1mon -c 1)" tcpdump_stub_no_summary
+assert_contains "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_NOSUMMARY=1 tcpdump -i wlan1mon -c 1 2>&1 >/dev/null)" "tcpdump: Unable to write output: Interrupted system call" tcpdump_stub_no_summary_says_why
+assert_contains "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_NOSUMMARY=1 tcpdump -i wlan1mon -c 1 2>/dev/null)" "-47dBm signal Beacon (TEST-DRONE)" tcpdump_stub_no_summary_frames_printed
 unset -f _sum
 
 # a beacon capture: one drone detection and a remoteid.csv row; only the health state is left behind
@@ -727,17 +732,20 @@ assert_empty "$(grep -F 'WARN' "$SW_STUB_LOG")" cap_quiet_no_warn
 _cap_reset; _cap "" >/dev/null
 assert_eq "$(_cap_state)" "ok" cap_no_frames_is_ok
 # A decoder that never finished (no stats line, which it prints last) is not understood, also in a lap with no
-# frames, where tcpdump's summary cannot show it. The test swaps in a decoder that prints nothing.
+# frames, where tcpdump's summary cannot show it, and also when tcpdump printed no summary either (the OFF statuses
+# come first, spec §7.2). The test swaps in a decoder that prints nothing.
 # (controls: cap_no_frames_is_ok and cap_beacon_status_ok, the same captures with the real decoder)
 for _fx in "" beacon; do
-  _cap_reset
-  env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="${_fx:+$_RFIX/$_fx.txt}" bash -c '
-    source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
-    _sw_rid_awk_src() { echo "END { }"; }
-    sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot" >/dev/null
-  assert_eq "$(_cap_state)" "not_understood" "cap_dead_decoder_not_understood_[${_fx:-no frames}]"
+  for _ns in "" 1; do
+    _cap_reset
+    env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="${_fx:+$_RFIX/$_fx.txt}" SW_FAKE_TCPDUMP_NOSUMMARY="$_ns" bash -c '
+      source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
+      _sw_rid_awk_src() { echo "END { }"; }
+      sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot" >/dev/null
+    assert_eq "$(_cap_state)" "not_understood" "cap_dead_decoder_not_understood_[${_fx:-no frames}${_ns:+, no summary}]"
+  done
 done
-unset _fx
+unset _fx _ns
 
 # a capture that never starts: one WARN, not one per lap; then a green line once it works again
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
@@ -764,6 +772,27 @@ assert_eq "$(grep -c 'WiFi capture lost frames (CPU busy?) — Remote ID partly 
 assert_contains "$_out" "|0000FSWTEST000000001|" cap_cut_short_reports_what_it_heard
 assert_empty "$(grep -F 'OFF' "$SW_STUB_LOG")" cap_cut_short_never_off
 
+# No summary at all: tcpdump was stuck writing to the decoder when the window's TERM came (the decoder had fallen
+# behind: a busy CPU, a beacon flood, costly frames) and ended without one (Phase 0 on the Pager, 2026-10-02), so
+# neither the frame cap nor lost frames can be counted. Partly blind: the same WARN, at most once per SW_COOLDOWN,
+# never "OFF", and what was heard still counts. Such a lap used to read "ok".
+# (control: cap_beacon_status_ok, the same capture with its summary)
+_cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_NOSUMMARY=1)"
+assert_eq "$(_cap_state)" "lost" cap_no_summary_status
+assert_eq "$(grep -c 'WiFi capture lost frames (CPU busy?) — Remote ID partly blind' "$SW_STUB_LOG")" "1" cap_no_summary_warns
+assert_contains "$_out" "|0000FSWTEST000000001|" cap_no_summary_reports_what_it_heard
+assert_empty "$(grep -F 'OFF' "$SW_STUB_LOG")" cap_no_summary_never_off
+_cap beacon SW_FAKE_TCPDUMP_NOSUMMARY=1 >/dev/null
+assert_eq "$(grep -c 'lost frames' "$SW_STUB_LOG")" "1" cap_no_summary_warns_once_per_cooldown
+# ...also in a lap with no frames: only the summary says that the capture ended as it should
+# (control: cap_no_frames_is_ok, the same lap with its summary)
+_cap_reset; _cap "" SW_FAKE_TCPDUMP_NOSUMMARY=1 >/dev/null
+assert_eq "$(_cap_state)" "lost" cap_no_summary_no_frames_status
+# ...while an OFF status still comes first (spec §7.2): a link type that is not 802.11 + radiotap is "not
+# understood" with no summary too (control: cap_wrong_link_status, the same with its summary)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_NOSUMMARY=1 SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)' >/dev/null
+assert_eq "$(_cap_state)" "not_understood" cap_no_summary_wrong_link_not_understood
+
 # 5 frames and none of them parses as a beacon or action frame: the format changed under us, the same WARN.
 # The frames are the quiet fixture's, five times, with the radiotap version byte (the first byte) changed from
 # 0 to 1. Controls: the same five unchanged are ok, and so are four changed ones (under 5 frames is no signal).
@@ -775,6 +804,9 @@ for _i in 1 2 3 4 5; do sed 's/0x0000:  00/0x0000:  01/' "$_RFIX/quiet.txt"; don
 _cap_reset; _cap "$_fr" >/dev/null
 assert_eq "$(_cap_state)" "not_understood" cap_format_changed_status
 assert_eq "$(grep -c 'WiFi capture not understood' "$SW_STUB_LOG")" "1" cap_format_changed_warns
+# ...also when tcpdump printed no summary (the OFF statuses come first)
+_cap_reset; _cap "$_fr" SW_FAKE_TCPDUMP_NOSUMMARY=1 >/dev/null
+assert_eq "$(_cap_state)" "not_understood" cap_no_summary_format_changed_not_understood
 for _i in 1 2 3 4; do sed 's/0x0000:  00/0x0000:  01/' "$_RFIX/quiet.txt"; done > "$_fr"
 _cap_reset; _cap "$_fr" >/dev/null; rm -f "$_fr"
 assert_eq "$(_cap_state)" "ok" cap_four_unparsed_is_ok

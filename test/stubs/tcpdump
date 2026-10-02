@@ -8,13 +8,19 @@
 #                          printed = output cut short on its way to the decoder)
 #   SW_FAKE_TCPDUMP_DROPPED=N
 #                          the summary reports N packets dropped by kernel (default 0)
+#   SW_FAKE_TCPDUMP_NOSUMMARY=1
+#                          no summary on the way out, only "Unable to write output": it was stuck writing to
+#                          the decoder, which had fallen behind, when the TERM came (seen on the Pager in
+#                          Phase 0, 2026-10-02; a decoder that quits, SIGPIPE, ends it the same way)
 # As the real tool does: "listening on ..." on stderr, at most -c N frames on stdout, then it runs until
 # TERM/INT (the payload's timeout) or the -c limit, and reports "N packets captured" on stderr on the way
-# out ("1 packet captured" for exactly one, as tcpdump words it). Self-limiting (30 s) if orphaned.
+# out ("1 packet captured" for exactly one, as tcpdump words it), from the moment it listens: a TERM that
+# comes while the frames are still being printed ends with a summary too (0 packets until they are counted).
+# Self-limiting (30 s) if orphaned.
 # The snapshot length (-s) is taken but not modelled: every fixture frame is shorter than the capture's 1024 bytes.
 echo "${0##*/} $*" >> "${SW_STUB_LOG:-/dev/null}"
 [ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
-iface=wlan1mon max=0 prev=""
+iface=wlan1mon max=0 prev="" n=0
 for a in "$@"; do
   case "$prev" in -i) iface="$a" ;; -c) max="$a" ;; esac
   prev="$a"
@@ -23,21 +29,24 @@ if [ -n "${SW_FAKE_TCPDUMP_FAIL:-}" ]; then
   echo "tcpdump: $iface: No such device exists" >&2
   exit 1
 fi
+# tcpdump's own wording is "%u packet%s ...": singular only for exactly 1 ("1 packet", "0 packets", "2 packets")
+summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-${n:-0}}" d="${SW_FAKE_TCPDUMP_DROPPED:-0}" s=s ds=s r rs=s
+  [ "$c" = 1 ] && s=
+  [ "$d" = 1 ] && ds=
+  r=$(( c + d )); [ "$r" = 1 ] && rs=
+  printf '%s packet%s captured\n%s packet%s received by filter\n%s packet%s dropped by kernel\n' "$c" "$s" "$r" "$rs" "$d" "$ds" >&2; }
+# the way out: on TERM/INT, at the -c limit, or after 30 s
+finish() {
+  if [ -n "${SW_FAKE_TCPDUMP_NOSUMMARY:-}" ]; then echo "tcpdump: Unable to write output: Interrupted system call" >&2; exit 1; fi
+  summary; exit 0; }
 echo "tcpdump: verbose output suppressed, use -v[v]... for full protocol decode" >&2
 echo "listening on $iface, link-type ${SW_FAKE_TCPDUMP_LINK:-IEEE802_11_RADIO (802.11 plus radiotap header)}, snapshot length 262144 bytes" >&2
-n=0
+trap finish TERM INT
 if [ -n "${SW_FAKE_TCPDUMP:-}" ]; then
   # one frame = a header line and its hex lines; at most -c frames, as tcpdump stops there
   awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } max > 0 && f > max { exit } { print }' "$SW_FAKE_TCPDUMP"
   n="$(awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } END { print (max > 0 && f > max) ? max : f + 0 }' "$SW_FAKE_TCPDUMP")"
 fi
-# tcpdump's own wording is "%u packet%s ...": singular only for exactly 1 ("1 packet", "0 packets", "2 packets")
-summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-$n}" d="${SW_FAKE_TCPDUMP_DROPPED:-0}" s=s ds=s r rs=s
-  [ "$c" = 1 ] && s=
-  [ "$d" = 1 ] && ds=
-  r=$(( c + d )); [ "$r" = 1 ] && rs=
-  printf '%s packet%s captured\n%s packet%s received by filter\n%s packet%s dropped by kernel\n' "$c" "$s" "$r" "$rs" "$d" "$ds" >&2; }
-if [ "$max" -gt 0 ] && [ "$n" -ge "$max" ]; then summary; exit 0; fi
-trap 'summary; exit 0' TERM INT
+if [ "$max" -gt 0 ] && [ "${n:-0}" -ge "$max" ]; then finish; fi
 end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done
-summary
+finish
