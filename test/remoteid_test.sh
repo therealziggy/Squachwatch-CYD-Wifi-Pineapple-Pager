@@ -289,6 +289,12 @@ _hpar third_id_flags "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt"
 _o="$(_hd "$_RH/owner_id.txt" "$_RH/owner_caa.txt" "$_RFIX/beacon.txt")"
 assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "9/1/$_own/2/$_own" rid_h_same_text_other_type_flags
 _hpar same_text_other_type "$_RH/owner_id.txt" "$_RH/owner_caa.txt" "$_RFIX/beacon.txt"
+# ...also when it is the third: id_0002_caa is id_0002 as a CAA registration (0x47 12->22), the second kept ID's
+# text under another type, so it flags the address (re-review 2026-10-02, Minor 2: compared by text only, it
+# would not)
+_o="$(_hd "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0002_caa.txt")"
+assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "9/$_serial1/1/$_serial2" rid_h_third_id_other_type_flags
+_hpar third_id_other_type "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0002_caa.txt"
 # texts that bash cleans into the owner's ID are other IDs here (the decoder sees bytes): each copy after owner_id,
 # then the beacon, flags the address. owner_lower: 0x4c-0x57 lowercased; owner_space: 0x48-0x5b a space and then
 # the ID; owner_ctrl: 0x5b 00->01, a control byte after the ID
@@ -318,8 +324,8 @@ if command -v busybox >/dev/null 2>&1; then
     assert_eq "$(busybox awk -v max=32 "$(_sw_rid_awk_src)" < "$_f")" "$(_sw_rid_decode_awk < "$_f")" "rid_busybox_parity_hostile_$(basename "$_f" .txt)"
     _k=$(( _k + 1 ))
   done
-  # control: the loop saw every crafted frame (55 committed), so its passes are not vacuous
-  assert_eq "$_k" "55" rid_busybox_parity_hostile_count
+  # control: the loop saw every crafted frame (56 committed), so its passes are not vacuous
+  assert_eq "$_k" "56" rid_busybox_parity_hostile_count
 else
   fail "rid_busybox_parity: busybox not installed (sudo apt install busybox)"
 fi
@@ -480,6 +486,9 @@ assert_eq "$(sw_test_rid_line forms=9 | SW_IGNORE_SET="$_ign" _recs)" "drone_rid
 assert_contains "$(_csv1)" '1700000000,beacon,80:E1:26:AA:BB:CC,-47,serial,"0000FSWTEST000000001",,"",' rid_csv_more_ids_row
 # ...with both IDs listed: named serial first, as when neither is (the note tells the owner it is not theirs)
 assert_contains "$(sw_test_rid_line forms=9 id_type=2 id_hex=434141 id2_type=1 id2_hex=3030303046535754455354303030303030303031 | SW_IGNORE_SET="$_ign DRONE:CAA " _recs)" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|multirotor	also sends other IDs, " rid_rec_more_ids_both_listed_reported
+# ...with one of the two listed, named by the other, as an unflagged drone is (re-review 2026-10-02, Minor 2: in an
+# attack the real drone is heard first half the time, and its own ID then sits beside the owner's)
+assert_contains "$(sw_test_rid_line forms=9 id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign" _recs)" "|80:E1:26:AA:BB:CC|CAA|-47|multirotor	also sends other IDs, " rid_rec_more_ids_one_listed_named_by_the_other
 # ...and with no ID, not by its address either
 assert_contains "$(sw_test_rid_line forms=9 id_type= id_hex= | SW_IGNORE_SET=" DRONE:80:E1:26:AA:BB:CC " _recs)" "|80:E1:26:AA:BB:CC||-47|multirotor	also sends other IDs, " rid_rec_more_ids_no_id_not_silenced_by_address
 # the note alone when no motion value is known; the flag is no form, so remoteid.csv names only the forms (1 + 2)
