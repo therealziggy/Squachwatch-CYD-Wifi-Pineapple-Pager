@@ -32,10 +32,12 @@ sw_test_rid_at() {
   esac
 }
 # sw_test_rid_id FILE HEX prints the frame in FILE, laid out as the reference beacon, with its first Basic ID's
-# 20 bytes (0x48-0x5b) made HEX (lowercase, at most 40 digits), zero-filled: a TEXT edit of the committed fixture.
-# A fixture it cannot edit that way is an error (rc 1).
+# 20 bytes (0x48-0x5b) made HEX (lowercase, whole bytes, at most 20), zero-filled: a TEXT edit of the committed
+# fixture. Other HEX, or a fixture it cannot edit that way, is an error (rc 1).
 sw_test_rid_id() {
   local h="$2" t=$'\t' g out
+  case "$h" in *[!0-9a-f]*) echo "sw_test_rid_id: HEX is lowercase hex digits" >&2; return 1 ;; esac
+  if [ $(( ${#h} % 2 )) -ne 0 ] || [ "${#h}" -gt 40 ]; then echo "sw_test_rid_id: HEX is whole bytes, at most 20" >&2; return 1; fi
   while [ "${#h}" -lt 40 ]; do h+=0; done
   g=("${h:0:4}" "${h:4:4}" "${h:8:4}" "${h:12:4}" "${h:16:4}" "${h:20:4}" "${h:24:4}" "${h:28:4}" "${h:32:4}" "${h:36:4}")
   out="$(sed -e "s/^\(${t}0x0040:  bc0d 00f2 1904 02[0-9a-f][0-9a-f]\) [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\}\$/\1 ${g[0]} ${g[1]} ${g[2]} ${g[3]}/" \

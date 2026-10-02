@@ -529,6 +529,13 @@ assert_eq "$(sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 80e126aabbcc -47)" "$(
 assert_eq "$(sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20 | _sw_rid_decode_awk | grep '^D' | cut -f2-6)" "02aabbcc0001	-20	1	1	30303030465357544553544f574e4552303031" rid_at_control_moves_the_frame
 assert_contains "$(sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20)" $'\t0x0000:  0000 0900 2000 0000 ec80 ' rid_at_control_radiotap_signal
 assert_eq "$(sw_test_rid_at "$_RFIX/nan.txt" 02aabbcc0001 -20 2>/dev/null; echo "rc=$?")" "rc=1" rid_at_refuses_another_layout
+# sw_test_rid_id (the same file) writes another ID into a frame, a text edit. Controls: given the frame's own ID it
+# prints the committed file unchanged; a new ID reaches the decoder; another layout, half a byte or more than 20
+# bytes are refused
+assert_eq "$(sw_test_rid_id "$_RFIX/beacon.txt" 3030303046535754455354303030303030303031)" "$(cat "$_RFIX/beacon.txt")" rid_id_control_identity
+assert_eq "$(sw_test_rid_id "$_RFIX/beacon.txt" d094d0a0d09ed09d | _sw_rid_decode_awk | grep '^D' | cut -f2,6)" "80e126aabbcc	d094d0a0d09ed09d" rid_id_control_writes_the_id
+assert_eq "$(sw_test_rid_id "$_RFIX/nan.txt" 41 2>/dev/null; echo "rc=$?")" "rc=1" rid_id_refuses_another_layout
+assert_eq "$(sw_test_rid_id "$_RFIX/beacon.txt" 414 2>/dev/null; echo "rc=$?")/$(sw_test_rid_id "$_RFIX/beacon.txt" 414141414141414141414141414141414141414141 2>/dev/null; echo "rc=$?")" "rc=1/rc=1" rid_id_refuses_half_a_byte_or_too_long
 # _rank IGNORE CAP: decodes $_hf on this box's awk and on BusyBox awk (the Pager's), under ignore list IGNORE and
 # drone cap CAP -> REPLY = the addresses of its drone lines in order, then "/" and its more_drones count; _rb is 1
 # when the two awks printed the same, byte for byte
@@ -600,10 +607,10 @@ _rank "$_oign" 32; assert_eq "${REPLY%% *}|${REPLY##*/}|$_rb" "80e126aabbcc|1|1"
 #    a text edit), then the real drone, at cap 1. The decoder ranks that address last exactly when sw_rid_records
 #    silences it (b: X cleans to nothing) and not when bash reports it under X (n). b: a space and a C0 control,
 #    DEL, "|", the C1 controls NEL and APC, U+2028, U+2029, NEL between spaces, NEL split by a C0 control, U+2028
-#    split by a C1 control. n: "--", a lone c2, a lone 85, NBSP, an unfinished U+2028, U+202A, "ДРОН", ff, binary
-#    UUID bytes.
+#    split by a C1 control. n: "--", a lone c2, a lone 85, NBSP, c2 a8 (no C1 control), an unfinished U+2028,
+#    U+202A, "ДРОН", ff, binary UUID bytes.
 for _x in b:2001 b:7f b:7c b:c285 b:c29f b:e280a8 b:e280a9 b:20c28520 b:c20185 b:e2c28080a8 \
-          n:2d2d n:c2 n:85 n:c2a0 n:e280 n:e280aa n:d094d0a0d09ed09d n:ff n:8f12a3c4e5079b212e3f8091a2b3c4d5; do
+          n:2d2d n:c2 n:85 n:c2a0 n:c2a8 n:e280 n:e280aa n:d094d0a0d09ed09d n:ff n:8f12a3c4e5079b212e3f8091a2b3c4d5; do
   { sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0007 -20
     sw_test_rid_at <(sw_test_rid_id "$_RFIX/beacon.txt" "${_x#*:}") 02aabbcc0007 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
   _rank "$_oign" 1
@@ -641,6 +648,9 @@ done
 #     tab or line break, and nothing is expanded
 SW_IGNORE_SET=" DRONE: DRONE:0000FSWTESTOWNER001 " _sw_rid_keys
 assert_eq "$REPLY" " :0000FSWTESTOWNER001 " rid_keys_bare_drone_line_no_key
+#     ...also in a caller that ends on the first failing command (set -e): reading the list stops at its end with
+#     status 1, which must not end that shell (adversarial re-review 2026-10-02)
+assert_eq "$(set -e; SW_IGNORE_SET=" DRONE:A " _sw_rid_keys; echo "survived$REPLY")" "survived :A " rid_keys_survive_errexit
 for _l in C.UTF-8 en_US.UTF-8; do
   LC_ALL="$_l" SW_IGNORE_SET=" DRONE:ı1 DRONE:ſX DRONE:É2 DRONE:A	DRONE:B
 DRONE:* " _sw_rid_keys 2>/dev/null

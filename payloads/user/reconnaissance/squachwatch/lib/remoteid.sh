@@ -143,9 +143,11 @@ function idkey(h,  r, j, c) { r = ""
   return r }
 # Does hex text h clean to nothing in sw_rid_records? Its steps, byte for byte: sw_sanitize_ident in the C locale
 # ("|", the C0 controls and DEL; then the C1 controls, c2 80..9f; then U+2028/2029, e2 80 a8/a9; each step on what
-# the one before left), then the spaces at both ends trimmed, so only spaces may be left.
+# the one before left), then the spaces at both ends trimmed, so only spaces may be left. A byte that no step can
+# remove and that is no space ends it at once (the rest is only there for the bytes some step can remove).
 function blank(h,  j, c, s, u) { s = ""; u = ""
   for (j = 1; j < length(h); j += 2) { c = hx[substr(h, j, 1)] * 16 + hx[substr(h, j + 1, 1)]
+    if (c > 32 && c != 124 && c != 127 && c != 194 && c != 226 && c != 168 && c != 169 && (c < 128 || c > 159)) return 0
     if (c >= 32 && c != 124 && c != 127) s = s substr(h, j, 2) }
   for (j = 1; j < length(s); j += 2) {
     c = (j + 2 < length(s)) ? hx[substr(s, j + 2, 1)] * 16 + hx[substr(s, j + 3, 1)] : 0
@@ -193,7 +195,7 @@ _sw_rid_decode_awk() { _sw_rid_keys; awk -v max="${SW_RID_MAX_DRONES:-32}" -v ig
 _sw_rid_keys() {
   local LC_ALL=C w words
   REPLY=" "
-  IFS=$' \t\n' read -r -d '' -a words <<< "${SW_IGNORE_SET:-}"
+  IFS=$' \t\n' read -r -d '' -a words <<< "${SW_IGNORE_SET:-}" || :   # status 1 at the list's end: not a failure
   for w in "${words[@]}"; do
     case "$w" in
       DRONE:?*) w="${w#DRONE:}"; w="${w//[!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]/}"
