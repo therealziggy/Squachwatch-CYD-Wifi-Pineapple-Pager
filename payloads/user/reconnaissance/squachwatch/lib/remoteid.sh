@@ -238,7 +238,8 @@ _sw_rid_name() {   # $1 = table, $2 = code -> REPLY = the standard's name, or th
 _sw_rid_line_ok() {
   [ -z "$extra" ] || return 1                               # a | inside a field split it: not the decoder's line
   local n='-?[1-9][0-9]{0,9}|0' u='[1-9][0-9]{0,4}' h='([0-9a-f]{2})'
-  [[ "$mac" =~ ^[0-9a-f]{12}$ && "$rssi" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$forms" =~ ^([1-9]|1[0-5])$ ]] || return 1
+  # forms: 1 to 15, but not 8 (the flag alone: every address the decoder reports was heard in some form)
+  [[ "$mac" =~ ^[0-9a-f]{12}$ && "$rssi" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$forms" =~ ^([1-79]|1[0-5])$ ]] || return 1
   [[ "$it1" =~ ^([0-9]|1[0-5])?$ && "$it2" =~ ^([0-9]|1[0-5])?$ && "$ua" =~ ^([0-9]|1[0-5])?$ ]] || return 1
   [[ "$st" =~ ^([0-9]|1[0-5])?$ && "$hr" =~ ^[01]?$ && "$pt" =~ ^[0-3]?$ ]] || return 1
   [[ "$ih1" =~ ^$h{0,20}$ && "$ih2" =~ ^$h{0,20}$ && "$oi" =~ ^$h{0,20}$ && "$si" =~ ^$h{0,23}$ ]] || return 1

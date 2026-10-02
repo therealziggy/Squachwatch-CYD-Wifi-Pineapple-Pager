@@ -496,10 +496,13 @@ assert_contains "$(sw_test_rid_line forms=11 height= alt_geo= speed= | _recs)" "
 assert_contains "$(_csv1)" ',beacon+nan,80:E1:26:AA:BB:CC,' rid_csv_more_ids_not_a_form
 # no flag, no note (every form bit set)
 assert_empty "$(sw_test_rid_line forms=7 | _recs | grep -F 'other IDs')" rid_rec_no_flag_no_note
-# the shape gate takes forms 1 to 15 (three form bits and the flag) and drops anything else
+# the shape gate takes forms 1 to 15 (three form bits and the flag) and drops anything else, 8 too: the flag with
+# no form, which the decoder cannot write, since every address it reports was heard in some form (re-review
+# 2026-10-02, Minor 4). Controls: 7 and 9 on either side are taken (rid_csv_all_forms, rid_rec_more_ids_*).
 assert_contains "$(sw_test_rid_line forms=15 | _recs)" "|0000FSWTEST000000001|" rid_rec_forms_15_taken
 assert_empty "$(sw_test_rid_line forms=16 | _recs)" rid_rec_forms_16_dropped
 assert_empty "$(sw_test_rid_line forms=0 | _recs)" rid_rec_forms_0_dropped
+assert_empty "$(sw_test_rid_line forms=8 | _recs)" rid_rec_forms_8_dropped
 unset _ign
 
 # The per-lap drone cap (SW_RID_MAX_DRONES) chooses LAST the addresses that the ignore list may silence (re-review
