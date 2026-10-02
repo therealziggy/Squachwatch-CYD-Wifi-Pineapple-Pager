@@ -218,11 +218,25 @@ Then, per lap:
     two ID types, as copies that only clean to it (lower case, a leading space, a control byte), or the
     owner's two listed IDs. The other drone's own ID is then a third, so whenever it is heard the address is
     flagged and the drone reported. With both kept IDs listed it is named by one of them (serial first, §3),
-    and `also sends other IDs` tells the owner it is not theirs. With the empty-ID rule (§3: an ID with no
-    text takes no place, so it cannot fill one), a copy of the owner's ID cannot hide another drone whose
-    own, different ID is heard. Limits: a drone that sends no ID of its own can still be hidden by a copy of
-    a listed ID sent from its address (the frames merge), and the owner's own drone is never silenced while
-    its address sends three or more different IDs.
+    and `also sends other IDs` tells the owner it is not theirs.
+  - **Chosen last by the drone cap: the addresses the list may silence** (§6.2; user decision 2026-10-02, after
+    the second re-review: "rank, never silence"). The decoder keeps at most `SW_RID_MAX_DRONES` addresses per
+    lap, and it chooses them before `sw_rid_records` applies the list: before this rule, copies of a listed ID
+    sent from that many louder addresses took every place, were silenced, and pushed the other drone out of
+    the lap (no alert, no row, only the `...and N more drones` line). Now every address that will be reported
+    comes before them. This only orders the lines: the decoder silences nothing, and a near miss it ranks with
+    the listed ones (an ID that differs from a listed one only in characters other than ASCII letters and
+    digits; with a listed ID that has neither, any ID that has neither) is reported whenever it is kept.
+  - **So**, with the empty-ID rule (§3: an ID with no text takes no place, so it cannot fill one), copies of the
+    owner's ID cannot hide another drone whose own ID is heard, whether they are sent from its address or from
+    many louder ones. It is named by one of the two IDs kept from its address (§3: the one not listed when only
+    one is; otherwise the first, a serial preferred, so a spoofer heard first can make it show one of the
+    spoofer's IDs). Limits: a drone that sends no ID of its own can still be hidden by a copy of a listed ID
+    sent from its address (the frames merge); the owner's own drone is never silenced while its address sends
+    three or more different IDs; a drone whose own ID is a near miss of a listed one is ranked with the listed
+    ones; `SW_RID_MAX_DRONES` or more other addresses that the list does not silence, each at least as strong,
+    push a weaker drone out (a flood that is reported itself); and a frame flood that reaches
+    `SW_RID_MAX_FRAMES` leaves the lap partly blind, with its WARN (§7.2).
   - AUTO SNOOZE and "following you" do not apply: a drone is not a tracker.
 - **Your own drone:** add `drone:<its ID>` to `ignore.txt`.
 - **Bluetooth Remote ID** is unchanged: the `fffa` rule (`surveillance_drone`, med) stays presence only. A
@@ -318,8 +332,29 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
   place; it still gives the airframe when it is the address's first Basic ID. One more distinct ID sets the
   address's flag, forms bit 8: it sent more IDs than are kept (§4 says why such a drone is never silenced).
   The kept IDs heard again set nothing (added 2026-10-02, after the re-review).
-- **Merging** as in §3 (per address only), keeping at most `SW_RID_MAX_DRONES` addresses per lap (the
-  strongest signals); the rest are only counted (`more_drones`).
+- **Merging** as in §3 (per address only), keeping at most `SW_RID_MAX_DRONES` addresses per lap; the rest
+  are only counted (`more_drones`). No cap (`0`) prints every address, in the order heard.
+- **Which addresses the cap keeps** (added 2026-10-02, after the second re-review): the strongest signals,
+  except that the addresses the ignore list may silence come after all the others. The decoder's second input
+  (`-v ignkeys`, besides `max`) is the list's `drone:` words as keys, built by bash once per lap
+  (`_sw_rid_keys`, in time linear in the list): each one's ASCII letters and digits, upper case, after a `:`
+  (one with neither gives the key ""; a bare `drone:`, which silences nothing, gives none), and nothing else,
+  so no byte reaches awk that `-v` would read as an escape. An address **may be silenced** when it is not
+  flagged and every kept ID that bash would name the drone by has its key (its ASCII letters and digits, upper
+  case) listed, or, when bash would name it by none, when the address itself is listed (`drone:<MAC>`). Bash
+  names a drone by any kept ID that does not clean to nothing (§6.3), so the decoder follows that cleaning
+  byte for byte to tell which: an ID with no ASCII letter or digit (a binary UTM UUID, a non-Latin or a
+  punctuation-only ID) still counts, with the key "" (which only a listed ID with neither gives), and one that
+  cleans to nothing does not. `sw_rid_records` compares the whole cleaned ID, without spaces and upper-cased
+  in the C locale, and the cleaning only removes bytes that are neither letters nor digits, so every drone it
+  silences is one that may be silenced, and the only others are near misses: an ID that differs from a listed
+  one only in characters other than ASCII letters and digits (a dash added, say; with a listed ID that has
+  neither, every ID that has neither). The cleaning check stops at the first byte that no step can remove and
+  that is no space. The test only orders: every address chosen gets its line, and bash alone silences, so a
+  near miss is reported whenever it is kept. Each address's place is worked out once (its signal, less 10000
+  when it may be silenced). With no `drone:` key, nothing is looked up. (Rebuilt after an adversarial review
+  the same day: the first version counted an ID with no ASCII letter or digit as one that may clean to
+  nothing, so one copy of the owner's ID sent from a drone with such an ID made it rank last.)
 - **awk writes integers, empty, or lowercase hex only — never a float or decoded text.** Coordinates leave
   as the raw signed 1e7 int, altitudes/height as the raw `uint16` encoding, speed as centi-m/s, vertical
   speed as deci-m/s, heading in whole degrees; bash does the unit maths and the decimal formatting (§6.3).
@@ -331,8 +366,9 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
   `D mac rssi forms id_type id_hex id2_type id2_hex ua_type status lat lon alt_geo alt_baro height height_ref speed vspeed heading pilot_type pilot_lat pilot_lon pilot_alt operator_id_hex self_id_hex`
   `S frames understood rid_frames more_drones`
   (`forms` is a bit mask: the forms heard, 1 ASD-STAN beacon, 2 NAN, 4 Parrot beacon, plus 8 when the address
-  sent more distinct Basic IDs than the two kept: a flag, not a form. So it is 1 to 15; the 8 was added on
-  2026-10-02, the smallest change to the line, which keeps its 24 fields.)
+  sent more distinct Basic IDs than the two kept: a flag, not a form. So it is 1 to 7 or 9 to 15, never 8
+  alone, since every address was heard in some form; the 8 was added on 2026-10-02, the smallest change to the
+  line, which keeps its 24 fields.)
 - Runs unchanged on mawk (the dev box) and BusyBox awk 1.36.1 (the Pager): hex digits through a lookup
   table, no gawk-only functions; a signed 32-bit value is built from its four bytes in floating point.
 
@@ -341,7 +377,10 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
 Per drone line (a handful per lap at most, never per frame):
 
 - Read with `LC_ALL=C`; check the line's shape (exactly 24 fields, nothing after the last, and each field
-  against its own pattern, `forms` 1 to 15); drop any other line (defence in depth, as in the evil-twin check).
+  against its own pattern, `forms` 1 to 15 but not 8, the flag alone); drop any other line (defence in depth,
+  as in the evil-twin check). The C locale also keeps the ID comparison byte for byte, which the drone cap's
+  ranking relies on (§6.2): in a UTF-8 locale, upper-casing would turn a long s into an S and silence a
+  lookalike of a listed ID that the decoder does not rank last.
 - `sw_stopped`: stop here, write nothing (before the lap's one `GPS_GET`, shared by its drones).
 - Hex text to bytes (a loop of builtins that writes each byte as `\xHH`, then `printf -v … %b`), then
   `sw_sanitize_ident`, the one cleaning boundary, then the spaces at both ends trimmed (after the cleaning, so
@@ -467,7 +506,8 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
 - text leaves awk as hex and becomes text only through `sw_sanitize_ident`, then `_sw_csv_cell` for the CSV;
 - every record line is shape-checked before use;
 - the signal comes from the header's first match only, the address from frame bytes only;
-- caps on frames and on drones per lap.
+- caps on frames and on drones per lap; the drone cap chooses last the addresses the ignore list may silence,
+  so copies of a listed ID cannot take the places of the drones that will be reported (§6.2).
 
 ### 7.5 CPU
 
@@ -475,6 +515,13 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
 - Budget (Phase 0 measures it, A/B against the current build like the evil-twin round): **at most 1 s added
   to a lap at the author's home** (the evil-twin round added 0.7 s), and a lap at the frame cap adds at most
   about 5 s of CPU.
+- The drone cap's choice (§6.2) looks each address's IDs up in the list's keys, only when the list has a
+  `drone:` line. Its worst cases on the dev box (decoder only, cap 32, mean of 5 runs): 1,500 frames from 1,500
+  addresses that all send a listed ID take 118 ms on mawk and 862 ms on BusyBox awk, against 118 and 783 ms
+  before the ranking (+10% on BusyBox); 750 addresses that each also send a binary ID with no letter or digit
+  take 114 and 829 ms, against 104 and 733 (+13%). With no `drone:` line the choice costs less than before (98
+  and 748 ms for the first input), since each address's place is worked out once. The Pager's cost is for
+  Phase 0 to measure.
 
 ## 8. Testing
 
@@ -496,13 +543,19 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   ASD-STAN OUI with a type other than `0x0D`; Parrot's OUI with a random payload; coordinates out of range;
   a beacon whose network name holds `-1dBm signal` and `SA:…`; IDs that are empty or blank, and copies of a
   listed ID (under another ID type, in lower case, after a space, with a control byte) sent before a real
-  drone's, in laps (§4); and **a malformed frame before a good one**, where the good one must still decode.
+  drone's, in laps (§4); copies of a listed ID from 32 louder addresses, a near miss (the owner's ID with a
+  dash) and an ID with no letter or digit, each moved to its own address by a text edit at test time
+  (`sw_test_rid_at`), at small drone caps in the decoder and in laps (§6.2); 20 IDs with no ASCII letter or
+  digit (ten that clean to nothing, ten that do not, among them "ДРОН" and binary UUID bytes) written into the
+  reference beacon at test time (`sw_test_rid_id`), each sent with the owner's ID, where the decoder's ranking
+  must agree with what `sw_rid_records` does; and **a malformed frame before a good one**, where the good one
+  must still decode.
   Each crafted frame decodes the same on BusyBox awk. Hostile ID **text** (`|`, commas, quotes, a line
   break, `%s`, `$(x)`, control bytes, bytes that are not UTF-8) is tested on decoder lines in bash
   (`sw_rid_records`), since the decoder passes any text on as hex.
 - **Unit tests:** exact decoded values against the generator's inputs; units and unknown values; merging;
-  caps; the shape gate; sanitizing; the ignore lines; the ID-only ledger key; `remoteid.csv` quoting and the
-  formula guard.
+  caps, and which addresses the drone cap keeps; the shape gate; sanitizing; the ignore lines and their keys;
+  the ID-only ledger key; `remoteid.csv` quoting and the formula guard.
 - **End to end:** a payload lap with a **tcpdump stub that models the device** (`listening on … link-type
   IEEE802_11_RADIO` on stderr; prints the fixture; exits on TERM with `N packets captured`; honours `-c`; the
   failure modes above). It asserts the detection, both screen lines, the alert text, one `detections.csv`
@@ -510,16 +563,20 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   cooldown.
 - **Stop:** a Stop inside the window exits 0 quickly, reports nothing afterwards, and leaves no files after
   the next start (the existing Stop harness).
-- **Performance:** the decoder over 1,500 frames, 300 of them Remote ID, within a time budget on the dev box;
-  plus the static check that bash forks nothing per frame (it only runs per drone).
+- **Performance:** the decoder over 1,500 frames, 300 of them Remote ID, within a time budget on the dev box,
+  and over 1,500 addresses for the drone cap to rank (§7.5); plus the static check that bash forks nothing per
+  frame (it only runs per drone).
 - **Portability:** the awk program under mawk and the dev box's BusyBox awk; parity on the Pager is a Phase 0
   step.
 - **Mutation:** each guard mutated must fail a test: the pack check, the bounds checks, the unknown-value
   handling, the sanitize call, the `drone:` ignore prefix, the ID-only ledger key, the shape gate, the
   first-signal rule, the empty-ID rule, the more-IDs flag and its never-silenced rule, the naming by the ID
-  not listed. (Twelve checks in the decoder can never change its output: for each, another check catches the
-  same input, or, for the cheap pre-test, it is only there for speed. They are marked "redundant" in the code
-  and left out of this list, §15.)
+  not listed, each part of the drone cap's ranking (removed, reversed, or turned into silencing, which a near
+  miss reported within the cap catches), and each step of the cleaning it follows. The shortcut that skips the
+  ranking when the list has no `drone:` key only saves time (with no key, nothing may be silenced), and the C
+  locale of `_sw_rid_keys` is defence in depth (its letters are named one by one). (Twelve checks in the
+  decoder can never change its output: for each, another check catches the same input, or, for the cheap
+  pre-test, it is only there for speed. They are marked "redundant" in the code and left out of this list, §15.)
 - Every "nothing happened" assertion has a positive control in the same test: the fixture that must decode
   does.
 
@@ -579,7 +636,10 @@ Results go into `docs/superpowers/P0-findings.md`.
 - Bluetooth Remote ID stays presence only (medium, no buzz); Bluetooth 5 long range is not covered. A drone
   on both radios shows up twice, once per radio.
 - A drone that sends no ID is keyed by its address, so a new address means a new alert.
-- At most `SW_RID_MAX_DRONES` drones per lap get rows and lines.
+- At most `SW_RID_MAX_DRONES` drones per lap get rows and lines: the strongest, those the ignore list may
+  silence chosen last (§6.2), so copies of a listed ID cannot push another drone out; that many or more other
+  drones the list does not silence, each at least as strong, can push a weaker one out (a flood that is
+  reported itself).
 - A beacon flood hits the frame cap (with a WARN), and Remote ID is then partly blind. So is a lap whose
   frames were dropped by the kernel or lost on the way (a WARN of its own; the two share one per
   `SW_COOLDOWN`).
@@ -587,7 +647,9 @@ Results go into `docs/superpowers/P0-findings.md`.
 - A drone that sends two IDs is silenced only by a line for each (§4).
 - A drone whose address sends three or more different IDs in a lap is never silenced, the owner's own
   included; and a drone that sends no ID of its own can be hidden by a copy of a listed ID sent from its
-  address (§4).
+  address (§4). A drone whose own ID differs from a listed one only in characters other than ASCII letters
+  and digits is ranked with the listed ones by the drone cap, though reported whenever it is kept (§6.2); with a
+  listed ID that has neither, that is every drone whose own ID has neither.
 
 ## 13. Out of scope (later rounds)
 
@@ -677,3 +739,30 @@ user decided, and this round built, each described in place above:
    to the owner's ID, each as a full lap that must alert, against a control lap with the real drone alone;
    the owner's own drone sending its IDs again and again stays silent. Every crafted frame is decoded on
    BusyBox awk too.
+
+## 17. After the second re-review (2026-10-02)
+
+The second re-review found one more way to hide a drone: the per-lap drone cap ran before the ignore list, so
+32 copies of the owner's ID, each from its own louder address, took every place, were silenced, and pushed the
+real drone out of the lap (no alert, no row, only the count line). The user decided "rank, never silence", and
+this round built it, each described in place above:
+
+1. **The drone cap chooses last the addresses the list may silence** (§4, §6.2): bash hands the decoder the
+   list's `drone:` lines as keys; the decoder only orders, and bash alone silences.
+2. **The shape gate** takes `forms` 1 to 15 but not 8, the flag with no form, which the decoder cannot write
+   (§6.2, §6.3).
+3. **Tests:** the re-review's lap (32 louder copies: the real drone alerts, with its rows), its 31-copy
+   control, the same copies with nothing listed (a visible flood, as before), and the copies together with a
+   spoofer at the real drone's own address; decoder tests at small caps for each part of the rule (a near
+   miss, an address listed as `drone:<MAC>`, a flagged address, blank IDs beside a listed one, lower case, an
+   ID with no letter or digit), each on BusyBox awk too; and two rules of the previous round that no test
+   pinned (a flagged drone with one listed ID is named by the other; a third ID that differs from the second
+   only by its ID type sets the flag).
+4. **After an adversarial review of the ranking** (the same day): an ID with no ASCII letter or digit counts as
+   one bash names the drone by unless it cleans to nothing, which the decoder now tells by following the
+   cleaning byte for byte (the first version let one copy of the owner's ID, sent from a drone with such an ID,
+   make it rank last); a bare `drone:` gives no key; the keys are built in linear time (they took about 3 s a
+   lap for a 4,000-line list); each address's place is worked out once. The C locale of `sw_rid_records` is now
+   pinned by a test, since the ranking relies on it (mutant B02, until then counted as equivalent, is killed).
+   A second adversarial review found no break; after it, the keys survive a caller's `set -e`, and the cleaning
+   check stops at the first byte no step can remove.
