@@ -709,8 +709,11 @@ assert_contains "$_out" "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:C
 assert_contains "$(tail -1 "$_cap_loot/remoteid.csv")" "1700000000,beacon,80:E1:26:AA:BB:CC,-47,serial," cap_beacon_csv_row
 assert_eq "$(_cap_state)" "ok" cap_beacon_status_ok
 assert_empty "$(ls -A "$_cap_dir" | grep -v '^sw_rid\.state$')" cap_leaves_no_capture_files
-# tcpdump ran read only (-p), on the configured interface, without clock times (-t), with the frame cap
-assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon -p -l -t -nn -xx -c 1500 type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)" cap_tcpdump_args
+# tcpdump ran read only (-p), on the configured interface, without clock times (-t), keeping only the first 1024
+# bytes of each frame (-s 1024), with the frame cap (300 by default). Phase 0 on the Pager (2026-10-02): no beacon
+# heard there came near 1024 bytes (the largest was 526), a crafted 4 KB frame cut to 1024 costs the decoder about 8
+# times less, and an ordinary beacon costs about 15 ms, so 300 frames are about 4.6 s of CPU (1500 were about 23 s)
+assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon -p -l -t -nn -xx -s 1024 -c 300 type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)" cap_tcpdump_args
 # ...on the interface SW_RID_IFACE names, not a fixed one
 _cap_reset; _cap beacon SW_RID_IFACE=wlan7mon >/dev/null
 assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan7mon -p " cap_tcpdump_follows_the_setting
@@ -787,6 +790,16 @@ assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "1" cap_capped_warns
 # ...and again once the cooldown has passed (SW_COOLDOWN=0: every capped lap may warn)
 _cap multi SW_RID_MAX_FRAMES=1 SW_COOLDOWN=0 >/dev/null
 assert_eq "$(grep -c 'hit its frame limit' "$SW_STUB_LOG")" "2" cap_capped_warns_again_after_cooldown
+# ...at the default cap, 300 (the quiet fixture's beacon 300 times, the setting unset), and with a setting that is
+# not a plain number ("abc"), which gives the default at both ends: tcpdump's -c and the count the lap is judged by.
+# (control: cap_five_beacons_status_ok, fewer frames than the cap)
+for _i in $(seq 300); do cat "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" >/dev/null
+assert_eq "$(_cap_state)" "capped" cap_capped_at_the_default
+_cap_reset; _cap "$_fr" SW_RID_MAX_FRAMES=abc >/dev/null
+assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" " -c 300 " cap_frame_cap_setting_checked
+assert_eq "$(_cap_state)" "capped" cap_capped_setting_checked
+rm -f "$_fr"
 # Frames the kernel dropped (tcpdump's "N packets dropped by kernel": the CPU did not keep up) leave Remote ID
 # partly blind: a WARN at most once per SW_COOLDOWN, like the frame cap, and what was heard still counts.
 # (control: cap_beacon_status_ok, the same capture with 0 dropped)

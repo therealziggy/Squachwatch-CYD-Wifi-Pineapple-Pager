@@ -391,23 +391,26 @@ _sw_rid_say() { sw_stopped || LOG "$@" 2>/dev/null; }
 # $1 = the lap's start (epoch). Starts this lap's capture in the background and leaves SW_RID_PID,
 # SW_RID_CAP and SW_RID_ERR for sw_rid_collect, which must run in the SAME shell (it waits for the PID).
 # Read only: -p, and never -I: recon keeps the interface. -l so no line sits in a buffer at a signal, -t so
-# no clock time is printed. It ends by itself: timeout TERMs tcpdump after SW_RID_SECONDS (awk then reaches
-# the end of its input and prints its lines), or -c stops it; an orphaned capture still ends within
-# SW_RID_SECONDS + 2 s. Nothing here is ever found or stopped by name.
+# no clock time is printed. -s 1024: only the first 1024 bytes of a frame, radiotap header included, so Remote
+# ID placed further in is not seen (Phase 0 on the Pager, 2026-10-02: no beacon heard there came near it, the
+# largest 526 bytes, and a crafted 4 KB frame cut to 1024 costs the decoder about 8 times less). It ends by
+# itself: timeout TERMs tcpdump after SW_RID_SECONDS (awk then reaches the end of its input and prints its
+# lines), or -c stops it; an orphaned capture still ends within SW_RID_SECONDS + 2 s. Nothing here is ever
+# found or stopped by name.
 sw_rid_start() {
   SW_RID_PID=""; SW_RID_CAP=""; SW_RID_ERR=""
   [ "${SW_REMOTE_ID:-0}" = 1 ] || return 0
   command -v tcpdump >/dev/null 2>&1 || return 0
   sw_stopped && return 0
-  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-1500}" maxd="${SW_RID_MAX_DRONES:-32}" cap err keys
+  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-300}" maxd="${SW_RID_MAX_DRONES:-32}" cap err keys
   [[ "$secs" =~ ^[1-9][0-9]{0,4}$ ]] || secs=12
-  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
+  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=300
   [[ "$maxd" =~ ^(0|[1-9][0-9]{0,3})$ ]] || maxd=32
   cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { sw_rid_health_note capture_failed "$now"; return 0; }
   err="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { rm -f "$cap"; sw_rid_health_note capture_failed "$now"; return 0; }
   _sw_rid_keys; keys="$REPLY"     # the drones the ignore list may silence are chosen last (the decoder's emit)
   _sw_rid_filter
-  nice -n 10 timeout -k 2 "$secs" tcpdump -i "${SW_RID_IFACE:-wlan1mon}" -p -l -t -nn -xx -c "$maxf" "$REPLY" 2>"$err" \
+  nice -n 10 timeout -k 2 "$secs" tcpdump -i "${SW_RID_IFACE:-wlan1mon}" -p -l -t -nn -xx -s 1024 -c "$maxf" "$REPLY" 2>"$err" \
     | nice -n 10 awk -v max="$maxd" -v ignkeys="$keys" "$(_sw_rid_awk_src)" > "$cap" 2>/dev/null &
   SW_RID_PID=$!; SW_RID_CAP="$cap"; SW_RID_ERR="$err"
 }
@@ -421,8 +424,8 @@ sw_rid_collect() {
   wait "$pid" 2>/dev/null
   # stopped during the window: drop the capture unread and report nothing (a relaunch owns the screen now)
   if sw_stopped; then rm -f "$cap" "$err"; return 0; fi
-  local l started=0 radio=0 pkts="" drops="" stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-1500}" st
-  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
+  local l started=0 radio=0 pkts="" drops="" stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-300}" st
+  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=300
   while IFS= read -r l || [ -n "$l" ]; do
     case "$l" in
       "listening on "*) started=1; case "$l" in *"link-type IEEE802_11_RADIO "*) radio=1 ;; esac ;;

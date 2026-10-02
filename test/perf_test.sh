@@ -111,7 +111,8 @@ assert_contains "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_start)" " -p -l -t
 assert_empty "$(_sw_body "$SW_ROOT/lib/remoteid.sh" sw_rid_start | grep -nE '(^|[^-])-I( |$)|iw |iwconfig|ifconfig|ip link')" rid_capture_never_reconfigures
 # control: the same grep sees a planted -I
 assert_contains "$(printf 'tcpdump -I -i wlan1mon\n' | grep -nE '(^|[^-])-I( |$)|iw |iwconfig|ifconfig|ip link')" "-I" rid_reconfigure_grep_works
-# LATENCY BUDGET for the decoder: 1,500 frames (1,200 ordinary beacons + 300 Remote ID) in one pass
+# LATENCY BUDGET for the decoder: 1,500 frames (1,200 ordinary beacons + 300 Remote ID) in one pass, five times
+# the default frame cap (300), so a decoder that slows down shows here first
 _rfx="$(cd "$(dirname "${BASH_SOURCE[0]}")/fixtures" && pwd)/rid"; _big="$(mktemp)"
 { for _i in $(seq 1200); do cat "$_rfx/quiet.txt"; done; for _i in $(seq 300); do cat "$_rfx/beacon.txt"; done; } > "$_big"
 SECONDS=0; _o="$(_sw_rid_decode_awk < "$_big")"; _el=$SECONDS

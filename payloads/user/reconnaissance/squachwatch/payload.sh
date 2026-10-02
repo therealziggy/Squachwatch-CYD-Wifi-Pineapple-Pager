@@ -88,10 +88,11 @@ done
 # BLE scan (about 13 s) makes every lap longer.
 : "${SW_RID_SECONDS:=12}"
 # At most this many frames per lap (it reads every nearby beacon, so a beacon flood must not eat the
-# CPU), and this many drones per lap (the strongest, those ignore.txt may silence chosen last; the rest are
-# counted on one line; 0 = no cap, in the order heard, which lets a flood of made-up drones cost each lap time
-# and two CSV rows per drone).
-: "${SW_RID_MAX_FRAMES:=1500}"
+# CPU: on the Pager an ordinary beacon costs about 15 ms to capture and decode, so 300 frames are about 4.6 s of
+# CPU, against the 60 to 90 a lap heard at home; Phase 0, 2026-10-02), and this many drones per lap (the
+# strongest, those ignore.txt may silence chosen last; the rest are counted on one line; 0 = no cap, in the
+# order heard, which lets a flood of made-up drones cost each lap time and two CSV rows per drone).
+: "${SW_RID_MAX_FRAMES:=300}"
 : "${SW_RID_MAX_DRONES:=32}"
 # The flight-track log: one row per drone per lap in which it was heard.
 : "${SW_RID_FILE:=$SW_LOOT_DIR/remoteid.csv}"

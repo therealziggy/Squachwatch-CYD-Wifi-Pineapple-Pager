@@ -11,6 +11,7 @@
 # As the real tool does: "listening on ..." on stderr, at most -c N frames on stdout, then it runs until
 # TERM/INT (the payload's timeout) or the -c limit, and reports "N packets captured" on stderr on the way
 # out ("1 packet captured" for exactly one, as tcpdump words it). Self-limiting (30 s) if orphaned.
+# The snapshot length (-s) is taken but not modelled: every fixture frame is shorter than the capture's 1024 bytes.
 echo "${0##*/} $*" >> "${SW_STUB_LOG:-/dev/null}"
 [ -n "${SW_STUB_PIDS:-}" ] && echo "$$" >> "$SW_STUB_PIDS"
 iface=wlan1mon max=0 prev=""

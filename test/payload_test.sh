@@ -937,7 +937,7 @@ assert_contains "$(cat "$SW_SEEN_FILE")" "80:E1:26:AA:BB:CC|drone_rid|" rid_lap_
 # the defaults, read in a clean process (a test that sets a value cannot see its default)
 assert_eq "$(env -u SW_REMOTE_ID -u SW_RID_IFACE -u SW_RID_SECONDS -u SW_RID_MAX_FRAMES -u SW_RID_MAX_DRONES -u SW_RID_FILE -u SW_LOOT_DIR \
   bash -c 'SW_TEST_SOURCE=1 . "$1"/payload.sh >/dev/null 2>&1; echo "$SW_REMOTE_ID|$SW_RID_IFACE|$SW_RID_SECONDS|$SW_RID_MAX_FRAMES|$SW_RID_MAX_DRONES|$SW_RID_FILE"' _ "$SW_ROOT")" \
-  "1|wlan1mon|12|1500|32|/root/loot/squachwatch/remoteid.csv" payload_rid_defaults
+  "1|wlan1mon|12|300|32|/root/loot/squachwatch/remoteid.csv" payload_rid_defaults
 # health: the capture needs tcpdump and the recon radio's interface (spec 2026-10-01 §7.1). A PATH with
 # only what the check needs (the btmon stub too, so tcpdump is the only thing missing).
 _rn="$(mktemp -d)"; mkdir "$_rn/net" "$_rn/bin"; : > "$_rn/net/wlan1mon"
