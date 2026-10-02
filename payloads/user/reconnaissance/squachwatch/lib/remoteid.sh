@@ -362,13 +362,17 @@ _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and 
 
 # A WARN when the capture's status changes, like the BLE note. The two "partly blind" ones (capped: the frame
 # cap; lost: frames dropped by the kernel or lost on the way, or no summary from tcpdump to count them by) share
-# one WARN per SW_COOLDOWN and recover silently. After an OFF status (capture_failed, not_understood) the next
-# lap that captures, ok or partly blind, says it recovered. $1 = ok | capture_failed | not_understood | capped |
-# lost, $2 = now (epoch).
+# one WARN per SW_COOLDOWN and recover silently. A capture that fails to start is OFF only when the next lap's
+# fails too: the recon radio's interface goes down for about half a second every 30 s (Phase 0 on the Pager,
+# 2026-10-02), and a capture that starts in that gap fails once (about 2% of laps). One failed lap is only noted,
+# and the status in effect stays as it was. After an OFF line (capture_failed, not_understood) the next lap that
+# captures, ok or partly blind, says it recovered. $1 = ok | capture_failed | not_understood | capped | lost,
+# $2 = now (epoch). The state file: the status in effect, the time of the last partly-blind WARN, and 1 after a
+# failed lap that said nothing yet.
 # Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
-  local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" cd="${SW_COOLDOWN:-600}"
-  [ -f "$sf" ] && { read -r prev; read -r capt; } < "$sf"
+  local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" once="" fail="" cd="${SW_COOLDOWN:-600}"
+  [ -f "$sf" ] && { read -r prev; read -r capt; read -r once; } < "$sf"
   case "$cd" in ''|*[!0-9]*) cd=600 ;; esac
   [[ "$capt" =~ ^[1-9][0-9]{0,11}$ ]] || capt=""
   case "$st" in
@@ -380,11 +384,14 @@ sw_rid_health_note() {
         capt="$now"
       fi ;;
     ok) case "$prev" in capture_failed|not_understood) _sw_rid_say green "Remote ID capture recovered" ;; esac ;;
-    capture_failed) [ "$prev" = capture_failed ] || _sw_rid_say yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF" ;;
+    capture_failed)
+      if [ "$prev" = capture_failed ]; then :                                          # said already
+      elif [ "$once" = 1 ]; then _sw_rid_say yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF"   # twice in a row
+      else st="$prev"; fail=1; fi ;;                                                   # once: noted, nothing said
     not_understood) [ "$prev" = not_understood ] || _sw_rid_say yellow "WARN: WiFi capture not understood — Remote ID over WiFi OFF" ;;
   esac
   sw_stopped && return 0
-  printf '%s\n%s\n' "$st" "$capt" > "$sf"
+  printf '%s\n%s\n%s\n' "$st" "$capt" "$fail" > "$sf"
 }
 # a line on the Pager's screen, unless the payload has been stopped (the screen is a relaunch's by then)
 _sw_rid_say() { sw_stopped || LOG "$@" 2>/dev/null; }

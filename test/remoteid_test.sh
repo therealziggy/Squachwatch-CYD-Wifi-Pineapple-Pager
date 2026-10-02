@@ -747,14 +747,25 @@ for _fx in "" beacon; do
 done
 unset _fx _ns
 
-# a capture that never starts: one WARN, not one per lap; then a green line once it works again
+# A capture that never starts. The recon radio's interface goes down for about half a second every 30 s (Phase 0
+# on the Pager, 2026-10-02), and a capture that starts in that gap fails once (about 2% of laps), so one failed
+# lap says nothing: the second in a row says OFF, once however long it lasts; then a green line once it works again.
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
+assert_empty "$(grep -F 'WiFi capture' "$SW_STUB_LOG")" cap_failed_once_silent
+assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon" cap_failed_once_control_tried
+_cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
 assert_eq "$(_cap_state)" "capture_failed" cap_failed_status
 assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_failed_warns
 _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
 assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_failed_warns_once
 _cap beacon >/dev/null
 assert_contains "$(cat "$SW_STUB_LOG")" "Remote ID capture recovered" cap_failed_then_recovered
+# It takes two failed laps IN A ROW: failed, captured, failed, captured says nothing at all, not even "recovered",
+# since no OFF line was shown. (controls: the four laps ran; cap_failed_warns, two failed laps back to back)
+_cap_reset
+_cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null; _cap beacon >/dev/null; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null; _cap beacon >/dev/null
+assert_empty "$(grep -E 'WiFi capture|recovered' "$SW_STUB_LOG")" cap_failed_ok_failed_silent
+assert_eq "$(grep -c '^tcpdump ' "$SW_STUB_LOG")" "4" cap_failed_ok_failed_control_four_laps
 
 # a link type that is not 802.11 + radiotap: a WARN, and no drone from those bytes
 # (control: the same fixture under the Pager's link type gives the drone, cap_beacon_detection)
@@ -762,6 +773,11 @@ _cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)')"
 assert_eq "$(_cap_state)" "not_understood" cap_wrong_link_status
 assert_contains "$(cat "$SW_STUB_LOG")" "WiFi capture not understood" cap_wrong_link_warns
 assert_empty "$(printf '%s\n' "$_out" | grep '^drone_rid')" cap_wrong_link_no_drone
+# One failed lap leaves the status in effect as it was: "not understood", a failed lap, "not understood" again is one
+# OFF line on the screen, not two (or three)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)' >/dev/null; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
+_cap beacon SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)' >/dev/null
+assert_eq "$(grep -E '^LOG ' "$SW_STUB_LOG" | sed 's/^LOG [a-z]* //')" "WARN: WiFi capture not understood — Remote ID over WiFi OFF" cap_failed_once_keeps_the_off_line
 
 # output cut short: tcpdump's summary counts more packets than the decoder saw frames (here 3 against 1), so
 # frames were lost on the way: one WARN, "partly blind", never "OFF" in a lap that still reports its drone.
@@ -848,10 +864,11 @@ assert_eq "$(grep -c 'partly blind' "$SW_STUB_LOG")" "1" cap_partly_blind_shares
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_DROPPED=1 >/dev/null
 assert_eq "$(_cap_state)" "lost" cap_dropped_one_status
 # An OFF line is followed by the green "recovered" line as soon as the capture works again, also in a lap that is
-# only partly blind (re-review 2026-10-02, Minor 1): lap 1 drops frames, lap 2 fails, lap 3 drops frames again
-# (inside the partly-blind cooldown: no WARN), lap 4 is fine. One "recovered", right after the OFF line.
+# only partly blind (re-review 2026-10-02, Minor 1): lap 1 drops frames, laps 2 and 3 fail (the OFF line comes with
+# the second), lap 4 drops frames again (inside the partly-blind cooldown: no WARN), lap 5 is fine. One
+# "recovered", right after the OFF line.
 _cap_reset
-_cap beacon SW_FAKE_TCPDUMP_DROPPED=900 >/dev/null; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
+_cap beacon SW_FAKE_TCPDUMP_DROPPED=900 >/dev/null; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
 _cap beacon SW_FAKE_TCPDUMP_DROPPED=900 >/dev/null; _cap beacon >/dev/null
 assert_eq "$(grep -E '^LOG ' "$SW_STUB_LOG" | sed 's/^LOG [a-z]* //')" "WARN: WiFi capture lost frames (CPU busy?) — Remote ID partly blind
 WARN: WiFi capture failed — Remote ID over WiFi OFF
@@ -869,19 +886,35 @@ assert_contains "$_out" "|0000FSWTEST000000001|" cap_drone_cap_keeps_strongest
 assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta ...and 1 more drones (Remote ID flood?)" cap_drone_cap_more_line
 # A Stop after the capture's wait (spec §7.3): no health line and no state file (the exit trap removed it). A
 # main shell already gone gets no line at all; one stopped during the line (the LOG stub kills the stand-in
-# then) gets no state file after it. Control: alive, the same note prints and writes.
+# then) gets no state file after it. Control: alive, the same note prints and writes. (The OFF status here is "not
+# understood", which says so at once.)
 _sf="$_cap_dir/sw_rid.state"
 bash -c 'exit 0' & _rd=$!; wait "$_rd"
-_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_rd" sw_rid_health_note capture_failed 1700000000
+_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_rd" sw_rid_health_note not_understood 1700000000
 assert_empty "$(grep -F 'WiFi capture' "$SW_STUB_LOG")" cap_health_stopped_no_line
 assert_eq "$([ -e "$_sf" ] && echo written)" "" cap_health_stopped_no_state
 sleep 30 & _fm=$!
-_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_fm" SW_STUB_STOP_ON_LOG="$_fm" sw_rid_health_note capture_failed 1700000000
+_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_fm" SW_STUB_STOP_ON_LOG="$_fm" sw_rid_health_note not_understood 1700000000
 wait "$_fm" 2>/dev/null
-assert_contains "$(cat "$SW_STUB_LOG")" "WARN: WiFi capture failed" cap_health_stop_mid_line_control_line
+assert_contains "$(cat "$SW_STUB_LOG")" "WARN: WiFi capture not understood" cap_health_stop_mid_line_control_line
 assert_eq "$([ -e "$_sf" ] && echo written)" "" cap_health_stop_mid_line_no_state
+_cap_reset; SW_TMP_DIR="$_cap_dir" sw_rid_health_note not_understood 1700000000
+assert_eq "$(grep -c 'WiFi capture not understood' "$SW_STUB_LOG")/$(head -1 "$_sf")" "1/not_understood" cap_health_control_line_and_state
+# ...and for a capture that fails: after a first failed lap (its note written alive), a Stop before the second
+# one's note gives no line and leaves the state file as the first lap left it; a Stop in the first failed lap
+# writes no state either. Controls: alive, the second note prints its line and writes the OFF status, and the
+# first one writes its note without a line.
+_cap_reset; SW_TMP_DIR="$_cap_dir" sw_rid_health_note capture_failed 1700000000; cp "$_sf" "$_cap_dir/first"; : > "$SW_STUB_LOG"
+SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_rd" sw_rid_health_note capture_failed 1700000000
+assert_empty "$(grep -F 'WiFi capture' "$SW_STUB_LOG")" cap_health_stopped_second_failure_no_line
+assert_eq "$(cmp -s "$_sf" "$_cap_dir/first" && echo kept)" "kept" cap_health_stopped_second_failure_state_kept
+SW_TMP_DIR="$_cap_dir" sw_rid_health_note capture_failed 1700000000
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(head -1 "$_sf")" "1/capture_failed" cap_health_second_failure_control_line_and_state
+_cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_rd" sw_rid_health_note capture_failed 1700000000
+assert_eq "$([ -e "$_sf" ] && echo written)" "" cap_health_stopped_first_failure_no_state
 _cap_reset; SW_TMP_DIR="$_cap_dir" sw_rid_health_note capture_failed 1700000000
-assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(head -1 "$_sf")" "1/capture_failed" cap_health_control_line_and_state
+assert_eq "$([ -e "$_sf" ] && echo written)/$(grep -c 'WiFi capture' "$SW_STUB_LOG")" "written/0" cap_health_first_failure_control_written_silently
+rm -f "$_cap_dir/first"
 # The same in a whole capture: a flood lap (2 frames at a cap of 2: "capped"; 2 drones at a cap of 1: the
 # "...and 1 more" line) stopped during its capped WARN reports nothing after it: no state, no drone, no flood
 # line. (control: cap_drone_cap_more_line, the flood line of a lap left alone)
