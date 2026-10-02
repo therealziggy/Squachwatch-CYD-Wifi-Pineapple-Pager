@@ -756,8 +756,8 @@ assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon" cap_f
 _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
 assert_eq "$(_cap_state)" "capture_failed" cap_failed_status
 assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_failed_warns
-_cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
-assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_failed_warns_once
+for _i in 3 4 5; do _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null; done
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(grep -c '^tcpdump ' "$SW_STUB_LOG")" "1/5" cap_failed_warns_once
 _cap beacon >/dev/null
 assert_contains "$(cat "$SW_STUB_LOG")" "Remote ID capture recovered" cap_failed_then_recovered
 # It takes two failed laps IN A ROW: failed, captured, failed, captured says nothing at all, not even "recovered",
