@@ -403,12 +403,16 @@ assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_ignored_no_
 # control: a plain address line never silences a drone (its address can change; anyone can send any)
 assert_contains "$(sw_test_rid_line | SW_IGNORE_SET=" 80:E1:26:AA:BB:CC " _recs)" "drone_rid|" rid_rec_plain_mac_not_ignored
 # A drone is silenced only when EVERY ID it sent is listed (user decision 2026-10-02): a spoofer can send a copy
-# of the owner's ID from another drone's address, and must not hide that drone with it
+# of the owner's ID from another drone's address, and must not hide that drone with it. When one of its two IDs is
+# listed and the other is not, it is named by the one that is NOT (the user's second decision that day): in its
+# detection (so on screen, in the alert and in its ledger key) and as the ID in remoteid.csv, the listed one second
 _ign=" DRONE:0000FSWTEST000000001 "
 rm -f "$_rl/remoteid.csv"
-assert_contains "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign" _recs)" "|0000FSWTEST000000001|" rid_rec_shown_id_listed_other_not_reported
-assert_contains "$(_csv1)" ',serial,"0000FSWTEST000000001",caa,"CAA",' rid_rec_shown_id_listed_row_has_both
-assert_contains "$(sw_test_rid_line id_type=2 id_hex=434141 id2_type=1 id2_hex=3030303046535754455354303030303030303031 | SW_IGNORE_SET="$_ign" _recs)" "drone_rid|" rid_rec_serial_listed_caa_not_reported
+assert_contains "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign" _recs)" "|80:E1:26:AA:BB:CC|CAA|-47|" rid_rec_shown_id_listed_other_not_reported
+assert_contains "$(_csv1)" ',-47,caa,"CAA",serial,"0000FSWTEST000000001",' rid_rec_shown_id_listed_row_has_both
+assert_contains "$(sw_test_rid_line id_type=2 id_hex=434141 id2_type=1 id2_hex=3030303046535754455354303030303030303031 | SW_IGNORE_SET="$_ign" _recs)" "|80:E1:26:AA:BB:CC|CAA|-47|" rid_rec_serial_listed_caa_not_reported
+# control: the serial keeps the name while it is the one not listed (and with neither listed: rid_rec_prefers_serial)
+assert_contains "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET=" DRONE:CAA " _recs)" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|" rid_rec_unlisted_serial_keeps_the_name
 # control: with both listed it is silenced
 assert_empty "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign DRONE:CAA " _recs)" rid_rec_both_ids_listed_silenced
 unset _ign

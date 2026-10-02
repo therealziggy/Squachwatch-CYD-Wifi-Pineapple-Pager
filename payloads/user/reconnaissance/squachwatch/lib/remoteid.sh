@@ -205,7 +205,7 @@ _sw_rid_line_ok() {
 sw_rid_records() {
   local now="$1" csv="${SW_RID_FILE:-$2/remoteid.csv}" gps="" gps_read=0 line tabs
   local tag mac rssi forms it1 ih1 it2 ih2 ua st la lo ag ab ht hr sp vs hd pt pa po pl oi si extra
-  local MAC idt id idt2 id2 t1 t2 form air motion pilot detail
+  local MAC idt id idt2 id2 t1 t2 ls1 ls2 form air motion pilot detail
   local LC_ALL=C
   while IFS= read -r line || [ -n "$line" ]; do
     [ "${line:0:2}" = $'D\t' ] || continue
@@ -225,9 +225,15 @@ sw_rid_records() {
     # The owner's own drone (ignore.txt) leaves no trace, but only when EVERY ID it sent is listed as
     # drone:<ID>, or, when it sent none, its address as drone:<MAC>: a spoofer can send a copy of the owner's ID
     # from another drone's address, and must not hide that drone with it (spec §4). id is empty only when id2 is.
-    if sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id|$rssi" "${SW_IGNORE_SET:-}" \
-       && { [ -z "$id2" ] || sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id2|$rssi" "${SW_IGNORE_SET:-}"; }; then
-      continue
+    # ls1/ls2: id/id2 is listed.
+    ls1=0; ls2=0
+    sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id|$rssi" "${SW_IGNORE_SET:-}" && ls1=1
+    [ -n "$id2" ] && sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id2|$rssi" "${SW_IGNORE_SET:-}" && ls2=1
+    if [ "$ls1" = 1 ] && { [ -z "$id2" ] || [ "$ls2" = 1 ]; }; then continue; fi
+    # One of its two IDs listed and the other not: it is named by the one NOT listed (spec §3), on screen, in the
+    # alert, its ledger key and remoteid.csv. Named by the owner's own ID, it would read as the owner's drone.
+    if [ "$ls1" = 1 ] && [ "$ls2" = 0 ] && [ -n "$id2" ]; then
+      t1="$id"; id="$id2"; id2="$t1"; t1="$idt"; idt="$idt2"; idt2="$t1"   # swapped through t1, free by now
     fi
     form=""; [ $(( forms & 1 )) -ne 0 ] && form=beacon
     [ $(( forms & 2 )) -ne 0 ] && form="${form:+$form+}nan"; [ $(( forms & 4 )) -ne 0 ] && form="${form:+$form+}parrot"

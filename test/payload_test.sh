@@ -786,20 +786,22 @@ assert_empty "$(grep -E '^(tcpdump|ALERT|LOG) ' "$SW_STUB_LOG")" rid_lap_stopped
 # (0x48-0x5b -> "0000FSWTESTFAKE00001").
 _rcat="$(mktemp)"; _rown=" DRONE:0000FSWTESTOWNER001 "
 _rid_lapf() { SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="$1" SW_RECON_DB=/nonexistent/recon.db SW_BLE_CMD=true sw_scan_once; }
-# S1: the owner's ID first, then the real drone: reported (under the first serial heard), both IDs in its row
+# S1: the owner's ID first, then the real drone: reported, named by its own ID (the one not listed: user decision
+# 2026-10-02) on screen, in the alert, in the ledger and in its row, which holds both IDs
 cat "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/beacon.txt" > "$_rcat"
 _rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
-assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_lap_spoofed_owner_id_hides_nothing
-assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv")" ',serial,"0000FSWTESTOWNER001",serial,"0000FSWTEST000000001",' rid_lap_spoofed_owner_id_row_has_both
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'" rid_lap_spoofed_owner_id_hides_nothing
+assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv")" ',serial,"0000FSWTEST000000001",serial,"0000FSWTESTOWNER001",' rid_lap_spoofed_owner_id_row_has_both
+assert_contains "$(cat "$SW_SEEN_FILE")" "drone|drone_rid:0000FSWTEST000000001|" rid_lap_spoofed_owner_id_ledger_key
 # control: with both IDs listed, nothing (and the capture did run)
 _rid_reset; SW_IGNORE_SET="$_rown DRONE:0000FSWTEST000000001 " _rid_lapf "$_rcat"
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_both_ids_listed_silent
 assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i" rid_lap_both_ids_listed_control_captured
-# S4: the real drone sends only a CAA registration; the owner's serial, heard after it, still names the drone
-# (a serial is preferred), but the drone is reported
+# S4: the real drone sends only a CAA registration; the owner's serial heard after it would be preferred as the
+# name (a serial), but it is the listed one: the drone is reported under its own CAA ID
 cat "$_RFIX2/hostile/caa_id.txt" "$_RFIX2/hostile/owner_id.txt" > "$_rcat"
 _rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
-assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_lap_spoofed_serial_after_caa_hides_nothing
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'" rid_lap_spoofed_serial_after_caa_hides_nothing
 # S2: a spoofer at the owner's own address with a made-up serial, heard first: the owner's drone alerts under it
 cat "$_RFIX2/hostile/fake_id.txt" "$_RFIX2/hostile/owner_id.txt" > "$_rcat"
 _rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
