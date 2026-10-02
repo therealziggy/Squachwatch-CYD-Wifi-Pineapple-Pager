@@ -298,7 +298,8 @@ _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and 
 
 # A WARN when the capture's status changes, like the BLE note. The two "partly blind" ones (capped: the frame
 # cap; lost: frames dropped by the kernel or lost on the way) share one WARN per SW_COOLDOWN and recover
-# silently. $1 = ok | capture_failed | not_understood | capped | lost, $2 = now (epoch).
+# silently. After an OFF status (capture_failed, not_understood) the next lap that captures, ok or partly blind,
+# says it recovered. $1 = ok | capture_failed | not_understood | capped | lost, $2 = now (epoch).
 # Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
   local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" cd="${SW_COOLDOWN:-600}"
@@ -307,6 +308,7 @@ sw_rid_health_note() {
   [[ "$capt" =~ ^[1-9][0-9]{0,11}$ ]] || capt=""
   case "$st" in
     capped|lost)
+      case "$prev" in capture_failed|not_understood) _sw_rid_say green "Remote ID capture recovered" ;; esac
       if [ -z "$capt" ] || [ "$now" -lt "$capt" ] || [ $(( now - capt )) -ge "$cd" ]; then
         if [ "$st" = capped ]; then _sw_rid_say yellow "WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind"
         else _sw_rid_say yellow "WARN: WiFi capture lost frames (CPU busy?) — Remote ID partly blind"; fi

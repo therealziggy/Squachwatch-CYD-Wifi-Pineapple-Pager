@@ -617,6 +617,20 @@ assert_eq "$(grep -c 'partly blind' "$SW_STUB_LOG")" "1" cap_partly_blind_shares
 # tcpdump's singular for exactly one ("1 packet dropped by kernel")
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_DROPPED=1 >/dev/null
 assert_eq "$(_cap_state)" "lost" cap_dropped_one_status
+# An OFF line is followed by the green "recovered" line as soon as the capture works again, also in a lap that is
+# only partly blind (re-review 2026-10-02, Minor 1): lap 1 drops frames, lap 2 fails, lap 3 drops frames again
+# (inside the partly-blind cooldown: no WARN), lap 4 is fine. One "recovered", right after the OFF line.
+_cap_reset
+_cap beacon SW_FAKE_TCPDUMP_DROPPED=900 >/dev/null; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 >/dev/null
+_cap beacon SW_FAKE_TCPDUMP_DROPPED=900 >/dev/null; _cap beacon >/dev/null
+assert_eq "$(grep -E '^LOG ' "$SW_STUB_LOG" | sed 's/^LOG [a-z]* //')" "WARN: WiFi capture lost frames (CPU busy?) — Remote ID partly blind
+WARN: WiFi capture failed — Remote ID over WiFi OFF
+Remote ID capture recovered" cap_off_then_lost_recovers
+# ...and a capped lap after "not understood": recovered, then its own partly-blind WARN (no cooldown running)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)' >/dev/null; _cap multi SW_RID_MAX_FRAMES=1 >/dev/null
+assert_eq "$(grep -E '^LOG ' "$SW_STUB_LOG" | sed 's/^LOG [a-z]* //')" "WARN: WiFi capture not understood — Remote ID over WiFi OFF
+Remote ID capture recovered
+WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind" cap_off_then_capped_recovers
 
 # more drones than SW_RID_MAX_DRONES: the strongest are reported, the rest counted on one line
 _cap_reset; _out="$(_cap multi SW_RID_MAX_DRONES=1)"
