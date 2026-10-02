@@ -1,1 +1,3 @@
 .superpowers/
+# a fixture build (tools/rid_fixtures/build.sh) killed before it ends can leave its staging folder
+test/fixtures/rid/.build.*
