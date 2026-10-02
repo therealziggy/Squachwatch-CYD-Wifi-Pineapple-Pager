@@ -137,9 +137,10 @@ assert_eq "$(_rf "$_o" speed)/$(_rf "$_o" vspeed)/$(_rf "$_o" heading)" "6975/-2
 assert_eq "$(_rf "$_o" pilot_type)/$(_rf "$_o" pilot_lat)/$(_rf "$_o" pilot_lon)/$(_rf "$_o" pilot_alt)" "0/473900000/85300000/3030" rid_full_takeoff_point   # at 515 m
 assert_eq "$(_rf "$_o" self_id)" "5357544553542d53454c462d49442d46554c4c2d323343" rid_full_self_id   # "SWTEST-SELF-ID-FULL-23C", all 23 bytes
 assert_eq "$(_rf "$_o" operator_id)" "5357544553544f50455241544f523032" rid_full_operator_id   # "SWTESTOPERATOR02"
-# a serial number with no text, then a CAA registration (gen.c's "emptyserial"): both kept, as sent
+# a serial number with no text, then a CAA registration (gen.c's "emptyserial"): an ID with no text takes no place
+# (user decision 2026-10-02), so the CAA ID is the first kept, and its airframe is the first Basic ID's
 _o="$(_dec emptyserial)"
-assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1//2/4653572d4341412d544553542d30303032" rid_emptyserial_both_ids_kept   # "FSW-CAA-TEST-0002"
+assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)/$(_rf "$_o" ua_type)" "2/4653572d4341412d544553542d30303032///2" rid_emptyserial_empty_id_takes_no_place   # "FSW-CAA-TEST-0002"
 
 # --- crafted frames (spec §8): test/fixtures/rid/hostile/ holds byte edits of the fixtures above, as tcpdump
 # text only (no pcap of them exists, and no tool makes them). Each edit is written next to its test: offsets
@@ -264,6 +265,46 @@ _hpar two_forms "$_RFIX/beacon.txt" "$_RFIX/nan.txt"
 _o="$(_hd "$_RFIX/beacon.txt" "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt")"
 assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1/$_serial1/1/$_serial2" rid_h_first_two_distinct_ids
 _hpar two_ids "$_RFIX/beacon.txt" "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt"
+# An ID with no text takes no place, and a third distinct ID flags the address (user decision 2026-10-02): forms
+# bit 8, "sent more IDs than are kept" (sw_rid_records never silences such a drone). Distinct = another text or
+# another ID type. owner_id is the reference beacon with the owner's ID "0000FSWTESTOWNER001" (0x48-0x5b);
+# empty_id has an empty serial (0x48-0x5b zeroed).
+_own=30303030465357544553544f574e4552303031
+_o="$(_hd "$_RH/owner_id.txt" "$_RH/empty_id.txt" "$_RFIX/beacon.txt")"
+assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1/$_own/1/$_serial1" rid_h_empty_id_takes_no_place
+_hpar empty_id_no_place "$_RH/owner_id.txt" "$_RH/empty_id.txt" "$_RFIX/beacon.txt"
+# ...also when it shares a frame with a kept one: owner_and_empty_id is owner_id with its 4th message (the
+# Operator ID) made an empty serial (0x91 52->02, 0x92 00->12, 0x93-0xa6 zeroed)
+_o="$(_hd "$_RH/owner_and_empty_id.txt" "$_RFIX/beacon.txt")"
+assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "1/$_own/1/$_serial1" rid_h_empty_id_in_one_frame_takes_no_place
+_hpar empty_id_one_frame "$_RH/owner_and_empty_id.txt" "$_RFIX/beacon.txt"
+# ...and alone it is no ID, while its airframe still counts (the first Basic ID's)
+_o="$(_hd "$_RH/empty_id.txt")"
+assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" ua_type)" "//2" rid_h_empty_id_alone_no_id_airframe_kept
+# three distinct serials from one address: the first two are kept and the address is flagged (1 + 8)
+_o="$(_hd "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt")"
+assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_hex)" "9/$_serial1/$_serial2" rid_h_third_id_flags
+_hpar third_id_flags "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt"
+# the same text under another ID type is another ID: owner_caa is owner_id as a CAA registration (0x47 12->22)
+_o="$(_hd "$_RH/owner_id.txt" "$_RH/owner_caa.txt" "$_RFIX/beacon.txt")"
+assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)" "9/1/$_own/2/$_own" rid_h_same_text_other_type_flags
+_hpar same_text_other_type "$_RH/owner_id.txt" "$_RH/owner_caa.txt" "$_RFIX/beacon.txt"
+# texts that bash cleans into the owner's ID are other IDs here (the decoder sees bytes): each copy after owner_id,
+# then the beacon, flags the address. owner_lower: 0x4c-0x57 lowercased; owner_space: 0x48-0x5b a space and then
+# the ID; owner_ctrl: 0x5b 00->01, a control byte after the ID
+for _n in lower:30303030667377746573746f776e6572303031 space:2030303030465357544553544f574e4552303031 ctrl:30303030465357544553544f574e455230303101; do
+  _o="$(_hd "$_RH/owner_id.txt" "$_RH/owner_${_n%%:*}.txt" "$_RFIX/beacon.txt")"
+  assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_hex)" "9/$_own/${_n#*:}" "rid_h_owner_${_n%%:*}_copy_flags"
+  _hpar "owner_${_n%%:*}_copy" "$_RH/owner_id.txt" "$_RH/owner_${_n%%:*}.txt" "$_RFIX/beacon.txt"
+done
+# the flag joins the form bits: the same three serials, then the drone's NAN frame (1 + 2 + 8)
+assert_eq "$(_rf "$(_hd "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt" "$_RFIX/nan.txt")" forms)" "11" rid_h_flag_joins_the_forms
+_hpar flag_and_forms "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/id_0003.txt" "$_RFIX/nan.txt"
+# controls: the two kept IDs heard again, each of them, and an empty one after them are not more IDs
+_o="$(_hd "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/empty_id.txt")"
+assert_eq "$(_rf "$_o" forms)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_hex)" "1/$_serial1/$_serial2" rid_h_kept_ids_again_no_flag
+_hpar kept_ids_again "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RFIX/beacon.txt" "$_RH/id_0002.txt" "$_RH/empty_id.txt"
+unset _own _n
 unset _RH _bD _hbad _hfr _hun; unset -f _hd _hdb _bad _good _hpar
 
 # the decoder runs the same on BusyBox awk (the Pager) as on this box's awk
@@ -415,6 +456,27 @@ assert_contains "$(sw_test_rid_line id_type=2 id_hex=434141 id2_type=1 id2_hex=3
 assert_contains "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET=" DRONE:CAA " _recs)" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|" rid_rec_unlisted_serial_keeps_the_name
 # control: with both listed it is silenced
 assert_empty "$(sw_test_rid_line id2_type=2 id2_hex=434141 | SW_IGNORE_SET="$_ign DRONE:CAA " _recs)" rid_rec_both_ids_listed_silenced
+# A drone whose address sent more IDs than the decoder keeps (forms bit 8) is NEVER silenced (user decision
+# 2026-10-02): a spoofer heard first can fill both kept IDs with copies of the owner's, and the other drone's own
+# ID is then the one not kept. Its detail says "also sends other IDs", first in the motion piece, which is on the
+# screen line and in the alert body. The same lines without the flag are silenced (the controls:
+# rid_rec_ignored_no_detection, rid_rec_both_ids_listed_silenced, rid_rec_blank_id_ignored_by_address).
+rm -f "$_rl/remoteid.csv"
+assert_eq "$(sw_test_rid_line forms=9 | SW_IGNORE_SET="$_ign" _recs)" "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|multirotor	also sends other IDs, 87m up, 12m/s	pilot (live) 47.39800,8.54102" rid_rec_more_ids_never_silenced
+assert_contains "$(_csv1)" '1700000000,beacon,80:E1:26:AA:BB:CC,-47,serial,"0000FSWTEST000000001",,"",' rid_csv_more_ids_row
+# ...with both IDs listed: named serial first, as when neither is (the note tells the owner it is not theirs)
+assert_contains "$(sw_test_rid_line forms=9 id_type=2 id_hex=434141 id2_type=1 id2_hex=3030303046535754455354303030303030303031 | SW_IGNORE_SET="$_ign DRONE:CAA " _recs)" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|multirotor	also sends other IDs, " rid_rec_more_ids_both_listed_reported
+# ...and with no ID, not by its address either
+assert_contains "$(sw_test_rid_line forms=9 id_type= id_hex= | SW_IGNORE_SET=" DRONE:80:E1:26:AA:BB:CC " _recs)" "|80:E1:26:AA:BB:CC||-47|multirotor	also sends other IDs, " rid_rec_more_ids_no_id_not_silenced_by_address
+# the note alone when no motion value is known; the flag is no form, so remoteid.csv names only the forms (1 + 2)
+assert_contains "$(sw_test_rid_line forms=11 height= alt_geo= speed= | _recs)" "|multirotor	also sends other IDs	pilot (live) " rid_rec_more_ids_note_alone
+assert_contains "$(_csv1)" ',beacon+nan,80:E1:26:AA:BB:CC,' rid_csv_more_ids_not_a_form
+# no flag, no note (every form bit set)
+assert_empty "$(sw_test_rid_line forms=7 | _recs | grep -F 'other IDs')" rid_rec_no_flag_no_note
+# the shape gate takes forms 1 to 15 (three form bits and the flag) and drops anything else
+assert_contains "$(sw_test_rid_line forms=15 | _recs)" "|0000FSWTEST000000001|" rid_rec_forms_15_taken
+assert_empty "$(sw_test_rid_line forms=16 | _recs)" rid_rec_forms_16_dropped
+assert_empty "$(sw_test_rid_line forms=0 | _recs)" rid_rec_forms_0_dropped
 unset _ign
 # a stopped payload writes and reports nothing
 bash -c 'exit 0' & _rd=$!; wait "$_rd"

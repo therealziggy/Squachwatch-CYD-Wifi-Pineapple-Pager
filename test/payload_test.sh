@@ -812,6 +812,68 @@ cat "$_RFIX2/hostile/empty_id.txt" "$_RFIX2/hostile/owner_id.txt" > "$_rcat"
 _rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_empty_id_at_owner_address_silent
 assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i" rid_lap_empty_id_control_captured
+# A spoofer HEARD FIRST at the real drone's address (re-review 2026-10-02, Important 1): its frames fill the
+# decoder's two kept IDs with IDs that are listed or empty, so the real drone's own ID (the beacon, heard last) is
+# not one of them. User decision the same day: an ID with no text takes no place, and an address that sent more
+# IDs than are kept is flagged and never silenced, its alert saying "also sends other IDs". So the real drone
+# alerts: under its own ID when it got a place, else under the listed ID with that note.
+# _rid_spoof NAME IGNORE ALERT_NAME NOTE FRAMES...: a lap of FRAMES and then the beacon, under ignore list IGNORE:
+# an alert named ALERT_NAME, with the note on its detail line and in its alert body when NOTE is 1 (and none when
+# 0), and a flight-track row
+_rid_spoof() { local n="$1" ign="$2" name="$3" note="$4"; shift 4
+  cat "$@" "$_RFIX2/beacon.txt" > "$_rcat"
+  _rid_reset; SW_IGNORE_SET="$ign" _rid_lapf "$_rcat"
+  if [ "$note" = 1 ]; then
+    assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '$name'
+multirotor, also sends other IDs, 87m up, 12m/s
+pilot (live) 47.39800,8.54102" "rid_spoof_${n}_alerts"
+    assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta   also sends other IDs, 87m up, 12m/s, pilot (live) 47.39800,8.54102" "rid_spoof_${n}_detail_line"
+  else
+    assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '$name'
+multirotor, 87m up, 12m/s
+pilot (live) 47.39800,8.54102" "rid_spoof_${n}_alerts"
+    assert_empty "$(grep -F 'other IDs' "$SW_STUB_LOG")" "rid_spoof_${n}_no_note"
+  fi
+  assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv" 2>/dev/null)" ",beacon,80:E1:26:AA:BB:CC,-47," "rid_spoof_${n}_track_row"; }
+# The control for every case below (the same frames without the spoof): the real drone's beacon alone, under the
+# same ignore list, alerts as usual, under its own ID and with no note. _rid_spoof_ctl LABEL IGNORE
+_rid_spoof_ctl() { _rid_reset; SW_IGNORE_SET="$2" _rid_lap beacon
+  assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'
+multirotor, 87m up, 12m/s
+pilot (live) 47.39800,8.54102" "rid_spoof_control_alerts_[$1]"
+  assert_empty "$(grep -F 'other IDs' "$SW_STUB_LOG")" "rid_spoof_control_no_note_[$1]"; }
+_rid_spoof_ctl owner "$_rown"
+_rid_spoof_ctl owner_both "$_rown DRONE:0000FSWTEST000000002 "
+# 1. the owner's ID, then an empty serial: the empty one takes no place, so the real drone's ID does, and names it
+_rid_spoof owner_then_empty "$_rown" 0000FSWTEST000000001 0 "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/empty_id.txt"
+assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv")" ',serial,"0000FSWTEST000000001",serial,"0000FSWTESTOWNER001",' rid_spoof_owner_then_empty_real_id_in_row
+# 2. the owner's ID as a serial and as a CAA registration (hostile/owner_caa.txt: owner_id 0x47 12->22)
+_rid_spoof owner_twice_two_types "$_rown" 0000FSWTESTOWNER001 1 "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/owner_caa.txt"
+# 3. ONE frame holding the owner's ID and an empty serial (hostile/owner_and_empty_id.txt: owner_id with its 4th
+#    message, the Operator ID, made an empty serial: 0x91 52->02, 0x92 00->12, 0x93-0xa6 zeroed)
+_rid_spoof one_frame_owner_and_empty "$_rown" 0000FSWTEST000000001 0 "$_RFIX2/hostile/owner_and_empty_id.txt"
+assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv")" ',serial,"0000FSWTEST000000001",serial,"0000FSWTESTOWNER001",' rid_spoof_one_frame_owner_and_empty_real_id_in_row
+# 4. no trick: the owner's drone sends two IDs and both are listed, as the README says; the spoofer sends both
+_rid_spoof owner_lists_both "$_rown DRONE:0000FSWTEST000000002 " 0000FSWTESTOWNER001 1 "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/id_0002.txt"
+# 5-7. the owner's ID, then a copy that ignore.txt reads as the same ID: in lower case (hostile/owner_lower.txt:
+#    0x4c-0x57 lowercased), after a space (owner_space.txt: 0x48-0x5b a space, then the ID) or with a control
+#    byte after it (owner_ctrl.txt: 0x5b 00->01)
+for _n in lower space ctrl; do
+  _rid_spoof "owner_and_${_n}_copy" "$_rown" 0000FSWTESTOWNER001 1 "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/owner_$_n.txt"
+done
+# ...while the owner's own drone stays silent, sending its one listed ID or its two over and over, as many frames
+# carry them: no more IDs than are kept. Controls: the same laps without the ignore list alert.
+cat "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/owner_id.txt" > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
+assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_owner_one_id_again_silent
+_rid_reset; _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_lap_owner_one_id_again_control_alerts
+cat "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/id_0002.txt" "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/id_0002.txt" > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown DRONE:0000FSWTEST000000002 " _rid_lapf "$_rcat"
+assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_owner_two_ids_again_silent
+_rid_reset; _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_lap_owner_two_ids_again_control_alerts
+unset _n; unset -f _rid_spoof _rid_spoof_ctl
 # a reference frame with an empty serial and then a CAA registration (gen.c's "emptyserial"): named by the CAA ID
 _rid_reset; _rid_lap emptyserial
 assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone 'FSW-CAA-TEST-0002'" rid_lap_empty_serial_named_by_caa

@@ -10,6 +10,8 @@
 #   D<TAB>mac rssi forms id_type id_hex id2_type id2_hex ua_type status lat lon alt_geo alt_baro height
 #        height_ref speed vspeed heading pilot_type pilot_lat pilot_lon pilot_alt operator_id_hex self_id_hex
 #   S<TAB>frames<TAB>understood<TAB>rid_frames<TAB>more_drones
+# forms is a bit mask: the forms heard (1 ASD-STAN beacon, 2 NAN, 4 Parrot beacon), plus 8 when the address sent
+# more distinct Basic IDs than the two kept (id and id2: the first two that hold text, distinct by text or type).
 # The stats line comes LAST, at the end of the input: a pass without one did not finish (sw_rid_collect).
 _sw_rid_awk_src() { cat <<'RIDAWK'
 # One frame per tcpdump header line; the hex lines that follow start with an offset like 0x0010:.
@@ -91,16 +93,23 @@ function nanpack(p, end,  c) { if (p + 3 > end) return 0   # redundant: the serv
   if (!bit(c, 16) || p + 2 > end) return 0                   # service info present?
   sie = p + 1 + b(p); if (sie > end) return 0
   return p + 2 }
-function take(a, pk, f,  m, c, n, i, t, v, w) { m = hexall(a, 6)
+function take(a, pk, f,  m, c, n, i, t, v, w, y) { m = hexall(a, 6)
   if (!(m in seen)) { seen[m] = 1; ord[++no] = m }
   if (sig != "" && (!(m in rs) || sig + 0 > rs[m] + 0)) rs[m] = sig
   if (!bit(fm[m] + 0, f)) fm[m] = fm[m] + f
   ridf++
   c = b(pk + 2)
   for (n = 0; n < c; n++) { i = pk + 3 + 25 * n; t = int(b(i) / 16)
-    if (t == 0) { v = txt(i + 2, 20)                         # Basic ID: the first two distinct ones
-      if (nbi[m] + 0 == 0) { it1[m] = int(b(i + 1) / 16); ih1[m] = v; ua[m] = b(i + 1) % 16; nbi[m] = 1 }
-      else if (nbi[m] == 1 && (v != ih1[m] || int(b(i + 1) / 16) != it1[m])) { it2[m] = int(b(i + 1) / 16); ih2[m] = v; nbi[m] = 2 } }
+    if (t == 0) { v = txt(i + 2, 20); y = int(b(i + 1) / 16)   # Basic ID: y = its ID type
+      if (!(m in ua)) ua[m] = b(i + 1) % 16                    # the airframe: the first Basic ID's
+      # The first two distinct IDs (another text or another ID type) are kept; one with no text takes no place.
+      # One more distinct ID flags the address (forms bit 8): it sent more IDs than are kept, and a spoofer
+      # heard first may have taken both places (sw_rid_records never silences it)
+      if (v != "") {
+        if (nbi[m] + 0 == 0) { it1[m] = y; ih1[m] = v; nbi[m] = 1 }
+        else if (v != ih1[m] || y != it1[m]) {
+          if (nbi[m] == 1) { it2[m] = y; ih2[m] = v; nbi[m] = 2 }
+          else if (v != ih2[m] || y != it2[m]) xi[m] = 8 } } }
     else if (t == 1) { st[m] = int(b(i + 1) / 16); hr[m] = bit(b(i + 1), 4)
       v = b(i + 2) + (bit(b(i + 1), 2) ? 180 : 0); hd[m] = (v > 360) ? "" : v
       v = b(i + 3); sp[m] = bit(b(i + 1), 1) ? ((v == 255) ? "" : v * 75 + 6375) : v * 25
@@ -114,7 +123,7 @@ function take(a, pk, f,  m, c, n, i, t, v, w) { m = hexall(a, 6)
     else if (t == 5) oi[m] = txt(i + 2, 20) }
 }
 function line(m) {
-  print "D\t" m "\t" rs[m] "\t" (fm[m] + 0) "\t" it1[m] "\t" ih1[m] "\t" it2[m] "\t" ih2[m] "\t" ua[m] "\t" st[m] \
+  print "D\t" m "\t" rs[m] "\t" (fm[m] + xi[m]) "\t" it1[m] "\t" ih1[m] "\t" it2[m] "\t" ih2[m] "\t" ua[m] "\t" st[m] \
     "\t" la[m] "\t" lo[m] "\t" ag[m] "\t" ab[m] "\t" ht[m] "\t" hr[m] "\t" sp[m] "\t" vs[m] "\t" hd[m] \
     "\t" pt[m] "\t" pa[m] "\t" po[m] "\t" pl[m] "\t" oi[m] "\t" si[m] }
 # the strongest signals first, at most max of them (0 = no cap); a missing signal counts as weakest
@@ -191,7 +200,7 @@ _sw_rid_name() {   # $1 = table, $2 = code -> REPLY = the standard's name, or th
 _sw_rid_line_ok() {
   [ -z "$extra" ] || return 1                               # a | inside a field split it: not the decoder's line
   local n='-?[1-9][0-9]{0,9}|0' u='[1-9][0-9]{0,4}' h='([0-9a-f]{2})'
-  [[ "$mac" =~ ^[0-9a-f]{12}$ && "$rssi" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$forms" =~ ^[1-7]$ ]] || return 1
+  [[ "$mac" =~ ^[0-9a-f]{12}$ && "$rssi" =~ ^(-?[1-9][0-9]{0,2}|0)?$ && "$forms" =~ ^([1-9]|1[0-5])$ ]] || return 1
   [[ "$it1" =~ ^([0-9]|1[0-5])?$ && "$it2" =~ ^([0-9]|1[0-5])?$ && "$ua" =~ ^([0-9]|1[0-5])?$ ]] || return 1
   [[ "$st" =~ ^([0-9]|1[0-5])?$ && "$hr" =~ ^[01]?$ && "$pt" =~ ^[0-3]?$ ]] || return 1
   [[ "$ih1" =~ ^$h{0,20}$ && "$ih2" =~ ^$h{0,20}$ && "$oi" =~ ^$h{0,20}$ && "$si" =~ ^$h{0,23}$ ]] || return 1
@@ -224,12 +233,13 @@ sw_rid_records() {
     else idt="$it1"; id="$t1"; idt2="$it2"; id2="$t2"; fi
     # The owner's own drone (ignore.txt) leaves no trace, but only when EVERY ID it sent is listed as
     # drone:<ID>, or, when it sent none, its address as drone:<MAC>: a spoofer can send a copy of the owner's ID
-    # from another drone's address, and must not hide that drone with it (spec §4). id is empty only when id2 is.
-    # ls1/ls2: id/id2 is listed.
+    # from another drone's address, and must not hide that drone with it (spec §4). And never when the address
+    # sent more IDs than the decoder keeps (forms bit 8): a spoofer heard first can fill both kept IDs with the
+    # owner's, so the other drone's own ID is the one not kept. id is empty only when id2 is. ls1/ls2: listed.
     ls1=0; ls2=0
     sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id|$rssi" "${SW_IGNORE_SET:-}" && ls1=1
     [ -n "$id2" ] && sw_ignored "drone_rid|Drone|high|surveillance|wifi|$MAC|$id2|$rssi" "${SW_IGNORE_SET:-}" && ls2=1
-    if [ "$ls1" = 1 ] && { [ -z "$id2" ] || [ "$ls2" = 1 ]; }; then continue; fi
+    if [ $(( forms & 8 )) -eq 0 ] && [ "$ls1" = 1 ] && { [ -z "$id2" ] || [ "$ls2" = 1 ]; }; then continue; fi
     # One of its two IDs listed and the other not: it is named by the one NOT listed (spec §3), on screen, in the
     # alert, its ledger key and remoteid.csv. Named by the owner's own ID, it would read as the owner's drone.
     if [ "$ls1" = 1 ] && [ "$ls2" = 0 ] && [ -n "$id2" ]; then
@@ -243,6 +253,8 @@ sw_rid_records() {
     if [ -n "$ht" ]; then sw_rid_m "$ht"; motion="${REPLY}m up"
     elif [ -n "$ag" ]; then sw_rid_m "$ag"; motion="alt ${REPLY}m"; fi
     [ -n "$sp" ] && { sw_rid_mps "$sp"; motion="${motion:+$motion, }${REPLY}m/s"; }
+    # more IDs than kept: said first in the motion piece, the piece that is both on the screen line and in the alert
+    [ $(( forms & 8 )) -ne 0 ] && motion="also sends other IDs${motion:+, $motion}"
     pilot="no pilot location"
     if [ -n "$pa" ] && [ -n "$po" ]; then
       case "$pt" in 0) pilot="takeoff point" ;; 1) pilot="pilot (live)" ;; 2) pilot="pilot (fixed)" ;; *) pilot="pilot" ;; esac

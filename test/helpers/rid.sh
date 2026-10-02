@@ -1,7 +1,8 @@
 # test/helpers/rid.sh — sourced by tests (NOT by run.sh, which sources only *_test.sh).
 # sw_test_rid_line KEY=VALUE... prints one decoder "D" line (the 24 fields in lib/remoteid.sh's order),
 # so the bash layer can be tested without the decoder. A key not given takes the full test drone's value
-# (the same values as tools/rid_fixtures/gen.c's beacon); "key=" makes that field empty.
+# (the same values as tools/rid_fixtures/gen.c's beacon); "key=" makes that field empty. forms is a bit mask:
+# 1 beacon, 2 NAN, 4 Parrot, and 8 when the address sent more distinct IDs than the two kept (e.g. forms=9).
 sw_test_rid_line() {
   local -A f=(); local kv
   for kv in "$@"; do f[${kv%%=*}]="${kv#*=}"; done
