@@ -15,3 +15,19 @@ sw_test_rid_line() {
     "${f[pilot_lat]-473980000}" "${f[pilot_lon]-85410200}" "${f[pilot_alt]-}" \
     "${f[operator_id]-5357544553544f50455241544f523031}" "${f[self_id]-}"
 }
+# sw_test_rid_at FILE MAC SIGNAL prints the frame in FILE, a fixture laid out as the reference beacon (from
+# 80:e1:26:aa:bb:cc at -47 dBm, a 9-byte radiotap header), as heard from address MAC (12 lowercase hex digits) at
+# SIGNAL dBm: a TEXT edit of the committed fixture, of the header line's "-47dBm signal", the radiotap signal
+# byte (0x08) and addr2 (0x13-0x18). A fixture it cannot edit that way is an error (rc 1), never printed as it is.
+sw_test_rid_at() {
+  local m="$2" t=$'\t' s out
+  printf -v s %02x $(( $3 & 255 ))
+  out="$(sed -e "s/^-47dBm signal /$3dBm signal /" \
+             -e "s/^\(${t}0x0000:  0000 0900 2000 0000 \)d1/\1$s/" \
+             -e "s/^\(${t}0x0010:  ffff ff\)80 e126 aabb cc/\1${m:0:2} ${m:2:4} ${m:6:4} ${m:10:2}/" "$1")"
+  case "$out" in
+    "$3dBm signal "*"${t}0x0000:  0000 0900 2000 0000 $s"*"${t}0x0010:  ffff ff${m:0:2} ${m:2:4} ${m:6:4} ${m:10:2}"*)
+      printf '%s\n' "$out" ;;
+    *) echo "sw_test_rid_at: $1 is not laid out as the reference beacon" >&2; return 1 ;;
+  esac
+}

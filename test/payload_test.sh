@@ -753,6 +753,7 @@ rm -rf "$_tw"; unset _tw _twdb _twd; unset -f _tw_lap _tw_reset
 
 # --- Remote ID over WiFi in the lap (spec 2026-10-01) ---
 _RFIX2="$(cd "$(dirname "${BASH_SOURCE[0]}")/fixtures" && pwd)/rid"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers/rid.sh"    # sw_test_rid_at
 _rid_reset() { rm -f "$SW_LOOT_DIR/detections.csv" "$SW_LOOT_DIR/remoteid.csv" "$SW_TMP_DIR"/sw_rid.*; : > "$SW_SEEN_FILE"; sw_log_init "$SW_LOOT_DIR"; : > "$SW_STUB_LOG"; }
 # _rid_lap FIXTURE: one lap with the capture on (a 1 s window), no recon DB and no BLE devices
 _rid_lap() { SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="$_RFIX2/$1.txt" SW_RECON_DB=/nonexistent/recon.db SW_BLE_CMD=true sw_scan_once; }
@@ -876,7 +877,42 @@ _rid_reset; SW_IGNORE_SET="$_rown DRONE:0000FSWTEST000000002 " _rid_lapf "$_rcat
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_owner_two_ids_again_silent
 _rid_reset; _rid_lapf "$_rcat"
 assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_lap_owner_two_ids_again_control_alerts
-unset _n; unset -f _rid_spoof _rid_spoof_ctl
+# The per-lap drone cap (SW_RID_MAX_DRONES, 32) against copies of a listed ID (re-review 2026-10-02, Important 1;
+# user decision the same day: "rank, never silence"): 32 copies of the owner's ID, each from its own louder
+# address (hostile/owner_id.txt from 02:aa:bb:cc:00:01 to :20 at -20 dBm, moved there by sw_test_rid_at), then the
+# real drone. The decoder chooses the drones it keeps with the addresses the ignore list may silence last, so the
+# real drone keeps its place: it alerts, with its rows, and the copies are silenced as before. _rid_copies N: the
+# first N of those copies
+_rid_copies() { local i h; for (( i = 1; i <= $1; i++ )); do printf -v h %02x "$i"; sw_test_rid_at "$_RFIX2/hostile/owner_id.txt" "02aabbcc00$h" -20; done; }
+{ _rid_copies 32; cat "$_RFIX2/beacon.txt"; } > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'" rid_cap_copies_cannot_push_out_alerts
+assert_contains "$(cat "$SW_LOOT_DIR/detections.csv")" ',drone_rid,"Drone",high,surveillance,wifi,80:E1:26:AA:BB:CC,"0000FSWTEST000000001",-47,' rid_cap_copies_cannot_push_out_detections_row
+assert_eq "$(grep -c ',beacon,' "$SW_LOOT_DIR/remoteid.csv" 2>/dev/null)" "1" rid_cap_copies_cannot_push_out_copies_silenced
+assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv" 2>/dev/null)" ',beacon,80:E1:26:AA:BB:CC,-47,serial,"0000FSWTEST000000001",' rid_cap_copies_cannot_push_out_track_row
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta ...and 1 more drones (Remote ID flood?)" rid_cap_copies_cannot_push_out_count_line
+# control: 31 copies, inside the cap, alert as they did before the change
+{ _rid_copies 31; cat "$_RFIX2/beacon.txt"; } > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTEST000000001'" rid_cap_31_copies_control_alerts
+# With nothing listed, the 32 copies are a visible flood, as before: an alert, 32 rows and the count line. That is
+# still a limit (README): 32 made-up drones, each louder, push a weaker real drone out of the lap.
+{ _rid_copies 32; cat "$_RFIX2/beacon.txt"; } > "$_rcat"
+_rid_reset; _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_cap_unlisted_flood_alerts
+assert_eq "$(grep -c ',beacon,' "$SW_LOOT_DIR/remoteid.csv" 2>/dev/null)" "32" rid_cap_unlisted_flood_rows
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta ...and 1 more drones (Remote ID flood?)" rid_cap_unlisted_flood_count_line
+assert_empty "$(grep -F '0000FSWTEST000000001' "$SW_LOOT_DIR/remoteid.csv")" rid_cap_unlisted_flood_pushes_a_weaker_drone_out
+# ...and a spoofer at the real drone's own address too (the owner's ID as a serial and as a CAA registration,
+# heard first, so the real ID is a third and the address is flagged): a flagged address is never one the list
+# may silence, so it keeps its place among the drones reported
+{ _rid_copies 32; cat "$_RFIX2/hostile/owner_id.txt" "$_RFIX2/hostile/owner_caa.txt" "$_RFIX2/beacon.txt"; } > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'
+multirotor, also sends other IDs, 87m up, 12m/s
+pilot (live) 47.39800,8.54102
+80:E1:26:AA:BB:CC -47dBm" rid_cap_copies_and_spoofed_address_alerts
+unset _n; unset -f _rid_spoof _rid_spoof_ctl _rid_copies
 # a reference frame with an empty serial and then a CAA registration (gen.c's "emptyserial"): named by the CAA ID
 _rid_reset; _rid_lap emptyserial
 assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone 'FSW-CAA-TEST-0002'" rid_lap_empty_serial_named_by_caa
@@ -931,7 +967,7 @@ sleep 0.5
 assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_rid_lap_never_alerts
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" stop_rid_lap_reports_nothing
 assert_empty "$(ls "$_rs" | grep -E '^sw_rid\.')" stop_rid_leaves_no_files
-rm -rf "$_rs" "$_rcat"; unset _rs _sp _i _inwin _alive _rc _RFIX2 _rcat _rown; unset -f _rid_reset _rid_lap _rid_lapf
+rm -rf "$_rs" "$_rcat"; unset _rs _sp _i _inwin _alive _rc _RFIX2 _rcat _rown; unset -f _rid_reset _rid_lap _rid_lapf sw_test_rid_line sw_test_rid_at
 # --- end Remote ID ---
 
 rm -rf "$SW_LOOT_DIR" "$SW_SEEN_FILE"

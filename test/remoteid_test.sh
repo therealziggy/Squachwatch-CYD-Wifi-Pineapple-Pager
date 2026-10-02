@@ -149,7 +149,7 @@ assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf 
 _RH="$_RFIX/hostile"
 _bD="$(_dec beacon | grep '^D')"               # the reference beacon's drone line
 _hd() { cat "$@" | _sw_rid_decode_awk; }        # _hd FILE...: the decoder over the files
-_hdb() { cat "$@" | busybox awk -v max="${SW_RID_MAX_DRONES:-32}" "$(_sw_rid_awk_src)"; }   # ...on BusyBox awk
+_hdb() { _sw_rid_keys; cat "$@" | busybox awk -v max="${SW_RID_MAX_DRONES:-32}" -v ignkeys="$REPLY" "$(_sw_rid_awk_src)"; }   # ...on BusyBox awk
 # controls: every frame below was edited from beacon, nan or quiet, which decode unpatched (quiet: understood)
 assert_eq "$(_dec beacon | grep -c '^D')/$(_dec nan | grep -c '^D')/$(_rs "$(_dec quiet)" 3)" "1/1/1" rid_h_sources_decode_unpatched
 # _bad NAME FRAMES UNDERSTOOD: hostile/NAME.txt is rejected. Alone it gives no drone line, only the stats line
@@ -318,8 +318,8 @@ if command -v busybox >/dev/null 2>&1; then
     assert_eq "$(busybox awk -v max=32 "$(_sw_rid_awk_src)" < "$_f")" "$(_sw_rid_decode_awk < "$_f")" "rid_busybox_parity_hostile_$(basename "$_f" .txt)"
     _k=$(( _k + 1 ))
   done
-  # control: the loop saw every crafted frame (53 committed), so its passes are not vacuous
-  assert_eq "$_k" "53" rid_busybox_parity_hostile_count
+  # control: the loop saw every crafted frame (55 committed), so its passes are not vacuous
+  assert_eq "$_k" "55" rid_busybox_parity_hostile_count
 else
   fail "rid_busybox_parity: busybox not installed (sudo apt install busybox)"
 fi
@@ -492,6 +492,94 @@ assert_contains "$(sw_test_rid_line forms=15 | _recs)" "|0000FSWTEST000000001|" 
 assert_empty "$(sw_test_rid_line forms=16 | _recs)" rid_rec_forms_16_dropped
 assert_empty "$(sw_test_rid_line forms=0 | _recs)" rid_rec_forms_0_dropped
 unset _ign
+
+# The per-lap drone cap (SW_RID_MAX_DRONES) chooses LAST the addresses that the ignore list may silence (re-review
+# 2026-10-02, Important 1: 32 copies of the owner's ID, each from its own louder address, took all 32 places and
+# were then silenced, so the real drone got no alert and no row; user decision the same day: "rank, never
+# silence"). Bash hands the decoder the list's drone: lines as keys, their letters and digits in upper case
+# (_sw_rid_keys). An address MAY be silenced when it is not flagged and each kept ID's key is listed or empty, or,
+# when no kept ID has a key, its own address (or a key of "") is listed: a superset of what sw_rid_records silences,
+# since bash compares the whole cleaned ID. Within each group the strongest signal comes first, as before. The
+# ranking only orders the lines: every line kept is printed, and only sw_rid_records silences.
+# The keys: drone: lines only (no plain address, no evil_twin: line), letters and digits in upper case, each after a
+# ":" (a line with neither is ":" alone)
+SW_IGNORE_SET=" 80:E1:26:AA:BB:CC DRONE:0000FSWTESTOWNER001 EVIL_TWIN:02:11:22:33:44:66 DRONE:80:E1:26:11:22:33 DRONE:-- DRONE:ab-c1 DRONE:A"$'\xff'"B " _sw_rid_keys
+assert_eq "$REPLY" " :0000FSWTESTOWNER001 :80E126112233 : :ABC1 :AB " rid_keys_drone_lines_only
+SW_IGNORE_SET=" 80:E1:26:AA:BB:CC EVIL_TWIN:02:11:22:33:44:66 " _sw_rid_keys
+assert_eq "$REPLY" " " rid_keys_no_drone_line
+SW_IGNORE_SET= _sw_rid_keys
+assert_eq "$REPLY" " " rid_keys_empty_list
+# sw_test_rid_at (test/helpers/rid.sh) sends a fixture's frame from another address at another signal, a text edit.
+# Controls: given the frame's own address and signal it prints the committed file unchanged; an edit reaches the
+# decoder (address and signal) and the radiotap byte, while the ID stays the frame's; another layout is refused.
+assert_eq "$(sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 80e126aabbcc -47)" "$(cat "$_RFIX/hostile/owner_id.txt")" rid_at_control_identity
+assert_eq "$(sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20 | _sw_rid_decode_awk | grep '^D' | cut -f2-6)" "02aabbcc0001	-20	1	1	30303030465357544553544f574e4552303031" rid_at_control_moves_the_frame
+assert_contains "$(sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20)" $'\t0x0000:  0000 0900 2000 0000 ec80 ' rid_at_control_radiotap_signal
+assert_eq "$(sw_test_rid_at "$_RFIX/nan.txt" 02aabbcc0001 -20 2>/dev/null; echo "rc=$?")" "rc=1" rid_at_refuses_another_layout
+# _rank IGNORE CAP: decodes $_hf on this box's awk and on BusyBox awk (the Pager's), under ignore list IGNORE and
+# drone cap CAP -> REPLY = the addresses of its drone lines in order, then "/" and its more_drones count; _rb is 1
+# when the two awks printed the same, byte for byte
+_hf="$(mktemp)"; _oign=" DRONE:0000FSWTESTOWNER001 "
+_rank() { local o b
+  o="$(SW_IGNORE_SET="$1" SW_RID_MAX_DRONES="$2" _sw_rid_decode_awk < "$_hf")"
+  SW_IGNORE_SET="$1" _sw_rid_keys
+  b="$(busybox awk -v max="$2" -v ignkeys="$REPLY" "$(_sw_rid_awk_src)" < "$_hf")"
+  _rb=0; [ "$b" = "$o" ] && _rb=1
+  REPLY="$(printf '%s\n' "$o" | awk -F'\t' '$1 == "D" { printf "%s ", $2 } $1 == "S" { printf "/%s", $5 }')"; }
+# _rrec IGNORE: the decoder over $_hf under IGNORE with room for every drone, then sw_rid_records under IGNORE ->
+# the address and ID of each drone it reports, one per line
+_rrec() { SW_IGNORE_SET="$1" SW_RID_MAX_DRONES=0 _sw_rid_decode_awk < "$_hf" | SW_IGNORE_SET="$1" _recs | cut -d'|' -f6-7; }
+# 1. a copy of the owner's ID from a louder address, then the real drone: nothing listed, the stronger first, as
+#    before; the owner listed, the copy last (cap 1: the real drone kept; cap 2: both, the copy second; no cap: as
+#    heard). sw_rid_records still decides: it silences the copy and reports the real drone.
+{ sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+_rank "" 1;       assert_eq "$REPLY|$_rb" "02aabbcc0001 /1|1" rid_rank_control_strongest_first
+_rank "$_oign" 1; assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" rid_rank_listed_copy_last
+_rank "$_oign" 2; assert_eq "$REPLY|$_rb" "80e126aabbcc 02aabbcc0001 /0|1" rid_rank_only_orders
+_rank "$_oign" 0; assert_eq "$REPLY|$_rb" "02aabbcc0001 80e126aabbcc /0|1" rid_rank_no_cap_as_heard
+assert_eq "$(_rrec "$_oign")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" rid_rank_copy_still_silenced_by_bash
+# 2. a near miss: the owner's ID with a dash (hostile/owner_dash.txt: owner_id 0x48-0x5b "0000-FSWTESTOWNER001") has
+#    the owner's key, so it is ranked with the listed ones, but it is not listed (bash compares the whole ID): it is
+#    REPORTED whenever it is kept
+{ sw_test_rid_at "$_RFIX/hostile/owner_dash.txt" 02aabbcc0001 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+_rank "$_oign" 1;  assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" rid_rank_near_miss_last
+_rank "$_oign" 32; assert_eq "$REPLY|$_rb" "80e126aabbcc 02aabbcc0001 /0|1" rid_rank_near_miss_kept_within_the_cap
+_det="$(SW_IGNORE_SET="$_oign" SW_RID_MAX_DRONES=32 _sw_rid_decode_awk < "$_hf" | SW_IGNORE_SET="$_oign" _recs)"
+assert_contains "$_det" "|02:AA:BB:CC:00:01|0000-FSWTESTOWNER001|-20|" rid_rank_near_miss_reported
+assert_contains "$_det" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|" rid_rank_near_miss_real_drone_reported
+# 3. a drone that sends no ID (hostile/empty_id.txt) whose address is listed as drone:<MAC> is ranked last too, and
+#    silenced by bash; control: its address not listed (another drone's ID is), it keeps its place, the stronger
+{ sw_test_rid_at "$_RFIX/hostile/empty_id.txt" 02aabbcc0002 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+_rank " DRONE:02:AA:BB:CC:00:02 " 1; assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" rid_rank_listed_address_last
+_rank "$_oign" 1;                    assert_eq "$REPLY|$_rb" "02aabbcc0002 /1|1" rid_rank_unlisted_address_control
+assert_eq "$(_rrec " DRONE:02:AA:BB:CC:00:02 ")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" rid_rank_listed_address_silenced_by_bash
+# 4. a flagged address (forms bit 8) is never one the list may silence: here the real drone's, where a spoofer sent
+#    the owner's ID as a serial and as a CAA registration first, beside a louder copy of the owner's ID elsewhere
+{ sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20; cat "$_RFIX/hostile/owner_id.txt" "$_RFIX/hostile/owner_caa.txt" "$_RFIX/beacon.txt"; } > "$_hf"
+_rank "$_oign" 1; assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" rid_rank_flagged_never_last
+# 5. a kept ID with no letter or digit (hostile/blank_id.txt: a space and a control byte, which clean to nothing)
+#    does not keep the owner's ID beside it from ranking the address last, in either order: bash names that drone
+#    by the owner's ID alone and silences it
+for _n in owner_id:blank_id blank_id:owner_id; do
+  { sw_test_rid_at "$_RFIX/hostile/${_n%%:*}.txt" 02aabbcc0003 -20; sw_test_rid_at "$_RFIX/hostile/${_n#*:}.txt" 02aabbcc0003 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+  _rank "$_oign" 1; assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" "rid_rank_blank_beside_listed_last_[$_n]"
+  assert_eq "$(_rrec "$_oign")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" "rid_rank_blank_beside_listed_silenced_by_bash_[$_n]"
+done
+# 6. a lower-case copy of the owner's ID (hostile/owner_lower.txt): bash compares it upper-cased, and so do the keys
+{ sw_test_rid_at "$_RFIX/hostile/owner_lower.txt" 02aabbcc0005 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+_rank "$_oign" 1; assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" rid_rank_lower_case_copy_last
+assert_eq "$(_rrec "$_oign")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" rid_rank_lower_case_copy_silenced_by_bash
+# 7. an ID with no letter or digit at all (hostile/dash_id.txt: empty_id 0x48-0x49 2d2d, the ID "--") listed as
+#    drone:-- (a key of ""): bash silences it, so it is ranked last; control: not listed, it keeps its place
+{ sw_test_rid_at "$_RFIX/hostile/dash_id.txt" 02aabbcc0004 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+_rank " DRONE:-- " 1; assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" rid_rank_listed_punctuation_id_last
+_rank "$_oign" 1;     assert_eq "$REPLY|$_rb" "02aabbcc0004 /1|1" rid_rank_unlisted_punctuation_id_control
+assert_eq "$(_rrec " DRONE:-- ")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" rid_rank_listed_punctuation_id_silenced_by_bash
+# 8. the re-review's input at the default cap: 32 copies of the owner's ID (02:aa:bb:cc:00:01 to :20, -20 dBm), then
+#    the real drone, which is kept, first (the full lap: payload_test.sh)
+{ for (( _i = 1; _i <= 32; _i++ )); do printf -v _n %02x "$_i"; sw_test_rid_at "$_RFIX/hostile/owner_id.txt" "02aabbcc00$_n" -20; done; cat "$_RFIX/beacon.txt"; } > "$_hf"
+_rank "$_oign" 32; assert_eq "${REPLY%% *}|${REPLY##*/}|$_rb" "80e126aabbcc|1|1" rid_rank_32_copies_real_drone_kept
+rm -f "$_hf"; unset _hf _oign _rb _n _i; unset -f _rank _rrec
 # a stopped payload writes and reports nothing
 bash -c 'exit 0' & _rd=$!; wait "$_rd"
 rm -f "$_rl/remoteid.csv"
@@ -508,7 +596,7 @@ assert_contains "$(cat "$SW_STUB_LOG")" "GPS_GET" rid_rec_stop_in_gps_control_gp
 assert_empty "$_det" rid_rec_stop_in_gps_no_detection
 assert_eq "$([ -e "$_rl/remoteid.csv" ] && echo written)" "" rid_rec_stop_in_gps_no_csv
 unset _fm
-rm -rf "$_rl"; unset _rl _det _rd; unset -f _recs _csv1
+rm -rf "$_rl"; unset _rl _det _rd; unset -f _recs _csv1 sw_test_rid_line sw_test_rid_at
 
 # --- the per-lap capture (test/stubs/tcpdump models the Pager's tcpdump) ---
 _cap_dir="$(mktemp -d)"; _cap_loot="$(mktemp -d)"

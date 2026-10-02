@@ -13,6 +13,9 @@
 # forms is a bit mask: the forms heard (1 ASD-STAN beacon, 2 NAN, 4 Parrot beacon), plus 8 when the address sent
 # more distinct Basic IDs than the two kept (id and id2: the first two that hold text, distinct by text or type).
 # The stats line comes LAST, at the end of the input: a pass without one did not finish (sw_rid_collect).
+# Its inputs: max (SW_RID_MAX_DRONES: at most that many D lines, 0 = no cap) and ignkeys, the ignore list's drone:
+# lines as keys (_sw_rid_keys), with which it chooses which addresses to keep when there are more than max: those
+# the list may silence come last (emit). The keys only order the lines; sw_rid_records alone silences.
 _sw_rid_awk_src() { cat <<'RIDAWK'
 # One frame per tcpdump header line; the hex lines that follow start with an offset like 0x0010:.
 # Every byte test uses a decimal literal: BusyBox awk and mawk do not parse 0x.. constants.
@@ -35,7 +38,10 @@ function okpack(pk, end,  c) { if (pk + 3 > end) return 0   # redundant: the fit
   if (int(b(pk) / 16) != 15 || b(pk + 1) != 25) return 0
   c = b(pk + 2); if (c < 1 || c > 9) return 0
   return pk + 3 + 25 * c <= end }
-BEGIN { for (k = 0; k <= 9; k++) hx[k] = k; hx["a"] = 10; hx["b"] = 11; hx["c"] = 12; hx["d"] = 13; hx["e"] = 14; hx["f"] = 15 }
+BEGIN { for (k = 0; k <= 9; k++) hx[k] = k; hx["a"] = 10; hx["b"] = 11; hx["c"] = 12; hx["d"] = 13; hx["e"] = 14; hx["f"] = 15
+  # the ignore list's keys (_sw_rid_keys), each after a ":", so that a key of "" is one too; ch: digits and letters
+  nk = split(ignkeys, kw, " "); for (k = 1; k <= nk; k++) ign[substr(kw[k], 2)] = 1
+  for (k = 0; k <= 9; k++) ch[48 + k] = k; for (k = 1; k <= 26; k++) ch[64 + k] = substr("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k, 1) }
 $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
   # tcpdump prints the radiotap fields before any frame text, so a network name cannot supply this. A radiotap
   # signal is one signed byte: a match outside -128..127 came from frame text (a radio with no signal field)
@@ -126,20 +132,52 @@ function line(m) {
   print "D\t" m "\t" rs[m] "\t" (fm[m] + xi[m]) "\t" it1[m] "\t" ih1[m] "\t" it2[m] "\t" ih2[m] "\t" ua[m] "\t" st[m] \
     "\t" la[m] "\t" lo[m] "\t" ag[m] "\t" ab[m] "\t" ht[m] "\t" hr[m] "\t" sp[m] "\t" vs[m] "\t" hd[m] \
     "\t" pt[m] "\t" pa[m] "\t" po[m] "\t" pl[m] "\t" oi[m] "\t" si[m] }
-# the strongest signals first, at most max of them (0 = no cap); a missing signal counts as weakest
-function emit(  k, j, best, bv, v, kept) { kept = 0
+# An ID's key: the letters and digits of hex text h, upper case. sw_rid_records compares an ID's whole cleaned
+# text, without spaces and upper-cased, and the cleaning only removes bytes that are neither: so an ID bash finds
+# listed has a listed key, while a near miss (the same ID with a dash, say) has one too without being listed.
+function idkey(h,  r, j, c) { r = ""
+  for (j = 1; j < length(h); j += 2) { c = hx[substr(h, j, 1)] * 16 + hx[substr(h, j + 1, 1)]
+    if (c >= 97 && c <= 122) c = c - 32
+    if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90)) r = r ch[c] }
+  return r }
+# Can the ignore list silence address m (sw_rid_records)? Never when it is flagged (forms bit 8). Else only when
+# each kept ID's key is listed or empty (an ID that may clean to nothing, which bash skips), and one of them is
+# listed or, when neither has a key, the address itself (drone:<MAC>) or a key of "" (a listed ID with no letter
+# or digit) is. Every drone bash silences answers yes; a near miss may too, and is reported whenever it is kept.
+function ignorable(m,  k1, k2) { if (xi[m]) return 0
+  k1 = idkey(ih1[m]); k2 = idkey(ih2[m])
+  if ((k1 != "" && !(k1 in ign)) || (k2 != "" && !(k2 in ign))) return 0
+  return k1 != "" || k2 != "" || (toupper(m) in ign) || ("" in ign) }
+# The strongest signals first, at most max of them (0 = no cap: all, as heard); a missing signal counts as
+# weakest. When choosing them, the addresses the ignore list may silence come after all the others (re-review
+# 2026-10-02: 32 louder copies of a listed ID took every place, and were then silenced). This only orders: every
+# line chosen is printed, and only sw_rid_records silences. (With no key, no address is ignorable: skipped.)
+function emit(  k, j, best, bv, bq, v, kept) { kept = 0
   if (max + 0 == 0) { for (k = 1; k <= no; k++) line(ord[k]); kept = no }
-  else for (k = 1; k <= no && kept < max + 0; k++) { best = 0
-    for (j = 1; j <= no; j++) { if (used[j]) continue
-      v = (ord[j] in rs) ? rs[ord[j]] + 0 : -999
-      if (!best || v > bv) { best = j; bv = v } }
-    used[best] = 1; kept++; line(ord[best]) }
+  else { for (j = 1; j <= no; j++) iq[j] = nk ? ignorable(ord[j]) : 0
+    for (k = 1; k <= no && kept < max + 0; k++) { best = 0
+      for (j = 1; j <= no; j++) { if (used[j]) continue
+        v = (ord[j] in rs) ? rs[ord[j]] + 0 : -999
+        if (!best || iq[j] < bq || (iq[j] == bq && v > bv)) { best = j; bv = v; bq = iq[j] } }
+      used[best] = 1; kept++; line(ord[best]) } }
   # last: the stats line, which tells sw_rid_collect that the pass finished
   print "S\t" frames + 0 "\t" understood + 0 "\t" ridf + 0 "\t" no - kept }
 RIDAWK
 }
-# stdin = tcpdump -t -nn -xx text -> the lines above; at most SW_RID_MAX_DRONES D lines (0 = no cap)
-_sw_rid_decode_awk() { awk -v max="${SW_RID_MAX_DRONES:-32}" "$(_sw_rid_awk_src)"; }
+# stdin = tcpdump -t -nn -xx text -> the lines above; at most SW_RID_MAX_DRONES D lines (0 = no cap), those the
+# ignore list (SW_IGNORE_SET) may silence chosen last
+_sw_rid_decode_awk() { _sw_rid_keys; awk -v max="${SW_RID_MAX_DRONES:-32}" -v ignkeys="$REPLY" "$(_sw_rid_awk_src)"; }
+# The ignore list's drone: lines (drone:<ID>, drone:<MAC>) as the decoder's keys -> REPLY: each line's letters and
+# digits in upper case, after a ":" (a line with neither is ":" alone), e.g. " :0000FSWTESTOWNER001 :80E126AABBCC ".
+# Only drone: lines silence a WiFi drone (sw_ignored), found as it finds them, after a space; nothing in them is
+# expanded, and the keys hold nothing awk -v would read as an escape. Once per lap, builtins only.
+_sw_rid_keys() {
+  local LC_ALL=C rest="${SW_IGNORE_SET:-} " w
+  REPLY=" "
+  while [[ "$rest" == *" DRONE:"* ]]; do
+    rest="${rest#*" DRONE:"}"; w="${rest%%" "*}"; w="${w//[!0-9A-Za-z]/}"; REPLY+=":${w^^} "
+  done
+}
 
 # --- From the decoder's lines to detections and remoteid.csv rows (spec §6.3, §6.5) ---
 # Formatters: builtins only, bash integer arithmetic (no floats), answer in REPLY.
@@ -335,15 +373,16 @@ sw_rid_start() {
   [ "${SW_REMOTE_ID:-0}" = 1 ] || return 0
   command -v tcpdump >/dev/null 2>&1 || return 0
   sw_stopped && return 0
-  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-1500}" maxd="${SW_RID_MAX_DRONES:-32}" cap err
+  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-1500}" maxd="${SW_RID_MAX_DRONES:-32}" cap err keys
   [[ "$secs" =~ ^[1-9][0-9]{0,4}$ ]] || secs=12
   [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=1500
   [[ "$maxd" =~ ^(0|[1-9][0-9]{0,3})$ ]] || maxd=32
   cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { sw_rid_health_note capture_failed "$now"; return 0; }
   err="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { rm -f "$cap"; sw_rid_health_note capture_failed "$now"; return 0; }
+  _sw_rid_keys; keys="$REPLY"     # the drones the ignore list may silence are chosen last (the decoder's emit)
   _sw_rid_filter
   nice -n 10 timeout -k 2 "$secs" tcpdump -i "${SW_RID_IFACE:-wlan1mon}" -p -l -t -nn -xx -c "$maxf" "$REPLY" 2>"$err" \
-    | nice -n 10 awk -v max="$maxd" "$(_sw_rid_awk_src)" > "$cap" 2>/dev/null &
+    | nice -n 10 awk -v max="$maxd" -v ignkeys="$keys" "$(_sw_rid_awk_src)" > "$cap" 2>/dev/null &
   SW_RID_PID=$!; SW_RID_CAP="$cap"; SW_RID_ERR="$err"
 }
 

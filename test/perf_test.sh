@@ -99,7 +99,7 @@ assert_contains "$(_sw_body "$SW_ROOT/lib/eviltwin.sh" sw_evil_twin_scan)" "AS M
 # 8) Remote ID (spec 2026-10-01): the per-drone bash is builtins only (the frames themselves are read by
 #    one awk pass per lap), the decoder keeps its budget, and the capture never touches the interface.
 source "$SW_ROOT/lib/remoteid.sh"
-for _fn in sw_rid_coord sw_rid_alt sw_rid_m sw_rid_mps sw_rid_mps2 sw_rid_dmps sw_rid_text _sw_rid_name _sw_rid_line_ok _sw_rid_csv_row; do
+for _fn in sw_rid_coord sw_rid_alt sw_rid_m sw_rid_mps sw_rid_mps2 sw_rid_dmps sw_rid_text _sw_rid_name _sw_rid_line_ok _sw_rid_csv_row _sw_rid_keys; do
   assert_contains "$(_sw_body "$SW_ROOT/lib/remoteid.sh" "$_fn")" "$_fn()" "forkfree_found_$_fn"
   assert_empty "$(_sw_body "$SW_ROOT/lib/remoteid.sh" "$_fn" | grep -nE '\$\([^(]|`|(^|[^a-z_])(tr|sed|cut|awk|grep) ')" "forkfree_$_fn"
 done
@@ -118,6 +118,17 @@ SECONDS=0; _o="$(_sw_rid_decode_awk < "$_big")"; _el=$SECONDS
 # positive control first: every frame was read (else the timing is vacuous)
 assert_contains "$_o" "S	1500	1500	300	0" rid_perf_control_all_frames_read
 if [ "$_el" -lt 5 ]; then pass; else fail "rid_perf_budget: 1500 frames took ${_el}s (budget 5s)"; fi
+# ...and the drone cap's choice at its worst: 1,499 copies of a listed ID, each from its own address (owner_id.txt's
+# addr2 rewritten per copy: a text edit), then the real drone, so every address gets its key looked up
+awk '{ a[NR] = $0 } END { for (i = 1; i <= 1499; i++) for (j = 1; j <= NR; j++) {
+  l = a[j]; h = sprintf("%04x", i)
+  if (l ~ /^\t0x0010:  ffff ff80 e126 aabb cc80/) l = "\t0x0010:  ffff ff02 aabb cc" substr(h, 1, 2) " " substr(h, 3, 2) "80 e126 aabb cc00"
+  print l } }' "$_rfx/hostile/owner_id.txt" > "$_big"
+cat "$_rfx/beacon.txt" >> "$_big"
+SECONDS=0; _o="$(SW_IGNORE_SET=" DRONE:0000FSWTESTOWNER001 " _sw_rid_decode_awk < "$_big")"; _el=$SECONDS
+# positive control first: every frame was read and the copies were ranked (the weaker real drone is kept, first)
+assert_eq "$(printf '%s\n' "$_o" | grep -c '^D')|$(printf '%s\n' "$_o" | grep -m1 '^D' | cut -f2)|$(printf '%s\n' "$_o" | grep '^S')" "32|80e126aabbcc|S	1500	1500	1500	1468" rid_perf_rank_control
+if [ "$_el" -lt 5 ]; then pass; else fail "rid_perf_rank_budget: 1500 addresses took ${_el}s (budget 5s)"; fi
 rm -f "$_big"; unset _rfx _big _i _o _el
 
 unset _fn _sw_body _sw_sigs _sw_bulk _sw_out _sw_elapsed _sw_t3sigs _sw_bulk_ble _sw_out_ble _sw_el_ble _sw_pad _i _l _t0 _t1 _t2 _sw_o1 _sw_o2 _plain _padded
