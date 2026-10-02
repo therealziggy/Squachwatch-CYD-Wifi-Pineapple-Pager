@@ -132,33 +132,50 @@ function line(m) {
   print "D\t" m "\t" rs[m] "\t" (fm[m] + xi[m]) "\t" it1[m] "\t" ih1[m] "\t" it2[m] "\t" ih2[m] "\t" ua[m] "\t" st[m] \
     "\t" la[m] "\t" lo[m] "\t" ag[m] "\t" ab[m] "\t" ht[m] "\t" hr[m] "\t" sp[m] "\t" vs[m] "\t" hd[m] \
     "\t" pt[m] "\t" pa[m] "\t" po[m] "\t" pl[m] "\t" oi[m] "\t" si[m] }
-# An ID's key: the letters and digits of hex text h, upper case. sw_rid_records compares an ID's whole cleaned
-# text, without spaces and upper-cased, and the cleaning only removes bytes that are neither: so an ID bash finds
-# listed has a listed key, while a near miss (the same ID with a dash, say) has one too without being listed.
+# An ID's key: the ASCII letters and digits of hex text h, upper case. sw_rid_records compares an ID's whole
+# cleaned text, without spaces and upper-cased in the C locale, and the cleaning only removes bytes that are
+# neither: so an ID bash finds listed has a listed key, while a near miss (the same ID with a dash, say) has one too
+# without being listed.
 function idkey(h,  r, j, c) { r = ""
   for (j = 1; j < length(h); j += 2) { c = hx[substr(h, j, 1)] * 16 + hx[substr(h, j + 1, 1)]
     if (c >= 97 && c <= 122) c = c - 32
     if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90)) r = r ch[c] }
   return r }
-# Can the ignore list silence address m (sw_rid_records)? Never when it is flagged (forms bit 8). Else only when
-# each kept ID's key is listed or empty (an ID that may clean to nothing, which bash skips), and one of them is
-# listed or, when neither has a key, the address itself (drone:<MAC>) or a key of "" (a listed ID with no letter
-# or digit) is. Every drone bash silences answers yes; a near miss may too, and is reported whenever it is kept.
-function ignorable(m,  k1, k2) { if (xi[m]) return 0
-  k1 = idkey(ih1[m]); k2 = idkey(ih2[m])
-  if ((k1 != "" && !(k1 in ign)) || (k2 != "" && !(k2 in ign))) return 0
-  return k1 != "" || k2 != "" || (toupper(m) in ign) || ("" in ign) }
+# Does hex text h clean to nothing in sw_rid_records? Its steps, byte for byte: sw_sanitize_ident in the C locale
+# ("|", the C0 controls and DEL; then the C1 controls, c2 80..9f; then U+2028/2029, e2 80 a8/a9; each step on what
+# the one before left), then the spaces at both ends trimmed, so only spaces may be left.
+function blank(h,  j, c, s, u) { s = ""; u = ""
+  for (j = 1; j < length(h); j += 2) { c = hx[substr(h, j, 1)] * 16 + hx[substr(h, j + 1, 1)]
+    if (c >= 32 && c != 124 && c != 127) s = s substr(h, j, 2) }
+  for (j = 1; j < length(s); j += 2) {
+    c = (j + 2 < length(s)) ? hx[substr(s, j + 2, 1)] * 16 + hx[substr(s, j + 3, 1)] : 0
+    if (substr(s, j, 2) == "c2" && c >= 128 && c <= 159) j += 2; else u = u substr(s, j, 2) }
+  for (j = 1; j < length(u); j += 2) {
+    if (substr(u, j, 6) == "e280a8" || substr(u, j, 6) == "e280a9") j += 4
+    else if (substr(u, j, 2) != "20") return 0 }
+  return 1 }
+# Can the ignore list silence address m (sw_rid_records)? Never when it is flagged (forms bit 8). Else every kept ID
+# that bash would name the drone by (one with a letter or digit, or any other that does not clean to nothing: a
+# binary UUID, a punctuation-only or non-Latin ID) must have its key listed (an ID with neither has the key "",
+# which only a listed ID with neither gives); with no such ID, bash goes by the address (drone:<MAC>). So every
+# drone bash silences answers yes, and one it reports answers yes only as a near miss: an ID that differs from a
+# listed one only in characters other than ASCII letters and digits.
+function ignorable(m,  n, k) { if (xi[m]) return 0
+  n = 0; k = idkey(ih1[m])
+  if (k != "" || !blank(ih1[m])) { if (!(k in ign)) return 0; n++ }
+  k = idkey(ih2[m])
+  if (k != "" || !blank(ih2[m])) { if (!(k in ign)) return 0; n++ }
+  return n ? 1 : (toupper(m) in ign) }
 # The strongest signals first, at most max of them (0 = no cap: all, as heard); a missing signal counts as
 # weakest. When choosing them, the addresses the ignore list may silence come after all the others (re-review
-# 2026-10-02: 32 louder copies of a listed ID took every place, and were then silenced). This only orders: every
-# line chosen is printed, and only sw_rid_records silences. (With no key, no address is ignorable: skipped.)
-function emit(  k, j, best, bv, bq, v, kept) { kept = 0
+# 2026-10-02: 32 louder copies of a listed ID took every place, and were then silenced): sc, worked out once per
+# address, is the signal less 10000 for those. This only orders: every line chosen is printed, and only
+# sw_rid_records silences. (With no key, nothing is ignorable, so nothing is looked up.)
+function emit(  k, j, best, bs, kept) { kept = 0
   if (max + 0 == 0) { for (k = 1; k <= no; k++) line(ord[k]); kept = no }
-  else { for (j = 1; j <= no; j++) iq[j] = nk ? ignorable(ord[j]) : 0
+  else { for (j = 1; j <= no; j++) sc[j] = ((ord[j] in rs) ? rs[ord[j]] + 0 : -999) - ((nk && ignorable(ord[j])) ? 10000 : 0)
     for (k = 1; k <= no && kept < max + 0; k++) { best = 0
-      for (j = 1; j <= no; j++) { if (used[j]) continue
-        v = (ord[j] in rs) ? rs[ord[j]] + 0 : -999
-        if (!best || iq[j] < bq || (iq[j] == bq && v > bv)) { best = j; bv = v; bq = iq[j] } }
+      for (j = 1; j <= no; j++) if (!used[j] && (!best || sc[j] > bs)) { best = j; bs = sc[j] }
       used[best] = 1; kept++; line(ord[best]) } }
   # last: the stats line, which tells sw_rid_collect that the pass finished
   print "S\t" frames + 0 "\t" understood + 0 "\t" ridf + 0 "\t" no - kept }
@@ -167,15 +184,21 @@ RIDAWK
 # stdin = tcpdump -t -nn -xx text -> the lines above; at most SW_RID_MAX_DRONES D lines (0 = no cap), those the
 # ignore list (SW_IGNORE_SET) may silence chosen last
 _sw_rid_decode_awk() { _sw_rid_keys; awk -v max="${SW_RID_MAX_DRONES:-32}" -v ignkeys="$REPLY" "$(_sw_rid_awk_src)"; }
-# The ignore list's drone: lines (drone:<ID>, drone:<MAC>) as the decoder's keys -> REPLY: each line's letters and
-# digits in upper case, after a ":" (a line with neither is ":" alone), e.g. " :0000FSWTESTOWNER001 :80E126AABBCC ".
-# Only drone: lines silence a WiFi drone (sw_ignored), found as it finds them, after a space; nothing in them is
-# expanded, and the keys hold nothing awk -v would read as an escape. Once per lap, builtins only.
+# The ignore list's drone: lines (drone:<ID>, drone:<MAC>) as the decoder's keys -> REPLY: each one's ASCII letters
+# and digits in upper case, after a ":" (one with neither is ":" alone), e.g. " :0000FSWTESTOWNER001 :80E126AABBCC ".
+# The list is split into words on spaces, tabs and line breaks (sw_ignored only ever matches a whole word) and
+# nothing in it is expanded; a bare "DRONE:" silences nothing and gives no key. The letters and digits are named
+# one by one, not as ranges (en_US.UTF-8's ranges keep dotless ı and long ſ, which ^^ makes I and S), and only they
+# and ":" reach awk -v, which would read a backslash as an escape. Once per lap, builtins only, linear in the list.
 _sw_rid_keys() {
-  local LC_ALL=C rest="${SW_IGNORE_SET:-} " w
+  local LC_ALL=C w words
   REPLY=" "
-  while [[ "$rest" == *" DRONE:"* ]]; do
-    rest="${rest#*" DRONE:"}"; w="${rest%%" "*}"; w="${w//[!0-9A-Za-z]/}"; REPLY+=":${w^^} "
+  IFS=$' \t\n' read -r -d '' -a words <<< "${SW_IGNORE_SET:-}"
+  for w in "${words[@]}"; do
+    case "$w" in
+      DRONE:?*) w="${w#DRONE:}"; w="${w//[!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]/}"
+                REPLY+=":${w^^} " ;;
+    esac
   done
 }
 

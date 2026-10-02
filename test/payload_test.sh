@@ -912,6 +912,18 @@ assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'
 multirotor, also sends other IDs, 87m up, 12m/s
 pilot (live) 47.39800,8.54102
 80:E1:26:AA:BB:CC -47dBm" rid_cap_copies_and_spoofed_address_alerts
+# ...and a real drone whose own ID has no ASCII letter or digit, like a binary UTM UUID or a non-Latin ID: here
+# "ДРОН" (the reference beacon with its ID made d094 d0a0 d09e d09d by sw_test_rid_id, a text edit), with one copy
+# of the owner's ID sent from its own address too. Bash names it by "ДРОН", so it may not be ranked last
+# (adversarial review 2026-10-02: it was, and the 32 copies pushed it out). Control: without the 32 copies it
+# alerts the same way.
+{ _rid_copies 32; cat "$_RFIX2/hostile/owner_id.txt"; sw_test_rid_id "$_RFIX2/beacon.txt" d094d0a0d09ed09d; } > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone 'ДРОН'" rid_cap_no_letter_id_beside_owner_copy_alerts
+assert_contains "$(cat "$SW_LOOT_DIR/remoteid.csv" 2>/dev/null)" ',beacon,80:E1:26:AA:BB:CC,-47,serial,"ДРОН",serial,"0000FSWTESTOWNER001",' rid_cap_no_letter_id_beside_owner_copy_row
+{ cat "$_RFIX2/hostile/owner_id.txt"; sw_test_rid_id "$_RFIX2/beacon.txt" d094d0a0d09ed09d; } > "$_rcat"
+_rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone 'ДРОН'" rid_cap_no_letter_id_beside_owner_copy_control_alerts
 unset _n; unset -f _rid_spoof _rid_spoof_ctl _rid_copies
 # a reference frame with an empty serial and then a CAA registration (gen.c's "emptyserial"): named by the CAA ID
 _rid_reset; _rid_lap emptyserial

@@ -129,6 +129,13 @@ SECONDS=0; _o="$(SW_IGNORE_SET=" DRONE:0000FSWTESTOWNER001 " _sw_rid_decode_awk 
 # positive control first: every frame was read and the copies were ranked (the weaker real drone is kept, first)
 assert_eq "$(printf '%s\n' "$_o" | grep -c '^D')|$(printf '%s\n' "$_o" | grep -m1 '^D' | cut -f2)|$(printf '%s\n' "$_o" | grep '^S')" "32|80e126aabbcc|S	1500	1500	1500	1468" rid_perf_rank_control
 if [ "$_el" -lt 5 ]; then pass; else fail "rid_perf_rank_budget: 1500 addresses took ${_el}s (budget 5s)"; fi
-rm -f "$_big"; unset _rfx _big _i _o _el
+# ...and the ignore list's keys, built once per lap, in time linear in the list: 4,000 plain address lines and one
+# drone line take well under a second (a pattern that searched the rest of the list for each line took seconds)
+_l=" "; for (( _i = 0; _i < 4000; _i++ )); do printf -v _m 'AA:BB:CC:%02X:%02X:%02X ' $(( _i / 65536 % 256 )) $(( _i / 256 % 256 )) $(( _i % 256 )); _l+="$_m"; done
+_l+="DRONE:0000FSWTESTOWNER001 "
+_t0=${EPOCHREALTIME//[!0-9]/}; SW_IGNORE_SET="$_l" _sw_rid_keys; _t1=${EPOCHREALTIME//[!0-9]/}
+assert_eq "$REPLY" " :0000FSWTESTOWNER001 " rid_perf_keys_control
+if [ $(( _t1 - _t0 )) -lt 1000000 ]; then pass; else fail "rid_perf_keys_budget: 4000 lines took $(( (_t1 - _t0) / 1000 )) ms (budget 1000 ms)"; fi
+rm -f "$_big"; unset _rfx _big _i _o _el _l _m _t0 _t1
 
 unset _fn _sw_body _sw_sigs _sw_bulk _sw_out _sw_elapsed _sw_t3sigs _sw_bulk_ble _sw_out_ble _sw_el_ble _sw_pad _i _l _t0 _t1 _t2 _sw_o1 _sw_o2 _plain _padded

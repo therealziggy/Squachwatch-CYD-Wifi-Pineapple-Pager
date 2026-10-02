@@ -508,11 +508,12 @@ unset _ign
 # The per-lap drone cap (SW_RID_MAX_DRONES) chooses LAST the addresses that the ignore list may silence (re-review
 # 2026-10-02, Important 1: 32 copies of the owner's ID, each from its own louder address, took all 32 places and
 # were then silenced, so the real drone got no alert and no row; user decision the same day: "rank, never
-# silence"). Bash hands the decoder the list's drone: lines as keys, their letters and digits in upper case
-# (_sw_rid_keys). An address MAY be silenced when it is not flagged and each kept ID's key is listed or empty, or,
-# when no kept ID has a key, its own address (or a key of "") is listed: a superset of what sw_rid_records silences,
-# since bash compares the whole cleaned ID. Within each group the strongest signal comes first, as before. The
-# ranking only orders the lines: every line kept is printed, and only sw_rid_records silences.
+# silence"). Bash hands the decoder the list's drone: lines as keys, their ASCII letters and digits in upper case
+# (_sw_rid_keys). An address MAY be silenced when it is not flagged and every kept ID that bash would name the drone
+# by (all but one that cleans to nothing) has its key listed, or, with no such ID, its own address is listed: what
+# sw_rid_records silences, and besides only near misses (bash compares the whole cleaned ID). Within each group the
+# strongest signal comes first, as before. The ranking only orders the lines: every line kept is printed, and only
+# sw_rid_records silences.
 # The keys: drone: lines only (no plain address, no evil_twin: line), letters and digits in upper case, each after a
 # ":" (a line with neither is ":" alone)
 SW_IGNORE_SET=" 80:E1:26:AA:BB:CC DRONE:0000FSWTESTOWNER001 EVIL_TWIN:02:11:22:33:44:66 DRONE:80:E1:26:11:22:33 DRONE:-- DRONE:ab-c1 DRONE:A"$'\xff'"B " _sw_rid_keys
@@ -591,7 +592,67 @@ assert_eq "$(_rrec " DRONE:-- ")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" rid_r
 #    the real drone, which is kept, first (the full lap: payload_test.sh)
 { for (( _i = 1; _i <= 32; _i++ )); do printf -v _n %02x "$_i"; sw_test_rid_at "$_RFIX/hostile/owner_id.txt" "02aabbcc00$_n" -20; done; cat "$_RFIX/beacon.txt"; } > "$_hf"
 _rank "$_oign" 32; assert_eq "${REPLY%% *}|${REPLY##*/}|$_rb" "80e126aabbcc|1|1" rid_rank_32_copies_real_drone_kept
-rm -f "$_hf"; unset _hf _oign _rb _n _i; unset -f _rank _rrec
+# 9. An ID with no ASCII letter or digit (adversarial review 2026-10-02): bash skips it only when it cleans to
+#    nothing (sw_sanitize_ident, then the spaces at both ends); any other it names the drone by, as it would a
+#    binary UTM UUID, a punctuation-only or a non-Latin ID. So the owner's ID sent from a drone's address does not
+#    make that drone one the list may silence, unless its other ID cleans to nothing. Each X below goes with the
+#    owner's ID from one louder address (02:aa:bb:cc:00:07; X written into the reference beacon by sw_test_rid_id,
+#    a text edit), then the real drone, at cap 1. The decoder ranks that address last exactly when sw_rid_records
+#    silences it (b: X cleans to nothing) and not when bash reports it under X (n). b: a space and a C0 control,
+#    DEL, "|", the C1 controls NEL and APC, U+2028, U+2029, NEL between spaces, NEL split by a C0 control, U+2028
+#    split by a C1 control. n: "--", a lone c2, a lone 85, NBSP, an unfinished U+2028, U+202A, "ДРОН", ff, binary
+#    UUID bytes.
+for _x in b:2001 b:7f b:7c b:c285 b:c29f b:e280a8 b:e280a9 b:20c28520 b:c20185 b:e2c28080a8 \
+          n:2d2d n:c2 n:85 n:c2a0 n:e280 n:e280aa n:d094d0a0d09ed09d n:ff n:8f12a3c4e5079b212e3f8091a2b3c4d5; do
+  { sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0007 -20
+    sw_test_rid_at <(sw_test_rid_id "$_RFIX/beacon.txt" "${_x#*:}") 02aabbcc0007 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+  _rank "$_oign" 1
+  if [ "${_x%%:*}" = b ]; then
+    assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" "rid_rank_no_letter_id_cleans_to_nothing_last_[${_x#*:}]"
+    assert_eq "$(_rrec "$_oign")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" "rid_rank_no_letter_id_cleans_to_nothing_silenced_by_bash_[${_x#*:}]"
+  else
+    assert_eq "$REPLY|$_rb" "02aabbcc0007 /1|1" "rid_rank_no_letter_id_named_not_last_[${_x#*:}]"
+    assert_contains "$(_rrec "$_oign")" "02:AA:BB:CC:00:07|" "rid_rank_no_letter_id_named_reported_by_bash_[${_x#*:}]"
+  fi
+done
+#    ...and with X heard first, then the owner's ID (each of the two kept IDs is checked on its own)
+for _x in b:2001 b:c285 n:2d2d n:d094d0a0d09ed09d; do
+  { sw_test_rid_at <(sw_test_rid_id "$_RFIX/beacon.txt" "${_x#*:}") 02aabbcc0007 -20
+    sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0007 -20; cat "$_RFIX/beacon.txt"; } > "$_hf"
+  _rank "$_oign" 1
+  if [ "${_x%%:*}" = b ]; then
+    assert_eq "$REPLY|$_rb" "80e126aabbcc /1|1" "rid_rank_no_letter_id_first_cleans_to_nothing_last_[${_x#*:}]"
+    assert_eq "$(_rrec "$_oign")" "80:E1:26:AA:BB:CC|0000FSWTEST000000001" "rid_rank_no_letter_id_first_cleans_to_nothing_silenced_by_bash_[${_x#*:}]"
+  else
+    assert_eq "$REPLY|$_rb" "02aabbcc0007 /1|1" "rid_rank_no_letter_id_first_named_not_last_[${_x#*:}]"
+    assert_contains "$(_rrec "$_oign")" "02:AA:BB:CC:00:07|" "rid_rank_no_letter_id_first_named_reported_by_bash_[${_x#*:}]"
+  fi
+done
+# 10. A key of "" (a listed ID with no letter or digit, drone:--) does not rank last an address that bash knows by no
+#     ID: one that sent none (hostile/empty_id.txt) or only a blank one (hostile/blank_id.txt), which only drone:<MAC>
+#     silences. Here such a drone beside a louder copy of the owner's ID, at cap 1: it keeps its place.
+for _n in empty_id blank_id; do
+  { sw_test_rid_at "$_RFIX/hostile/owner_id.txt" 02aabbcc0001 -20; sw_test_rid_at "$_RFIX/hostile/$_n.txt" 02aabbcc0002 -30; } > "$_hf"
+  _rank "$_oign DRONE:-- " 1; assert_eq "$REPLY|$_rb" "02aabbcc0002 /1|1" "rid_rank_listed_no_letter_key_no_id_not_last_[$_n]"
+done
+# 11. The keys (adversarial review 2026-10-02): a bare drone: line silences nothing (sw_ignored never matches it), so
+#     it gives no key; only ASCII letters and digits count, whatever the caller's locale (the Pager's is UTF-8, where
+#     upper-casing turns dotless ı and long ſ into I and S, and en_US's ranges keep them); words split on any space,
+#     tab or line break, and nothing is expanded
+SW_IGNORE_SET=" DRONE: DRONE:0000FSWTESTOWNER001 " _sw_rid_keys
+assert_eq "$REPLY" " :0000FSWTESTOWNER001 " rid_keys_bare_drone_line_no_key
+for _l in C.UTF-8 en_US.UTF-8; do
+  LC_ALL="$_l" SW_IGNORE_SET=" DRONE:ı1 DRONE:ſX DRONE:É2 DRONE:A	DRONE:B
+DRONE:* " _sw_rid_keys 2>/dev/null
+  assert_eq "$REPLY" " :1 :X :2 :A :B : " "rid_keys_ascii_only_[$_l]"
+done
+# 12. ...and sw_rid_records compares in the C locale too, whatever the caller's: in a UTF-8 one, upper-casing would
+#     make a lookalike of the owner's ID ("0000FſWTESTOWNER001", a long s for the S) the owner's ID and silence it,
+#     while its key ("0000FWTESTOWNER001") is not listed, so the drone cap would not rank it last. Byte for byte it
+#     is another ID: it is reported. (Control: in C.UTF-8 the shell does upper-case ſ to S.)
+assert_eq "$(LC_ALL=C.UTF-8 bash -c 'w=ſı; printf %s "${w^^}"' 2>&1)" "SI" rid_utf8_locale_control
+assert_contains "$(sw_test_rid_line id_hex=3030303046c5bf57544553544f574e4552303031 | LC_ALL=C.UTF-8 SW_IGNORE_SET="$_oign" _recs 2>/dev/null)" "|80:E1:26:AA:BB:CC|0000FſWTESTOWNER001|-47|" rid_rec_lookalike_of_listed_id_reported
+rm -f "$_hf"; unset _hf _oign _rb _n _i _x _l; unset -f _rank _rrec
 # a stopped payload writes and reports nothing
 bash -c 'exit 0' & _rd=$!; wait "$_rd"
 rm -f "$_rl/remoteid.csv"

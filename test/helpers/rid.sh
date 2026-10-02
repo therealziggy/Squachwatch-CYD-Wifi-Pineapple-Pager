@@ -31,3 +31,18 @@ sw_test_rid_at() {
     *) echo "sw_test_rid_at: $1 is not laid out as the reference beacon" >&2; return 1 ;;
   esac
 }
+# sw_test_rid_id FILE HEX prints the frame in FILE, laid out as the reference beacon, with its first Basic ID's
+# 20 bytes (0x48-0x5b) made HEX (lowercase, at most 40 digits), zero-filled: a TEXT edit of the committed fixture.
+# A fixture it cannot edit that way is an error (rc 1).
+sw_test_rid_id() {
+  local h="$2" t=$'\t' g out
+  while [ "${#h}" -lt 40 ]; do h+=0; done
+  g=("${h:0:4}" "${h:4:4}" "${h:8:4}" "${h:12:4}" "${h:16:4}" "${h:20:4}" "${h:24:4}" "${h:28:4}" "${h:32:4}" "${h:36:4}")
+  out="$(sed -e "s/^\(${t}0x0040:  bc0d 00f2 1904 02[0-9a-f][0-9a-f]\) [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\}\$/\1 ${g[0]} ${g[1]} ${g[2]} ${g[3]}/" \
+             -e "s/^${t}0x0050:  [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\} [0-9a-f]\{4\}\( 0000 0012\)\$/${t}0x0050:  ${g[4]} ${g[5]} ${g[6]} ${g[7]} ${g[8]} ${g[9]}\1/" "$1")"
+  case "$out" in
+    *"${t}0x0040:  bc0d 00f2 1904 02"??" ${g[0]} ${g[1]} ${g[2]} ${g[3]}"*"${t}0x0050:  ${g[4]} ${g[5]} ${g[6]} ${g[7]} ${g[8]} ${g[9]} 0000 0012"*)
+      printf '%s\n' "$out" ;;
+    *) echo "sw_test_rid_id: $1 is not laid out as the reference beacon" >&2; return 1 ;;
+  esac
+}
