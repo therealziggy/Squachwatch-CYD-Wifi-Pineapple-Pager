@@ -88,7 +88,8 @@ done
 # BLE scan (about 13 s) makes every lap longer.
 : "${SW_RID_SECONDS:=12}"
 # At most this many frames per lap (it reads every nearby beacon, so a beacon flood must not eat the
-# CPU), and this many drones per lap (the strongest; the rest are counted on one line; 0 = no cap).
+# CPU), and this many drones per lap (the strongest; the rest are counted on one line; 0 = no cap, in the
+# order heard, which lets a flood of made-up drones cost each lap time and two CSV rows per drone).
 : "${SW_RID_MAX_FRAMES:=1500}"
 : "${SW_RID_MAX_DRONES:=32}"
 # The flight-track log: one row per drone per lap in which it was heard.

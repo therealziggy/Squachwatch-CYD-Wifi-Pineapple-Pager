@@ -599,8 +599,11 @@ Checked on the Pager and in a planning spike for the Remote ID design
   second); 1 action frame of any kind in 20 s. Hex-dumping every beacon for 20 s through an awk join:
   2.03 s user + 0.35 s system CPU, about 12% of the CPU (how it splits between tcpdump and awk is a
   Phase 0 measurement).
-- **tcpdump's own health lines:** `listening on <iface>, link-type ...` on start and `N packets captured`
-  on exit (TERM included; a KILL skips it), both on stderr.
+- **tcpdump's own health lines:** `listening on <iface>, link-type ...` on start; on exit (TERM included; a
+  KILL skips them) `N packets captured` (`1 packet captured` for exactly one), `N packets received by
+  filter` and `N packets dropped by kernel`, all on stderr. SquachWatch reads the first, the captured count
+  and the drop count (the wording is from tcpdump's source; seeing it on the Pager is part of check 6
+  below).
 - **Radios:** phy1 = `wlan1mon` (monitor), hopped by `pineapd --recon` across 2.4 and 5 GHz; phy0 = `wlan0`
   (station) plus `wlan0mon`, on the station's channel.
 - **awk:** mawk and BusyBox awk do not parse `0x..` numeric literals, so the decoder compares decimal
@@ -609,3 +612,45 @@ Checked on the Pager and in a planning spike for the Remote ID design
 - **The reference library** (opendroneid-core-c, commit `6484f26545d4f012682524e2d843fab0fbdc0b34`) needs
   four files to build its frames (`opendroneid.c`, `opendroneid.h`, `wifi.c`, `odid_wifi.h`), and it
   stamps the generating machine's uptime into every beacon's timestamp: the fixture generator zeroes it.
+
+**Still to do on the Pager** (nothing here has run on the device yet; Phase 0 of the spec, §9, then the live
+test). The six Phase 0 checks:
+
+1. Text parity: the Pager's tcpdump (4.99.5) prints the fixture pcaps exactly as the dev box's (4.99.4).
+2. Read only, really: `-p` captures on `wlan1mon` still see frames, and the recon DB keeps growing at its
+   usual rate during a capture.
+3. Cost split: tcpdump alone versus tcpdump plus the awk program, per frame; set `SW_RID_MAX_FRAMES` so a lap
+   at the cap stays inside the budget (spec §7.5); check that `nice` works.
+4. Window timing: `SW_RID_SECONDS` such that the window normally ends before the Bluetooth scan; lap time
+   A/B, old build and new, alternating.
+5. Channel coverage: the share of time `wlan1mon` is within two channels of channel 6, and on channel 149
+   (NAN's 5 GHz channel). That gives the catch rate the README still lacks.
+6. Capture parity: awk's frame count equals tcpdump's `packets captured` after a TERM.
+
+Added by the final review (2026-10-02):
+
+- The worst case a spoofer can force: a lap of Remote ID-dense frames at the frame cap. On the dev box (the
+  final review's measurements) a Remote ID frame costs BusyBox awk about 9 times an ordinary beacon, and large frames (2-4 KB) 11 to 22
+  times; scaled to the Pager's measured ~14 ms per beacon, 1500 such frames could take about 20 s of CPU,
+  against the spec's "about 5 s at the cap". Also whether tcpdump's summary survives a CPU-busy lap: awk runs
+  at nice 10 and can fall behind, and a KILL at the window's end loses the summary, and with it the frame-cap
+  and lost-frames checks. Options if it fails: a lower `SW_RID_MAX_FRAMES`, a cap on full decodes per lap, a
+  longer `-k`, or decoding a file in RAM after the window.
+- Kernel drops at a busy spot: read `dropped by kernel` (it now raises the "lost frames" WARN).
+- The snapshot-length idea: on the dev box `-s 1024` cut the cost of 4 KB frames from 6.3 s to 1.75 s per
+  1500. It needs the spread of beacon sizes on the Pager first, since the Remote ID data must then sit in the
+  first 1024 bytes, radiotap header included. Not changed until measured.
+- Radiotap on `wlan1mon`: whether every header carries a `dBm signal` (without one, a network name could
+  only ever supply an out-of-range "signal", which the decoder now ignores), and whether the FCS flag is
+  set (up to 4 bytes of slack in the bounds checks).
+- Awk parity: the md5 of the decoded fixtures (`test/fixtures/rid/*.txt` and `hostile/*.txt`) on the Pager's
+  BusyBox awk against the dev box's.
+- A launcher-faithful probe with `test/stubs/tcpdump` and a hostile-ID fixture (no radio): whether the real
+  `LOG` and `ALERT` show quotes, `%s`, `$(x)` and `\` in a drone ID as plain text.
+- Under load: whether a TERM while tcpdump is blocked on a full pipe loses a line (frames one short of
+  packets: a false "lost frames" WARN), and whether tcpdump prints its summary on SIGPIPE.
+- The lap budget (at most 1 s added a lap; the 12 s window ends before the ~13 s Bluetooth scan), that
+  `/sys/class/net/wlan1mon` is there while recon runs, and a real menu Stop during a window.
+
+Then the live test, with a real Remote ID drone only (SquachWatch only listens: no made-up drone is ever
+broadcast to test it), with the OpenDroneID OSM phone app as the second opinion.

@@ -167,8 +167,8 @@ ble_uuid|3400|surveillance_raven|Raven gunshot sensor (possible)|low|surveillanc
 ble_uuid|3500|surveillance_raven|Raven gunshot sensor (possible)|low|surveillance
 
 # ---- Drones (surveillance) ----
-# ASTM F3411 Remote ID over Bluetooth (legacy advertising). Presence only: decoding the drone's
-# serial and the pilot's position belongs with Remote ID over WiFi, a later phase.
+# ASTM F3411 Remote ID over Bluetooth (legacy advertising). Presence only: Remote ID over WiFi is
+# decoded (lib/remoteid.sh); decoding this Bluetooth form is a later step (spec 2026-10-01 §13).
 ble_uuid|fffa|surveillance_drone|Drone (Remote ID)|med|surveillance
 
 # ---- Trackers (Tier 3: raw BLE advertisements via btmon, spec 2026-09-22) ----

@@ -152,9 +152,12 @@ Then, per lap:
   one extra `remoteid.csv` row that lap (both rows carry the same ID). This keeps the decoder a single
   streaming pass with small per-address state. (Decided during the spike, 2026-10-01: cross-address merge
   in awk would need a second pass and buys nothing the cooldown does not already give.)
-- **The drone's ID** is the Basic ID of ID type 1 (serial number, ANSI/CTA-2063-A) when it sends one, else
-  the first Basic ID it sends (a CAA registration, a UTM UUID or a session ID). Trailing zero bytes and
-  spaces are dropped. A drone that sends no Basic ID has **no ID** and is known by its address.
+- **The drone's ID** is the first Basic ID it sends that holds any text, a serial number (ID type 1,
+  ANSI/CTA-2063-A) preferred: a serial when it sends one, else its first other Basic ID (a CAA registration,
+  a UTM UUID or a session ID). The other one, if any, is its second ID. The text is cut at the first zero
+  byte, cleaned, and trimmed of spaces at both ends: an ID left empty (an empty serial, or spaces and control
+  bytes only) is **no ID**, so it gives way to the other one. A drone with no ID at all is known by its
+  address.
 - **Grade:** HIGH, class `surveillance` (magenta line and LED), with the buzz (user decision).
 
 ## 4. What the user sees
@@ -191,11 +194,16 @@ Then, per lap:
     ID uses the usual `<MAC>|drone_rid` key.
   - `SW_KIND_COOLDOWN`: several drones within 600 s buzz once.
   - `SW_LOG_PER_KIND`: 3 drones on screen per lap (each with its detail line), then `...and N more Drone`.
-  - `ignore.txt`: only a line `drone:<ID>` silences a drone, or `drone:<MAC>` for one that sends no ID. A
-    plain MAC line never does: a drone's address can change, and anyone can broadcast any address (the
-    same reasoning as `evil_twin:<MAC>`). An ignored drone gets no screen line and no row in either CSV.
-    (`ignore.txt` lines lose their spaces and are upper-cased when loaded, so the ID is compared the same
-    way.)
+  - `ignore.txt`: a drone is silenced only when **every** ID heard from its address (both Basic IDs the
+    decoder keeps) is listed as `drone:<ID>`; a drone that sends no ID at all, by `drone:<MAC>`. A plain
+    MAC line never silences one: a drone's address can change, and anyone can broadcast any address (the
+    same reasoning as `evil_twin:<MAC>`). For the same reason one listed ID is not enough: a spoofer can
+    send a copy of the owner's ID from another drone's address, and that must not hide the other drone
+    (user decision 2026-10-02, after the final review). A drone that sends two IDs needs a line for each;
+    `remoteid.csv` shows both. The screen and the alert show only the ID chosen in §3. An ignored drone
+    gets no screen line and no row in either CSV. (`ignore.txt` lines lose their spaces and are upper-cased
+    when loaded, so the ID is compared the same way.) The rule applies in `sw_rid_records`, which sees both
+    IDs; the lap's emit loop does not check a drone again (its line carries only the one ID).
   - AUTO SNOOZE and "following you" do not apply: a drone is not a tracker.
 - **Your own drone:** add `drone:<its ID>` to `ignore.txt`.
 - **Bluetooth Remote ID** is unchanged: the `fffa` rule (`surveillance_drone`, med) stays presence only. A
@@ -229,12 +237,13 @@ The same as CYD: the framing checks (byte for byte as the fork's `isWifiBeacon`,
 - `mktemp` two files in `${SW_TMP_DIR:-/tmp}`: the capture `sw_rid.XXXXXX` and tcpdump's stderr
   `sw_rid.XXXXXX`. No temp space: status `capture_failed` (§7.2) and no capture this lap.
 - Starts, in the background, and remembers the pipeline's PID:
-  `nice -n 10 timeout -k 2 "$SW_RID_SECONDS" tcpdump -i "$SW_RID_IFACE" -p -l -nn -xx -c "$SW_RID_MAX_FRAMES" '<filter>' 2>"$err" | nice -n 10 awk '<frame filter + decoder>' > "$cap" &`
+  `nice -n 10 timeout -k 2 "$SW_RID_SECONDS" tcpdump -i "$SW_RID_IFACE" -p -l -t -nn -xx -c "$SW_RID_MAX_FRAMES" '<filter>' 2>"$err" | nice -n 10 awk '<frame filter + decoder>' > "$cap" &`
   - The kernel filter: `type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)`.
   - **Read only:** `-p` never puts the interface into promiscuous mode, and `-I` (monitor mode) is never
     used. The capture never changes the interface; recon keeps it.
   - `-l` writes each line at once (the hcitool lesson: no output may sit in a buffer when the process is
-    signalled). `-nn`: no name lookups. Full frames (tcpdump's default snapshot length).
+    signalled). `-t`: no clock times. `-nn`: no name lookups. Full frames (tcpdump's default snapshot
+    length).
   - It **ends by itself**: `timeout` sends TERM after `SW_RID_SECONDS` (tcpdump exits cleanly on TERM;
     awk then reaches the end of its input and writes its results) and KILL 2 s later; or tcpdump stops
     after `SW_RID_MAX_FRAMES` frames (`-c`). Nothing is ever stopped by name.
@@ -260,11 +269,14 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
   (`0x80`) or an action frame (`0xd0`) whose length is plausible. The 802.11 header is 24 bytes, or 28 when
   the Order bit (frame-control byte 1, bit 7) is set. The signal is the **first** `-NNdBm signal` on the
   header line: tcpdump prints the radiotap fields before any frame text, so a network name cannot supply
-  it. The address is addr2, read from the frame's bytes, never from text.
+  it. A radiotap signal is one signed byte, so a match outside -128..127 (or written `-0`, or with a
+  leading zero) came from frame text, a network name on a radio with no radiotap signal, and the frame has
+  no signal. The address is addr2, read from the frame's bytes, never from text.
 - **Cheap pre-test:** only a frame whose hex holds `fa0bbc0d`, `903ae6` or `8869199d9209` gets the full walk.
 - **Full walk** (§3). An element that runs past the end of the frame ends the walk; elements before it
-  still count (a trailing frame checksum ends the walk this way). One bad frame never stops the program or
-  touches another frame's state.
+  still count (a trailing frame checksum ends the walk this way). At most 64 elements (beacon) or
+  attributes (NAN) are walked per frame, so a frame cannot make the walk long: Remote ID after the 64th is
+  not seen. One bad frame never stops the program or touches another frame's state.
 - **Message decoding** (offsets within a 25-byte message; multi-byte fields little endian):
   - *Basic ID:* ID type = byte 1 high nibble, airframe type = low nibble, ID = bytes 2 to 21.
   - *Location/Vector:* status = byte 1 high nibble; flags in byte 1: bit 2 height type (0 above take-off,
@@ -289,10 +301,11 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
   speed as deci-m/s, heading in whole degrees; bash does the unit maths and the decimal formatting (§6.3).
   Byte comparisons in awk use **decimal** literals (`250`, not `0xFA`): mawk and BusyBox awk do not parse
   `0x..` constants (spike, 2026-10-01). This was proven on both awks and against the reference encoder.
-- **Output, at the end of input:** one stats line, then one line per drone. TAB-separated, and every field
-  is a number, empty, or lowercase hex, so no field can shift another:
-  `S frames understood rid_frames more_drones`
+- **Output, at the end of input:** one line per drone, then one stats line, LAST: a pass whose output has no
+  stats line did not finish (§7.2). TAB-separated, and every field is a number, empty, or lowercase hex, so
+  no field can shift another:
   `D mac rssi forms id_type id_hex id2_type id2_hex ua_type status lat lon alt_geo alt_baro height height_ref speed vspeed heading pilot_type pilot_lat pilot_lon pilot_alt operator_id_hex self_id_hex`
+  `S frames understood rid_frames more_drones`
   (`forms` is a bit mask: 1 ASD-STAN beacon, 2 NAN, 4 Parrot beacon.)
 - Runs unchanged on mawk (the dev box) and BusyBox awk 1.36.1 (the Pager): hex digits through a lookup
   table, no gawk-only functions; a signed 32-bit value is built from its four bytes in floating point.
@@ -301,18 +314,21 @@ It reads tcpdump's text (a header line per frame, beginning with the timestamp, 
 
 Per drone line (a handful per lap at most, never per frame):
 
-- Read with `LC_ALL=C`; check the line's shape (field count, and each field against its own pattern); drop
-  any other line (defence in depth, as in the evil-twin check).
+- Read with `LC_ALL=C`; check the line's shape (exactly 24 fields, nothing after the last, and each field
+  against its own pattern); drop any other line (defence in depth, as in the evil-twin check).
+- `sw_stopped`: stop here, write nothing (before the lap's one `GPS_GET`, shared by its drones).
 - Hex text to bytes (`${h//??/\\x&}`, then `printf -v … %b`), then `sw_sanitize_ident`, the one cleaning
-  boundary. Spaces trimmed.
-- Build the ID, the three detail pieces (§4) and the `remoteid.csv` row.
-- `sw_ignored` on the detection: an ignored drone is skipped entirely.
-- `sw_stopped`: stop here, write nothing.
-- Append its `remoteid.csv` row (one `GPS_GET` per lap, shared by the lap's drones).
-- Print the 9-field detection into the lap's detection stream (like an evil twin, it skips the matcher).
+  boundary, then the spaces at both ends trimmed (after the cleaning, so a control byte cannot shield one).
+- Choose the ID (§3); the ignore list (§4) checks every ID heard: a silenced drone is skipped entirely.
+- Build the three detail pieces (§4).
+- `sw_stopped` again, right before the row: a Stop during the GPS read (a gpsd query on the device) writes
+  nothing either.
+- Build and append its `remoteid.csv` row, and print the 9-field detection into the lap's detection stream
+  (like an evil twin, it skips the matcher).
 
 If the decoder counted more drones than it kept, one line in the drone colour says
-`...and N more drones (Remote ID flood?)`, once per lap.
+`...and N more drones (Remote ID flood?)`, once per lap, unless the payload was stopped. (It is printed by
+the capture code, so it shows above the drones it summarises; moving it to the emit loop is a later item.)
 
 ### 6.4 Changes to the shared libraries (small, category-specific, like the evil twin's)
 
@@ -325,7 +341,8 @@ If the decoder counted more drones than it kept, one line in the drone colour sa
   - The alert body: airframe type and motion on one line, the pilot on the next, then the usual
     `<MAC> <signal>` line.
 - `sw_ignored` (`lib/ignore.sh`): for `drone_rid`, matches only ` DRONE:<ID> ` (the ID without spaces,
-  upper case), or ` DRONE:<MAC> ` when there is no ID.
+  upper case), or ` DRONE:<MAC> ` when there is no ID. `sw_rid_records` calls it once per ID heard (§4),
+  and the lap's emit loop leaves `drone_rid` lines alone.
 - `sw_log_write` (`lib/log.sh`) reads nine fields and writes the same ten columns as today.
 - `sw_follow_update` (`lib/follow.sh`) cuts the signal at the next `|` (it returns before using it for
   anything but trackers, so this only keeps the parse honest).
@@ -343,8 +360,10 @@ Header:
   airborne, emergency, failure; `height_ref`: takeoff, ground; `pilot_loc`: takeoff, live, fixed). A code
   outside the table is written as its number.
 - Unknown values are empty cells. Coordinates keep 7 decimals.
-- Free text (`id`, `id2`, `operator_id`, `self_id`, `gps`) goes through `_sw_csv_field` (quotes and the
-  spreadsheet-formula guard), like `detections.csv`.
+- Free text (`id`, `id2`, `operator_id`, `self_id`, `gps`) goes through `_sw_csv_cell` (quotes and the
+  spreadsheet-formula guard, the same cells `_sw_csv_field` writes for `detections.csv`, with builtins only).
+- `ua_type` 0 is a declared "none" and is written `none`; an empty cell means no Basic ID was heard. (The
+  screen leaves a declared "none" out.)
 - Created with its header on first write. Written every lap a drone is heard, except for ignored drones,
   drones over the per-lap cap, and a stopped lap.
 
@@ -377,12 +396,17 @@ Like the Bluetooth note: a WARN only when the status **changes**, silent `ok` on
 | Status | When | Line |
 |---|---|---|
 | `capture_failed` | no temp space, or tcpdump never printed `listening on` | `WARN: WiFi capture failed — Remote ID over WiFi OFF` |
-| `not_understood` | the link type is not `IEEE802_11_RADIO`; or 5 or more frames arrived and none parsed as a beacon or action frame; or awk counted fewer frames than tcpdump's `packets captured` (output lost; checked only when tcpdump printed that line, which a KILL skips) | `WARN: WiFi capture not understood — Remote ID over WiFi OFF` |
+| `not_understood` | the link type is not `IEEE802_11_RADIO`; or the decoder printed no stats line (it did not finish, also in a lap with no frames); or 5 or more frames arrived and none parsed as a beacon or action frame | `WARN: WiFi capture not understood — Remote ID over WiFi OFF` |
 | `capped` | the frame cap was reached | `WARN: WiFi capture hit its frame limit (beacon flood?) — Remote ID partly blind` |
+| `lost` | awk counted fewer frames than tcpdump's `packets captured` (output lost on the way), or tcpdump's `N packets dropped by kernel` is above 0 (the CPU did not keep up); both lines only when tcpdump printed them, which a KILL skips | `WARN: WiFi capture lost frames (CPU busy?) — Remote ID partly blind` |
 | `ok` | otherwise, **including a lap with no frames at all** | |
 
-- `capped` is shown at most once per `SW_COOLDOWN` and recovers silently, so a busy spot right at the cap
-  cannot flood the screen.
+- The rules are checked in that order (the first that applies wins).
+- `capped` and `lost` (partly blind) share one WARN per `SW_COOLDOWN` and recover silently, so a busy spot
+  right at the cap cannot flood the screen.
+- An OFF status (`capture_failed`, `not_understood`) never comes with drones in the same lap; a partly
+  blind one reports what was heard. So no line says Remote ID is OFF in a lap that reports a drone.
+- tcpdump's summary is read in both its forms, `1 packet …` and `N packets …`.
 - **A lap with no frames is `ok`.** There are places with no WiFi at all (fields, where drones fly), and
   `listening on` already proves the capture ran.
 - **The positive control runs on real traffic:** every ordinary beacon must parse as a beacon, so the frame
@@ -395,7 +419,10 @@ Like the Bluetooth note: a WARN only when the status **changes**, silent `ok` on
   new work: `sw_cleanup` also removes `sw_rid.state`; `sw_clear_tmp` also sweeps `sw_rid.*`. Captures stay
   with the lap that owns them, as with Bluetooth.
 - `sw_stopped` is checked before starting, after the wait (the capture is dropped unread, no health note),
-  after decoding, and before each `remoteid.csv` write; the emit loop already checks it.
+  before each health line and before the state file is written, before the lap's `GPS_GET`, right before
+  each `remoteid.csv` row (after that read), and before the flood line; the emit loop already checks it.
+  (Not changed here, and declined on 2026-09-29: the emit path's own windows, `sw_emit` with no re-check
+  before ALERT and the buzz, and the trap running twice.)
 - A Stop during the window: the main shell exits at once (the existing `& wait $!`); the orphaned capture
   ends within `SW_RID_SECONDS` + 2 s; its files are swept at the next start.
 
@@ -406,7 +433,7 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
 - every length and offset is bounds-checked, and one bad frame never ends the lap or hides a later frame
   (the Tier-3 lesson);
 - strict pack check; every field range-checked, with the standard's "unknown" values (§6.2);
-- text leaves awk as hex and becomes text only through `sw_sanitize_ident`, then `_sw_csv_field` for the CSV;
+- text leaves awk as hex and becomes text only through `sw_sanitize_ident`, then `_sw_csv_cell` for the CSV;
 - every record line is shape-checked before use;
 - the signal comes from the header's first match only, the address from frame bytes only;
 - caps on frames and on drones per lap.
@@ -423,7 +450,7 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
 - **Reference fixtures, not our own encoder.** A fixture generator on the dev box (`tools/rid_fixtures/`,
   never installed on the Pager) builds frames with **opendroneid-core-c** at a pinned commit (Apache-2.0,
   fetched and checksum-checked by the generator's build script, not vendored), wraps them in a radiotap
-  header in a pcap file, and runs the **real tcpdump** on it (`-r … -l -nn -xx`) to produce the fixture
+  header in a pcap file, and runs the **real tcpdump** on it (`-r … -t -nn -xx`) to produce the fixture
   text. The generator, the pcap files and the text are committed; the tests need neither the network nor a
   compiler. An encoder of our own would share any misreading of the standard with our decoder and pass
   anyway.
@@ -431,7 +458,9 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   "unknown" values; several drones; one drone under two addresses; one drone in two forms; ordinary
   (synthetic) beacons for the `understood` counter; a quiet capture; a failed start (stderr only); a wrong
   link type; output cut short (fewer frames than `packets captured`).
-- **Hostile fixture `rid_hostile`:** element lengths running past the frame; a pack with count 0 or 10,
+- **Hostile frames** (built as `test/fixtures/rid/hostile/`: byte edits of the reference fixtures, kept as
+  tcpdump text only, each edit written next to its test; `rid_hostile` decodes all the rejected ones before a
+  good beacon): element lengths running past the frame; a pack with count 0 or 10,
   message size 24, or a declared size that does not fit; a NAN frame with the hash but a broken pack; the
   ASD-STAN OUI with a type other than `0x0D`; Parrot's OUI with a random payload; IDs holding `|`, commas,
   quotes, a line break, `%s`, `$(x)`, control bytes and bytes that are not UTF-8; coordinates out of range;
@@ -453,7 +482,8 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   step.
 - **Mutation:** each guard mutated must fail a test: the pack check, the bounds checks, the unknown-value
   handling, the sanitize call, the `drone:` ignore prefix, the ID-only ledger key, the shape gate, the
-  first-signal rule.
+  first-signal rule. (Twelve bounds checks in the decoder can never change its output, because a later
+  check catches the same input; they are marked "redundant" in the code and left out of this list, §15.)
 - Every "nothing happened" assertion has a positive control in the same test: the fixture that must decode
   does.
 
@@ -514,7 +544,11 @@ Results go into `docs/superpowers/P0-findings.md`.
   on both radios shows up twice, once per radio.
 - A drone that sends no ID is keyed by its address, so a new address means a new alert.
 - At most `SW_RID_MAX_DRONES` drones per lap get rows and lines.
-- A beacon flood hits the frame cap (with a WARN), and Remote ID is then partly blind.
+- A beacon flood hits the frame cap (with a WARN), and Remote ID is then partly blind. So is a lap whose
+  frames were dropped by the kernel or lost on the way (a WARN of its own; the two share one per
+  `SW_COOLDOWN`).
+- At most 64 elements or attributes are read per frame: Remote ID after the 64th is not seen.
+- A drone that sends two IDs is silenced only by a line for each (§4).
 
 ## 13. Out of scope (later rounds)
 
@@ -565,3 +599,24 @@ plan follows:
    had loaded `lib/match.sh`). `test/payload_test.sh` exports `SW_REMOTE_ID=0`, so its other laps don't
    each wait out a capture window, and unsets every `SW_RID_*` that `payload.sh` gives it: one of them
    had leaked a deleted folder into a later test file.
+
+## 15. After the final review (2026-10-02)
+
+Two reviews of the finished branch (one general, one adversarial: hostile frames and Stop timing) led to one
+round of fixes, each described in place above:
+
+1. **The ignore rule against a spoofer** at a drone's address: every ID heard must be listed (§4; user
+   decision 2026-10-02).
+2. **The ID:** the first one with any text, a serial preferred (§3); text trimmed after the cleaning (§6.3);
+   airframe "none" written in `remoteid.csv` (§6.5); a D line with an extra field is dropped (§6.3).
+3. **Stop:** checked again before each row, health line, state file and flood line (§7.3).
+4. **Health:** kernel drops and a cut-short capture are `lost` (partly blind), a missing stats line is
+   `not_understood`, and an OFF status never comes with drones (§7.2).
+5. **The signal** is taken only in -128..127 (§6.2).
+6. **Tests:** every decoder guard that can change the output is pinned by a crafted frame
+   (`test/fixtures/rid/hostile/`, tcpdump text only), on mawk and BusyBox awk, and removing any one of them
+   fails a test. Twelve cannot change the output (20,000 fuzzed frames decoded the same without each, while
+   removing a real guard changed it): they stay as cheap belt-and-braces, each marked "redundant" in the code.
+   Two more reference frames (`full`: every message type the decoder reads, two IDs, airframe "other";
+   `emptyserial`) come from the reference library like the first ten.
+7. **Phase 0** gained the checks the reviews asked for (`P0-findings.md`, "Still to do on the Pager").
