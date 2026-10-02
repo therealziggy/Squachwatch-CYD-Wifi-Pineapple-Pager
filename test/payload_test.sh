@@ -812,6 +812,9 @@ cat "$_RFIX2/hostile/empty_id.txt" "$_RFIX2/hostile/owner_id.txt" > "$_rcat"
 _rid_reset; SW_IGNORE_SET="$_rown" _rid_lapf "$_rcat"
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" rid_lap_empty_id_at_owner_address_silent
 assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i" rid_lap_empty_id_control_captured
+# control: the same two frames without the ignore line alert, under the owner's ID (the only one with text)
+_rid_reset; _rid_lapf "$_rcat"
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone '0000FSWTESTOWNER001'" rid_lap_empty_id_at_owner_address_control_alerts
 # A spoofer HEARD FIRST at the real drone's address (re-review 2026-10-02, Important 1): its frames fill the
 # decoder's two kept IDs with IDs that are listed or empty, so the real drone's own ID (the beacon, heard last) is
 # not one of them. User decision the same day: an ID with no text takes no place, and an address that sent more
@@ -921,8 +924,10 @@ _alive="$(kill -0 "$_sp" 2>/dev/null && echo yes || echo no)"
 { kill -KILL "$_sp"; wait "$_sp"; } 2>/dev/null; _rc=$?
 assert_eq "$_inwin" "yes" stop_rid_control_was_in_the_window
 assert_eq "$_alive/$_rc" "no/0" stop_rid_trap_runs_within_the_grace
-# the lap that was running ends once its 3 s window runs out, removing its capture: wait for that (bounded)
+# the lap that was running ends once its 3 s window runs out, removing its capture: wait for that (bounded),
+# then a little longer, since the lap's consumer, which would print a drone, runs just after its producer
 for _i in $(seq 120); do ls "$_rs" | grep -qE '^sw_rid\.' || break; sleep 0.1; done
+sleep 0.5
 assert_empty "$(grep -E '^(ALERT|VIBRATE|RINGTONE) ' "$SW_STUB_LOG")" stop_rid_lap_never_alerts
 assert_empty "$(grep -F 'Drone' "$SW_STUB_LOG")" stop_rid_lap_reports_nothing
 assert_empty "$(ls "$_rs" | grep -E '^sw_rid\.')" stop_rid_leaves_no_files

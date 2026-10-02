@@ -312,6 +312,14 @@ if command -v busybox >/dev/null 2>&1; then
   for _f in beacon nan parrot multi unknowns equator order quiet truncated badlink full emptyserial; do
     assert_eq "$(busybox awk -v max=32 "$(_sw_rid_awk_src)" < "$_RFIX/$_f.txt")" "$(_dec "$_f")" "rid_busybox_parity_$_f"
   done
+  # ...and on every crafted frame, each alone (the tests above also decode them in their combinations)
+  _k=0
+  for _f in "$_RFIX"/hostile/*.txt; do
+    assert_eq "$(busybox awk -v max=32 "$(_sw_rid_awk_src)" < "$_f")" "$(_sw_rid_decode_awk < "$_f")" "rid_busybox_parity_hostile_$(basename "$_f" .txt)"
+    _k=$(( _k + 1 ))
+  done
+  # control: the loop saw every crafted frame (53 committed), so its passes are not vacuous
+  assert_eq "$_k" "53" rid_busybox_parity_hostile_count
 else
   fail "rid_busybox_parity: busybox not installed (sudo apt install busybox)"
 fi
