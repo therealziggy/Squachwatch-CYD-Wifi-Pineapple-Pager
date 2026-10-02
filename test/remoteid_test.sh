@@ -382,6 +382,12 @@ assert_contains "$_det" "|80:E1:26:AA:BB:CC||-47|" rid_rec_blank_id_is_no_id
 assert_contains "$(_csv1)" ',-47,,"",' rid_csv_blank_id_is_no_id
 assert_empty "$(sw_test_rid_line id_hex=2001 | SW_IGNORE_SET=" DRONE:80:E1:26:AA:BB:CC " _recs)" rid_rec_blank_id_ignored_by_address
 assert_contains "$(sw_test_rid_line id_type=1 id_hex=2001 id2_type=2 id2_hex=434141 | _recs)" "|CAA|" rid_rec_blank_serial_gives_way
+# ...also from frames: the decoder keeps a blank ID (it has bytes; only an empty one takes no place), so this rule
+# is bash's: hostile/blank_id (a serial of a space and a control byte) then hostile/caa_id (the reference ID as a
+# CAA registration) from one address are named by the CAA ID
+_det="$(cat "$_RFIX/hostile/blank_id.txt" "$_RFIX/hostile/caa_id.txt" | _sw_rid_decode_awk | _recs)"
+assert_contains "$_det" "|80:E1:26:AA:BB:CC|0000FSWTEST000000001|-47|" rid_rec_blank_serial_gives_way_from_frames
+assert_contains "$(_csv1)" ',-47,caa,"0000FSWTEST000000001",,"",' rid_csv_blank_serial_gives_way_from_frames
 # airframe "none" (ua_type 0) is a declared value: "none" in remoteid.csv and nothing on screen; no Basic ID at
 # all leaves the cell empty (spec §6.5)
 _det="$(sw_test_rid_line ua_type=0 | _recs)"
