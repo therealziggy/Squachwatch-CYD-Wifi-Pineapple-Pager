@@ -105,7 +105,7 @@ An offline harness runs the whole detection engine on a normal Linux box (no Pag
 bash test/run.sh
 ```
 
-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **1635 assertions, all passing** (also as root).
+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **1637 assertions, all passing** (also as root).
 
 ## Status & roadmap
 

@@ -814,6 +814,20 @@ assert_eq "$([ -e "$_mf" ] && echo kept)" "" cap_second_temp_file_first_removed
 _mtlap
 assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(grep -c x "$_cap_dir/made.calls")" "1/3" cap_temp_file_fails_twice_off_once
 rm -f "$_cap_dir/made" "$_cap_dir/made.calls"; unset _mf; unset -f _mtlap
+# ...and so is a first temp file that cannot be made while the folder itself works, so the state is kept there (a
+# mktemp that fails for want of inodes, say): OFF at once with the status kept, then nothing more while it lasts;
+# tcpdump never runs. The missing folder above cannot tell this apart from a note that cannot be kept (below), which
+# says OFF too. (controls: cap_failed_once_silent, a capture that fails to start in this folder says nothing on its
+# first lap; the state file read back shows the note was kept, not lost)
+_mflap() { env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" bash -c '
+  source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
+  mktemp() { return 1; }
+  sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot" >/dev/null; }
+_cap_reset; _mflap
+assert_eq "$(grep -c 'WiFi capture failed — Remote ID over WiFi OFF' "$SW_STUB_LOG")/$(grep -c '^tcpdump ' "$SW_STUB_LOG")/$(head -1 "$_cap_dir/sw_rid.state" 2>/dev/null)" "1/0/capture_failed" cap_first_temp_file_warns_at_once
+_mflap
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")" "1" cap_first_temp_file_fails_twice_off_once
+unset -f _mflap
 # A state that cannot be kept (a /tmp already full at launch: mktemp still makes empty files there, but tcpdump's
 # "listening on" cannot be written, so every lap fails to start, and the note of one failed lap is lost as well) says
 # OFF at once, on every lap while it lasts. (controls: cap_failed_once_silent, the same failure with a state file
