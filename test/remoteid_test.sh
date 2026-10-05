@@ -959,10 +959,12 @@ _cap_reset; _cap multi SW_RID_MAX_FRAMES=1 SW_FAKE_TCPDUMP_DROPPED=1 >/dev/null
 assert_eq "$(_cap_state)" "capped" cap_dropped_one_capped_stays_capped
 # tcpdump's "N packets received by filter" also counts frames it never processed: those still waiting in the capture
 # buffer when the window ended (a tcpdump short of CPU, its decoder keeping up, stops with a backlog there and still
-# prints a normal summary: 37 to 48 frames on the dev box) and a few that slip in before its filter is attached. More
-# of them than 5 + a twelfth of the received count is partly blind: the same WARN, never "OFF", and what was heard
-# still counts. Such a lap used to read "ok". The slack at its edge: 1 frame captured and 6 received (5 more: the slack
-# is 5 + 6/12 = 5) is ok, 7 received (6 more) is lost. (control: cap_beacon_status_ok, the same lap counted as usual)
+# prints a normal summary), the last batch not handed over yet, and a few that slip in before its filter is attached.
+# More of them than 5 + a twelfth of the received count (about the window's last second at the default 12 s) is
+# partly blind: the same WARN, never "OFF", and what was heard still counts. Such a lap used to read "ok"; a shallower
+# backlog still does (the dev box's 37 to 48 frames at 300 a second, about 0.15 s, are inside the slack). The slack
+# at its edge: 1 frame captured and 6 received (5 more: the slack is 5 + 6/12 = 5) is ok, 7 received (6 more) is
+# lost. (control: cap_beacon_status_ok, the same lap counted as usual)
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_RECEIVED=6 >/dev/null
 assert_eq "$(_cap_state)" "ok" cap_received_5_more_ok
 _cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_RECEIVED=7)"
@@ -970,7 +972,7 @@ assert_eq "$(_cap_state)" "lost" cap_received_6_more_lost
 assert_eq "$(grep -c 'WiFi capture lost frames (CPU busy?) — Remote ID partly blind' "$SW_STUB_LOG")" "1" cap_received_more_warns
 assert_contains "$_out" "|0000FSWTEST000000001|" cap_received_more_reports_what_it_heard
 assert_empty "$(grep -F 'OFF' "$SW_STUB_LOG")" cap_received_more_never_off
-# ...and its twelfth, which grows with the traffic: 60 frames and 70 received (10 more; 5 + 70/12 = 10) is ok, 71
+# ...and its twelfth, which grows with the frames received: 60 frames and 70 received (10 more; 5 + 70/12 = 10) is ok, 71
 # (11 more) is lost; 65 frames and 76 received (11 more; 5 + 76/12 = 11) is ok, 77 (12 more) is lost. So the slack is
 # neither a fixed 5 nor an eleventh or a thirteenth. (The quiet fixture's beacon, 60 and 65 times.)
 for _i in $(seq 60); do cat "$_RFIX/quiet.txt"; done > "$_fr"

@@ -500,13 +500,18 @@ failed lap that has not been reported.
   deaf.
 - **Frames tcpdump never processed are `lost` beyond a slack** (the same review). `received by filter` counts every
   frame the kernel filter let through, so also those still waiting in the capture buffer when tcpdump stopped. A
-  tcpdump short of CPU, its decoder keeping up, stops with such a backlog and still prints a normal summary
-  (measured on the dev box: 37 to 48 frames, in 5 runs of 5), and the lap read `ok`. A few frames are always
-  counted there: those in flight at the TERM, and those that slip in before the filter is attached (filtered out
-  by tcpdump itself; more in busy air). So the rule is received − captured − dropped > 5 + received/12: about the
-  window's last second of frames, as a share so that it grows with the traffic and does not depend on
-  `SW_RID_SECONDS`. A smaller backlog still reads `ok`. Provisional, from the dev box, until measured on the Pager
-  (§9).
+  tcpdump short of CPU, its decoder keeping up, stops with such a backlog and still prints a normal summary, and
+  the lap read `ok`. A few frames are always counted there: the last batch the kernel had not handed over yet
+  (frames come in batches, and at the Pager's channel hopping in bursts), those in flight at the TERM, and those
+  that slip in before the filter is attached (filtered out by tcpdump itself; more in busy air). So the rule is
+  received − captured − dropped > 5 + received/12: a twelfth of the frames, about the window's last second at the
+  default 12 s (half a second at 6 s), plus 5. It catches a tcpdump left more than about a second of frames
+  behind; a shallower backlog still reads `ok`. The dev box's starved tcpdump (5 runs of 5: 37 to 48 frames left
+  at 300 a second, about 0.15 s, with 0 kernel drops and a normal summary) is such a shallow one: inside the slack,
+  still `ok`. Phase 0's four-busy-loop window on the Pager (53 frames where normal windows heard 62 to 83; its
+  received count was not recorded) may have been deeper. The share grows with the beacons heard, not with all the
+  traffic, so very busy air with few networks could exceed it in a healthy lap (a model of busy places gave up to
+  about 0.5% of laps; not measured). Provisional, from the dev box, until measured on the Pager (§9).
 - **One failed lap says nothing** (Phase 0, 2026-10-02). The recon radio's interface goes down for about 0.57 s
   every 30.6 s, and a capture that starts in that gap fails (`That device is not up`): about 1.9% of laps, a
   false OFF about every 17 minutes. A failed lap is only noted, and the status in effect stays as it was; the
@@ -514,7 +519,10 @@ failed lap that has not been reported.
   across such a gap is not affected. A temp file that cannot be made is never that gap, so it is reported at
   once: with no folder for them, the note could not be kept either, and the capture never said OFF (the
   re-review of rounds 3 and 4). With the folder missing that is every lap, as the state cannot be kept there, and
-  the state file's write fails quietly, so no shell error reaches the payload's output.
+  the state file's write fails quietly, so no shell error reaches the payload's output. The same holds for a
+  failed lap whose note cannot be written (a /tmp already full at launch, where `mktemp` still makes empty files
+  but tcpdump's `listening on` cannot be written): it says OFF at once, on every lap while it lasts (the re-review
+  of round 5); only a noted failure speaks for a state it cannot keep.
 - `capped` and `lost` (partly blind) share one WARN per `SW_COOLDOWN` and recover silently, so a busy spot
   right at the cap cannot flood the screen.
 - An OFF status (`capture_failed`, `not_understood`) never comes with drones in the same lap; a partly
@@ -580,7 +588,7 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   ends without its summary; one that is not stops with the frames still in the buffer and prints a normal
   summary, whose `received by filter` counts them. Each makes the lap `lost`, with its WARN (§7.2), as the
   kernel's drops do, except a backlog within the slack (5 frames plus a twelfth of those received, about the
-  window's last second; provisional, to be measured on the Pager), which still reads `ok`. So a spoofer can make
+  window's last second at the default 12 s; provisional, to be measured on the Pager), which still reads `ok`. So a spoofer can make
   laps a few seconds longer (what is still in the pipe when the window ends is decoded after it, with or without a
   WARN), and frames lost because the decoder or tcpdump fell behind make the lap `lost` beyond that slack.
   (Frames dropped below the capture, by the driver or the interface, are not counted here: tcpdump's
@@ -680,16 +688,20 @@ hold; check 3 set `SW_RID_MAX_FRAMES=300` and `-s 1024` (user decision, §7.5); 
 (+0.40 to 0.50 s a lap at home, with the Bluetooth scan modelled); check 5 measured the channel coverage (§12);
 check 6 holds in normal laps, but tcpdump prints no summary when it is stuck writing to the decoder at the TERM,
 now `lost` (§7.2), and a tcpdump that is itself short of CPU stops with frames it never processed, which only its
-`received by filter` count shows, now `lost` beyond a slack (§7.2, §19). The checks the reviews added hold too
+`received by filter` count shows, now `lost` when that backlog is deeper than the slack, about a second of frames
+(§7.2, §19; a shallower one, like the dev box's, still reads `ok`). The checks the reviews added hold too
 (awk parity on the Pager's BusyBox awk, no kernel drops, a dBm signal in every radiotap header, no FCS and no
 bad-FCS frames, `/sys/class/net/wlan1mon` present), except that `wlan1mon` blinks off for about 0.57 s every
 30.6 s, which made about 1.9% of laps a false OFF (now debounced, §7.2). Left for the session with the user: §10
 (install and the live test with a real drone, including how many Basic IDs it sends per address), a real menu
 Stop during a window, the window against a real Bluetooth scan, the hostile-ID probe with the real `LOG` and
 `ALERT`, the drone cap's ranking with a `drone:` line (its cost, and its output on the Pager's awk, as Phase 0
-ran before that code existed), and the slack for frames tcpdump never processed (the frames counted before the
-filter, with a filter that never matches, about 20 starts; a busy-loop burst with `received by filter`
-recorded).
+ran before that code existed), and the slack for frames tcpdump never processed: the frames counted before the
+filter (a filter that never matches, about 20 starts, standalone and inside a real lap, at nice 10 with the sweep
+running); ordinary laps in the busiest place available (received − captured − dropped over 50 or more laps, the
+worst one noted), since the false-alarm side was only modelled; and a busy-loop burst with `received by filter`
+recorded, which decides what the rule covers there: an excess above the slack means the Pager's starved tcpdump is
+caught, one below it means its starvation is shallow and still reads `ok`.
 
 ## 10. Deploy and verify on the Pager (needs the user)
 
@@ -724,9 +736,9 @@ recorded).
   a few seconds can be missed. Phase 0 measured the hopping at the author's home: 36 channels, each for about
   0.21 s every 7.6 s, within two channels of 6 about 14% of the time and on 149 about 2 to 3%. So a drone on
   channel 6 that sends its Remote ID once a second is heard in about 31% of 12 s windows; laps on the Pager take
-  20.9 to 22.5 s (measured when the evil-twin round was installed, with the real Bluetooth scan), 2.7 to 2.9
-  windows a minute, so it is heard about two times in three within a minute (63 to 66%; 85% would need a minute
-  of continuous listening). One that sends it ten times a second is heard in nearly every window (reasoned from
+  20.9 to 22.5 s (measured when the evil-twin round was installed, with the real Bluetooth scan), plus Remote
+  ID's own 0.40 to 0.50 s (§9 check 4), 2.6 to 2.8 windows a minute, so it is heard about two times in three
+  within a minute (62 to 65%; 85% would need a minute of continuous listening). One that sends it ten times a second is heard in nearly every window (reasoned from
   those numbers, not measured with a drone). With recon off, or limited to some bands, Remote ID over WiFi goes
   blind; recon off already raises a WARN.
 - **Not proof of an aircraft:** Remote ID is not authenticated, so anyone can broadcast made-up drones. A
@@ -747,11 +759,13 @@ recorded).
   cut short, or whose capture ended on an error (a WARN of its own; the two share one per `SW_COOLDOWN`). A very
   busy spot can show it too, and a spoofer's costly frames can make a lap a few seconds longer; frames lost
   because the decoder or tcpdump fell behind are reported, except a backlog within the slack, about the window's
-  last second (5 frames plus a twelfth of those received; provisional, §7.2, §7.5).
+  last second at the default 12 s (5 frames plus a twelfth of those received; provisional, §7.2, §7.5). In very
+  busy air with few networks a healthy lap could exceed that slack now and then (modelled, §7.2).
 - Only the first 1024 bytes of a frame are read (`-s 1024`): Remote ID placed further in is not seen (no beacon
   heard on the Pager came near it; the largest was 526 bytes).
 - A capture that fails to start is reported on the second failed lap in a row, about one lap later than
-  before (§7.2); one that cannot make its temp files, at once.
+  before (§7.2); one that cannot make its temp files, or cannot keep its note of a failed lap (a /tmp full at
+  launch), at once.
 - At most 64 elements or attributes are read per frame: Remote ID after the 64th is not seen.
 - A drone that sends two IDs is silenced only by a line for each (§4).
 - A drone whose address sends three or more different IDs in a lap is never silenced, the owner's own
@@ -898,10 +912,12 @@ The re-review of the drone cap's ranking (§17) and of Phase 0's fixes (§18) fo
 smaller gaps. This round built, each described in place above:
 
 1. **Frames tcpdump never processed** (§7.2, §7.5): tcpdump's `received by filter` is read, and more than 5 plus a
-   twelfth of it beyond captured + dropped is `lost`. On the dev box a tcpdump short of CPU (one core at nice 10
-   beside four busy loops) stopped with 37 to 48 such frames and a normal summary, in 5 runs of 5. A fixed slack
-   would not do: frames that slip in before the filter is attached are counted as received too, up to 17 on the
-   dev box in very busy air (50,000 packets a second). Provisional until measured on the Pager (§9).
+   twelfth of it beyond captured + dropped is `lost`: a tcpdump left more than about a second of frames behind at
+   the default 12 s. On the dev box a tcpdump short of CPU (one core at nice 10 beside four busy loops) stopped
+   with 37 to 48 such frames and a normal summary, in 5 runs of 5: the mechanism is real, but that backlog (about
+   0.15 s of frames at 300 a second) is inside the slack and still reads `ok`. A fixed slack would not do: frames
+   that slip in before the filter is attached are counted as received too, up to 17 on the dev box in very busy
+   air (50,000 packets a second). Provisional until measured on the Pager (§9).
 2. **A summary short of a count, or a capture that ended on an error** (`tcpdump: pcap_loop: …`), is `lost`
    (§7.2).
 3. **A temp file that cannot be made says OFF at once** (§6.1, §7.2): with its folder missing, the capture had
@@ -913,3 +929,19 @@ smaller gaps. This round built, each described in place above:
 5. **Tests:** the tcpdump stub's received count, cut summary and `pcap_loop` error, each with self-tests; laps at
    the slack's edges (1, 60 and 65 frames), after each OFF rule and at the frame cap; each count missing on its
    own; and the temp-file failures (a missing folder over four laps, the second file, the next lap, Stop).
+
+## 20. After the re-review of round 5
+
+The re-review of §19 found its docs claimed more than its rule does, and one more silent path:
+
+1. **Docs** (§7.2, §9, §19, README, P0-findings): the received rule catches a tcpdump left more than about a second
+   of frames behind; the dev box's starved runs were shallower and still read `ok`. The slack's share grows with
+   the beacons heard, not with all the traffic; "about the last second" holds at the default 12 s. The Pager
+   session now also measures ordinary laps in a busy place, the before-the-filter count inside a real lap, and
+   what the busy-loop burst decides.
+2. **A failed lap's note that cannot be kept says OFF at once** (§7.2): with /tmp full at launch, `mktemp` still
+   makes empty files, every lap failed to start, and the note was lost each time, so the OFF line never came (and
+   §19's quiet state write had removed its only trace). Tests: OFF on the first lap and on every lap, no line once
+   stopped, none for a lap that captured fine.
+3. **Catch rate:** with Remote ID's own +0.40 to 0.50 s a lap, 2.6 to 2.8 windows a minute, 62 to 65%: still about
+   two times in three.

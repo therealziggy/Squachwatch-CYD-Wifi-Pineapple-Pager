@@ -469,11 +469,13 @@ sw_rid_collect() {
   # summary) was deaf for the rest of the window: "lost" too.
   # The last rule reads tcpdump's "received by filter": every frame the kernel filter let through, so also the
   # frames tcpdump never processed. Those are the ones still waiting in the capture buffer when it stopped (a
-  # tcpdump short of CPU, its decoder keeping up, stops with a backlog there and still prints a normal summary:
-  # 37 to 48 frames on the dev box) and a few that slip in before its filter is attached (counted, then dropped
-  # by tcpdump itself: more in busy air). The slack, 5 + received/12: about the window's last second of frames
-  # (a twelfth of the default 12 s window, as a share so that it does not depend on SW_RID_SECONDS, and grows
-  # with the traffic as the frames before the filter do), plus a few. Provisional, from the dev box (a normal
+  # tcpdump short of CPU, its decoder keeping up, stops with a backlog there and still prints a normal summary),
+  # the last batch the kernel had not handed over yet, and a few that slip in before its filter is attached
+  # (counted, then dropped by tcpdump itself: more in busy air). The slack, 5 + received/12: a twelfth of the
+  # frames (about the window's last second at the default 12 s), plus 5. So a backlog deeper than about a second
+  # of frames is caught; a shallower one still reads ok: the dev box's starved tcpdump left 37 to 48 frames at
+  # 300 a second (about 0.15 s), inside the slack. The share grows with the beacons heard, not with all the
+  # traffic, so very busy air with few networks could still exceed it. Provisional, from the dev box (a normal
   # window: 1 more, 6 in busy air; before the filter: up to 17 in very busy air), until measured on the Pager.
   if [ "$started" -ne 1 ]; then st=capture_failed
   elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap

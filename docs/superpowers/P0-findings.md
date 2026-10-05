@@ -651,7 +651,7 @@ Pager, **modelled** (worked out from measured numbers) or **reasoned**.
    dense Remote ID frames, modelled); frames beyond that wait in the capture buffer, where the kernel drops them
    once it is full or tcpdump leaves them when it stops, and that lap is now partly blind with its WARN (check 6),
    unless what was left is within the slack (5 frames plus a twelfth of those received, about the window's last
-   second; below). With a `drone:` line in ignore.txt, the drone cap's ranking adds about 10 to 13% to the
+   second at the default 12 s; below). With a `drone:` line in ignore.txt, the drone cap's ranking adds about 10 to 13% to the
    decoder's cost of Remote ID frames on the dev box's BusyBox awk (300 of them cost about 7 to 16 s anyway);
    ordinary beacons give it no address to rank, so 300 of them stay about 4.6 s (to be measured on the Pager,
    below).
@@ -672,8 +672,9 @@ Pager, **modelled** (worked out from measured numbers) or **reasoned**.
    Remote ID every T seconds is heard in one visit with a chance of about min(1, 0.21/T). Ten times a second:
    about 2 frames a visit, nearly every 12 s window. Once a second: about 21% a visit and 31% a window.
    SquachWatch listens for 12 s of each lap, and laps on the Pager took 20.9 to 22.5 s with the real Bluetooth
-   scan (measured when the evil-twin round was installed), so 2.7 to 2.9 windows a minute: about two times in
-   three within a minute (63 to 66%; 85% within a minute of continuous listening). Plus some reception on the
+   scan (measured when the evil-twin round was installed), plus Remote ID's own 0.40 to 0.50 s (check 4), so 2.6
+   to 2.8 windows a minute: about two times in three within a minute (62 to 65%; 85% within a minute of
+   continuous listening). Plus some reception on the
    neighbouring channels (not measured); check 9's blinks add about 1.9% of deaf time.
 6. **Capture parity — holds normally; the summary was lost whenever tcpdump was stuck on the pipe (measured).**
    In normal windows awk's frame count equals tcpdump's `packets captured` (5 of 5 windows of 62 to 83 frames;
@@ -687,8 +688,10 @@ Pager, **modelled** (worked out from measured numbers) or **reasoned**.
    printed no summary is `lost`, the yellow "partly blind" WARN. With four busy loops instead of two, the decoder
    was starved too, yet the summary was printed and the counts matched (53 of 53); its `received by filter` was
    not recorded, so that run may be the other way such a lap ends: tcpdump stops with frames it never processed
-   still in its capture buffer, and only that count shows them (measured on the dev box, below). **Fixed** (fix
-   round 5): beyond a slack, such a lap is `lost` too.
+   still in its capture buffer, and only that count shows them (measured on the dev box, below). Fix round 5
+   reads that count: a backlog deeper than the slack (about a second of frames) is `lost` too, a shallower one
+   still reads `ok`. Whether this run was that deep is not known (53 frames heard where normal windows heard 62
+   to 83); the busy-loop burst in the list below decides it.
 7. **Kernel drops, frame sizes, signal, FCS — hold (measured).** 0 packets dropped by the kernel in every summary
    printed (up to 6129 frames in 180 s). Beacon sizes, radiotap header included (439 beacons from 39
    transmitters): smallest 182 bytes, median 414, 90th percentile 450, largest 526; none over 1024 (so `-s 1024`
@@ -720,12 +723,18 @@ namespace):
   with all the traffic on the air: a fixed slack of 5 could warn falsely in busy places.
 - tcpdump short of CPU (pinned to one core at nice 10 beside four busy loops at nice 0), the reader keeping up,
   300 matching frames a second: the summary was printed 5 times in 5, nothing dropped by the kernel, and
-  received minus captured was 37 to 48 frames never processed. Such a lap read `ok`.
+  received minus captured was 37 to 48 frames never processed. Such a lap read `ok`, and still does under the
+  rule below: 48 frames at 300 a second is about 0.15 s, inside the slack (5 + 856/12 = 76 for the one run kept).
 - A slow reader (the decoder behind, the pipe full): no summary 6 times in 6 (`Unable to write output:
   Interrupted system call`), as on the Pager (check 6).
 
-So the rule is received − captured − dropped > 5 + received/12: about the window's last second of frames, a share
-of the count, so that it grows with the traffic. Provisional until measured on the Pager (below).
+So the rule is received − captured − dropped > 5 + received/12: a twelfth of the count (about the window's last
+second of frames at the default 12 s), plus 5. It catches a tcpdump left more than about a second of frames
+behind, not a shallow backlog like the one above. The share grows with the beacons heard, not with all the
+traffic, so in very busy air with few networks the frames counted before the filter, and the last batch the
+kernel had not handed over yet (frames come in batches, and at the Pager's channel hopping in bursts), could
+exceed it in a healthy lap: a model of busy places (reviewer's, from check 5's hop timings, not measured) gave up
+to about 0.5% of laps. Provisional until measured on the Pager (below).
 
 **Still to do on the Pager, with the user:**
 
@@ -738,9 +747,14 @@ of the count, so that it grows with the traffic. Provisional until measured on t
   in check 3 at about +10 to 13% on Remote ID frames; 300 ordinary beacons stay about 4.6 s), and one awk parity
   run of its code on the Pager's BusyBox awk (check 8 ran the code from before it; on the dev box BusyBox 1.36.1
   and mawk agree on it).
-- The slack for frames tcpdump never processed (fix round 5, measured on the dev box only, above): the frames
-  counted before the filter on the Pager, with a filter that never matches (about 20 starts); and a busy-loop
-  burst like check 6's with `received by filter` recorded, to confirm or tune 5 + received/12.
+- The slack for frames tcpdump never processed (fix round 5, measured on the dev box only, above):
+  - the frames counted before the filter, with a filter that never matches (about 20 starts), standalone and
+    inside a real lap (at nice 10, with the sweep running);
+  - ordinary laps in the busiest place available: received − captured − dropped over 50 or more laps, the worst
+    one noted (the false-alarm side was only modelled);
+  - a busy-loop burst like check 6's with `received by filter` recorded, which decides what the rule covers on
+    the Pager: an excess above 5 + received/12 means a starved tcpdump there is caught; one below it means the
+    Pager's starvation is shallow and still reads `ok`.
 - The live test, with a real Remote ID drone only (SquachWatch only listens: no made-up drone is ever broadcast
   to test it), with the OpenDroneID OSM phone app as the second opinion: the real catch rate, and how many
   different Basic IDs a real drone sends from one address in a lap (more than two, a session ID that changes
