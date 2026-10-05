@@ -361,8 +361,9 @@ _sw_rid_csv_row() {
 _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)'; }
 
 # A WARN when the capture's status changes, like the BLE note. The two "partly blind" ones (capped: the frame
-# cap; lost: frames dropped by the kernel or lost on the way, or no summary from tcpdump to count them by) share
-# one WARN per SW_COOLDOWN and recover silently. A capture that fails to start is OFF only when the next lap's
+# cap; lost: frames dropped by the kernel, lost on the way or never processed, no whole summary from tcpdump to
+# count them by, or a capture that ended on an error) share one WARN per SW_COOLDOWN and recover silently. A
+# capture that fails to start is OFF only when the next lap's
 # fails too: the recon radio's interface goes down for about half a second every 30 s (Phase 0 on the Pager,
 # 2026-10-02), and a capture that starts in that gap fails once (about 2% of laps). One failed lap is only noted,
 # and the status in effect stays as it was. A temp file that cannot be made is never that blink: with $3 = at_once
