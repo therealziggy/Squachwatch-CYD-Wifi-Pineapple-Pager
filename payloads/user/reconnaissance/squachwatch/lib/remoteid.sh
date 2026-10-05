@@ -363,15 +363,16 @@ _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and 
 # A WARN when the capture's status changes, like the BLE note. The two "partly blind" ones (capped: the frame
 # cap; lost: frames dropped by the kernel, lost on the way or never processed, no whole summary from tcpdump to
 # count them by, or a capture that ended on an error) share one WARN per SW_COOLDOWN and recover silently. A
-# capture that fails to start is OFF only when the next lap's
-# fails too: the recon radio's interface goes down for about half a second every 30 s (Phase 0 on the Pager,
-# 2026-10-02), and a capture that starts in that gap fails once (about 2% of laps). One failed lap is only noted,
-# and the status in effect stays as it was. A temp file that cannot be made is never that blink: with $3 = at_once
-# it says OFF at once (unless already OFF by capture_failed), and on every lap when its folder is missing, as the
-# state cannot be kept there either. After an OFF line (capture_failed, not_understood) the next lap that
-# captures, ok or partly blind, says it recovered. $1 = ok | capture_failed | not_understood | capped | lost,
-# $2 = now (epoch). The state file: the status in effect, the time of the last partly-blind WARN, and 1 after a
-# failed lap that said nothing yet; when it cannot be written, that fails quietly (no shell error in the output).
+# capture that fails to start is OFF only when the next lap's fails too: the recon radio's interface goes down for
+# about half a second every 30 s (Phase 0 on the Pager, 2026-10-02), and a capture that starts in that gap fails
+# once (about 2% of laps). One failed lap is only noted, and the status in effect stays as it was. A temp file that
+# cannot be made is never that blink: with $3 = at_once it says OFF at once (unless already OFF by
+# capture_failed), and on every lap when its folder is missing, as the state cannot be kept there either. After an
+# OFF line (capture_failed, not_understood) the next lap that captures, ok or partly blind, says it recovered.
+# $1 = ok | capture_failed | not_understood | capped | lost, $2 = now (epoch). The state file: the status in
+# effect, the time of the last partly-blind WARN, and 1 after a failed lap that said nothing yet. When it cannot be
+# written, that fails quietly (no shell error in the output), and a failed lap's note, which would be lost, says
+# OFF at once instead (a /tmp full at launch), on every lap while it lasts.
 # Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
   local st="$1" now="$2" how="${3:-}" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" once="" fail="" cd="${SW_COOLDOWN:-600}"
@@ -394,7 +395,11 @@ sw_rid_health_note() {
     not_understood) [ "$prev" = not_understood ] || _sw_rid_say yellow "WARN: WiFi capture not understood — Remote ID over WiFi OFF" ;;
   esac
   sw_stopped && return 0
-  { printf '%s\n%s\n%s\n' "$st" "$capt" "$fail" > "$sf"; } 2>/dev/null
+  # a note that cannot be kept (a /tmp full at launch, where mktemp still makes empty files) would be lost on every
+  # lap, and the OFF line would never come: say it now instead
+  if ! { printf '%s\n%s\n%s\n' "$st" "$capt" "$fail" > "$sf"; } 2>/dev/null && [ "$fail" = 1 ]; then
+    _sw_rid_say yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF"
+  fi
 }
 # a line on the Pager's screen, unless the payload has been stopped (the screen is a relaunch's by then)
 _sw_rid_say() { sw_stopped || LOG "$@" 2>/dev/null; }

@@ -814,6 +814,14 @@ assert_eq "$([ -e "$_mf" ] && echo kept)" "" cap_second_temp_file_first_removed
 _mtlap
 assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(grep -c x "$_cap_dir/made.calls")" "1/3" cap_temp_file_fails_twice_off_once
 rm -f "$_cap_dir/made" "$_cap_dir/made.calls"; unset _mf; unset -f _mtlap
+# A state that cannot be kept (a /tmp already full at launch: mktemp still makes empty files there, but tcpdump's
+# "listening on" cannot be written, so every lap fails to start, and the note of one failed lap is lost as well) says
+# OFF at once, on every lap while it lasts. (controls: cap_failed_once_silent, the same failure with a state file
+# that works says nothing on the first lap; the stub ran on every lap)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_FAIL=1 SW_RID_STATE_FILE="$_cap_dir/missing/sw_rid.state" >/dev/null 2>&1
+assert_eq "$(grep -c 'WiFi capture failed — Remote ID over WiFi OFF' "$SW_STUB_LOG")/$(grep -c '^tcpdump ' "$SW_STUB_LOG")" "1/1" cap_unkept_note_warns_at_once
+for _i in 2 3; do _cap beacon SW_FAKE_TCPDUMP_FAIL=1 SW_RID_STATE_FILE="$_cap_dir/missing/sw_rid.state" >/dev/null 2>&1; done
+assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(grep -c '^tcpdump ' "$SW_STUB_LOG")" "3/3" cap_unkept_note_warns_every_lap
 
 # a link type that is not 802.11 + radiotap: a WARN, and no drone from those bytes
 # (control: the same fixture under the Pager's link type gives the drone, cap_beacon_detection)
@@ -1044,6 +1052,15 @@ _cap_reset; SW_TMP_DIR="$_cap_dir" SW_MAIN_PID="$_rd" sw_rid_health_note capture
 assert_eq "$(grep -c 'WiFi capture' "$SW_STUB_LOG")/$([ -e "$_sf" ] && echo written)" "0/" cap_health_stopped_at_once_no_line_no_state
 _cap_reset; SW_TMP_DIR="$_cap_dir" sw_rid_health_note capture_failed 1700000000 at_once
 assert_eq "$(grep -c 'WiFi capture failed' "$SW_STUB_LOG")/$(head -1 "$_sf")" "1/capture_failed" cap_health_at_once_control_line_and_state
+# ...and for a first failed lap whose note cannot be kept, which says OFF at once too: stopped, no line. Only a noted
+# failure speaks for the state it cannot keep: a lap that captured fine says nothing about it. (control: alive, the
+# OFF line)
+_cap_reset; SW_RID_STATE_FILE="$_cap_dir/missing/sw_rid.state" SW_MAIN_PID="$_rd" sw_rid_health_note capture_failed 1700000000
+assert_empty "$(grep -F 'WiFi capture' "$SW_STUB_LOG")" cap_health_stopped_unkept_note_no_line
+_cap_reset; SW_RID_STATE_FILE="$_cap_dir/missing/sw_rid.state" sw_rid_health_note capture_failed 1700000000
+assert_eq "$(grep -c 'WiFi capture failed — Remote ID over WiFi OFF' "$SW_STUB_LOG")" "1" cap_health_unkept_note_control_line
+_cap_reset; SW_RID_STATE_FILE="$_cap_dir/missing/sw_rid.state" sw_rid_health_note ok 1700000000
+assert_empty "$(grep -F 'WiFi capture' "$SW_STUB_LOG")" cap_health_unkept_ok_no_line
 # The same in a whole capture: a flood lap (2 frames at a cap of 2: "capped"; 2 drones at a cap of 1: the
 # "...and 1 more" line) stopped during its capped WARN reports nothing after it: no state, no drone, no flood
 # line. (control: cap_drone_cap_more_line, the flood line of a lap left alone)
