@@ -694,13 +694,16 @@ _cap() { local fx="$1"; shift
     sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot"; }
 _cap_state() { head -1 "$_cap_dir/sw_rid.state" 2>/dev/null; }
 _cap_reset() { rm -f "$_cap_dir"/sw_rid.* "$_cap_loot/remoteid.csv"; : > "$SW_STUB_LOG"; }
-# the stub words its summary as tcpdump 4.99 does ("%u packet%s ..."): the singular for exactly one only
-_sum() { "$@" 2>&1 >/dev/null | grep -E ' (captured|dropped by kernel)$'; }
-assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n0 packets dropped by kernel' tcpdump_stub_one_packet
-assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/multi.txt" _sum tcpdump -i wlan1mon -c 2)" $'2 packets captured\n0 packets dropped by kernel' tcpdump_stub_two_packets
-assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_CAPTURED=0 _sum tcpdump -i wlan1mon -c 1)" $'0 packets captured\n0 packets dropped by kernel' tcpdump_stub_zero_packets
-assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=1 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n1 packet dropped by kernel' tcpdump_stub_one_dropped
-assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=7 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n7 packets dropped by kernel' tcpdump_stub_seven_dropped
+# the stub words its summary as tcpdump 4.99 does ("%u packet%s ..."): the singular for exactly one only. Its
+# "received by filter" is captured + dropped unless set, as in a normal window (Phase 0 on the Pager saw 0 to 2 more)
+_sum() { "$@" 2>&1 >/dev/null | grep -E ' (captured|received by filter|dropped by kernel)$'; }
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n1 packet received by filter\n0 packets dropped by kernel' tcpdump_stub_one_packet
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/multi.txt" _sum tcpdump -i wlan1mon -c 2)" $'2 packets captured\n2 packets received by filter\n0 packets dropped by kernel' tcpdump_stub_two_packets
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_CAPTURED=0 _sum tcpdump -i wlan1mon -c 1)" $'0 packets captured\n0 packets received by filter\n0 packets dropped by kernel' tcpdump_stub_zero_packets
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=1 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n2 packets received by filter\n1 packet dropped by kernel' tcpdump_stub_one_dropped
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_DROPPED=7 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n8 packets received by filter\n7 packets dropped by kernel' tcpdump_stub_seven_dropped
+# ...and a "received by filter" of its own, the other two lines unchanged (control: tcpdump_stub_one_packet)
+assert_eq "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_RECEIVED=9 _sum tcpdump -i wlan1mon -c 1)" $'1 packet captured\n9 packets received by filter\n0 packets dropped by kernel' tcpdump_stub_received
 # ...and, stuck writing to the decoder at the TERM (Phase 0 on the Pager), no summary: only the write error, after
 # the frames it printed (control: tcpdump_stub_one_packet, the same capture with its summary)
 assert_empty "$(SW_FAKE_TCPDUMP="$_RFIX/beacon.txt" SW_FAKE_TCPDUMP_NOSUMMARY=1 _sum tcpdump -i wlan1mon -c 1)" tcpdump_stub_no_summary
@@ -732,20 +735,21 @@ assert_empty "$(grep -F 'WARN' "$SW_STUB_LOG")" cap_quiet_no_warn
 _cap_reset; _cap "" >/dev/null
 assert_eq "$(_cap_state)" "ok" cap_no_frames_is_ok
 # A decoder that never finished (no stats line, which it prints last) is not understood, also in a lap with no
-# frames, where tcpdump's summary cannot show it, and also when tcpdump printed no summary either (the OFF statuses
-# come first, spec §7.2). The test swaps in a decoder that prints nothing.
-# (controls: cap_no_frames_is_ok and cap_beacon_status_ok, the same captures with the real decoder)
+# frames, where tcpdump's summary cannot show it, and also when tcpdump printed no summary either, or counted more
+# frames received than it processed (the OFF statuses come first, spec §7.2). The test swaps in a decoder that prints
+# nothing. (controls: cap_no_frames_is_ok and cap_beacon_status_ok, the same captures with the real decoder)
 for _fx in "" beacon; do
-  for _ns in "" 1; do
+  for _kn in "" SW_FAKE_TCPDUMP_NOSUMMARY=1 SW_FAKE_TCPDUMP_RECEIVED=100; do
+    case "$_kn" in *NOSUMMARY*) _nm=", no summary" ;; *RECEIVED*) _nm=", 100 received" ;; *) _nm="" ;; esac
     _cap_reset
-    env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="${_fx:+$_RFIX/$_fx.txt}" SW_FAKE_TCPDUMP_NOSUMMARY="$_ns" bash -c '
+    env SW_TMP_DIR="$_cap_dir" SW_REMOTE_ID=1 SW_RID_SECONDS=1 SW_FAKE_TCPDUMP="${_fx:+$_RFIX/$_fx.txt}" ${_kn:+"$_kn"} bash -c '
       source "$1/lib/match.sh"; source "$1/lib/wifi.sh"; source "$1/lib/log.sh"; source "$1/lib/ble.sh"; source "$1/lib/ignore.sh"; source "$1/lib/remoteid.sh"
       _sw_rid_awk_src() { echo "END { }"; }
       sw_rid_start 1700000000; sw_rid_collect 1700000000 "$2"' _ "$SW_ROOT" "$_cap_loot" >/dev/null
-    assert_eq "$(_cap_state)" "not_understood" "cap_dead_decoder_not_understood_[${_fx:-no frames}${_ns:+, no summary}]"
+    assert_eq "$(_cap_state)" "not_understood" "cap_dead_decoder_not_understood_[${_fx:-no frames}$_nm]"
   done
 done
-unset _fx _ns
+unset _fx _kn _nm
 
 # A capture that never starts. The recon radio's interface goes down for about half a second every 30 s (Phase 0
 # on the Pager, 2026-10-02), and a capture that starts in that gap fails once (about 2% of laps), so one failed
@@ -863,6 +867,43 @@ assert_eq "$(grep -c 'partly blind' "$SW_STUB_LOG")" "1" cap_partly_blind_shares
 # tcpdump's singular for exactly one ("1 packet dropped by kernel")
 _cap_reset; _cap beacon SW_FAKE_TCPDUMP_DROPPED=1 >/dev/null
 assert_eq "$(_cap_state)" "lost" cap_dropped_one_status
+# tcpdump's "N packets received by filter" also counts frames it never processed: those still waiting in the capture
+# buffer when the window ended (a tcpdump short of CPU, its decoder keeping up, stops with a backlog there and still
+# prints a normal summary: 37 to 48 frames on the dev box) and a few that slip in before its filter is attached. More
+# of them than 5 + a twelfth of the received count is partly blind: the same WARN, never "OFF", and what was heard
+# still counts. Such a lap used to read "ok". The slack at its edge: 1 frame captured and 6 received (5 more: the slack
+# is 5 + 6/12 = 5) is ok, 7 received (6 more) is lost. (control: cap_beacon_status_ok, the same lap counted as usual)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_RECEIVED=6 >/dev/null
+assert_eq "$(_cap_state)" "ok" cap_received_5_more_ok
+_cap_reset; _out="$(_cap beacon SW_FAKE_TCPDUMP_RECEIVED=7)"
+assert_eq "$(_cap_state)" "lost" cap_received_6_more_lost
+assert_eq "$(grep -c 'WiFi capture lost frames (CPU busy?) — Remote ID partly blind' "$SW_STUB_LOG")" "1" cap_received_more_warns
+assert_contains "$_out" "|0000FSWTEST000000001|" cap_received_more_reports_what_it_heard
+assert_empty "$(grep -F 'OFF' "$SW_STUB_LOG")" cap_received_more_never_off
+# ...and its twelfth, which grows with the traffic: 60 frames and 70 received (10 more; 5 + 70/12 = 10) is ok, 71
+# (11 more) is lost; 65 frames and 76 received (11 more; 5 + 76/12 = 11) is ok, 77 (12 more) is lost. So the slack is
+# neither a fixed 5 nor an eleventh or a thirteenth. (The quiet fixture's beacon, 60 and 65 times.)
+for _i in $(seq 60); do cat "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" SW_FAKE_TCPDUMP_RECEIVED=70 >/dev/null
+assert_eq "$(_cap_state)" "ok" cap_received_60_frames_10_more_ok
+_cap_reset; _cap "$_fr" SW_FAKE_TCPDUMP_RECEIVED=71 >/dev/null
+assert_eq "$(_cap_state)" "lost" cap_received_60_frames_11_more_lost
+for _i in $(seq 65); do cat "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" SW_FAKE_TCPDUMP_RECEIVED=76 >/dev/null
+assert_eq "$(_cap_state)" "ok" cap_received_65_frames_11_more_ok
+_cap_reset; _cap "$_fr" SW_FAKE_TCPDUMP_RECEIVED=77 >/dev/null
+assert_eq "$(_cap_state)" "lost" cap_received_65_frames_12_more_lost
+# The OFF statuses still come first (spec §7.2), and a capped lap stays capped: tcpdump stops at the cap while frames
+# keep coming. (controls: cap_received_6_more_lost, the same excess alone; cap_wrong_link_status,
+# cap_format_changed_status and cap_capped_status, the same laps counted as usual)
+_cap_reset; _cap beacon SW_FAKE_TCPDUMP_RECEIVED=100 SW_FAKE_TCPDUMP_LINK='EN10MB (Ethernet)' >/dev/null
+assert_eq "$(_cap_state)" "not_understood" cap_received_more_wrong_link_not_understood
+for _i in 1 2 3 4 5; do sed 's/0x0000:  00/0x0000:  01/' "$_RFIX/quiet.txt"; done > "$_fr"
+_cap_reset; _cap "$_fr" SW_FAKE_TCPDUMP_RECEIVED=100 >/dev/null
+assert_eq "$(_cap_state)" "not_understood" cap_received_more_format_changed_not_understood
+rm -f "$_fr"
+_cap_reset; _cap multi SW_RID_MAX_FRAMES=1 SW_FAKE_TCPDUMP_RECEIVED=100 >/dev/null
+assert_eq "$(_cap_state)" "capped" cap_received_more_capped_stays_capped
 # An OFF line is followed by the green "recovered" line as soon as the capture works again, also in a lap that is
 # only partly blind (re-review 2026-10-02, Minor 1): lap 1 drops frames, laps 2 and 3 fail (the OFF line comes with
 # the second), lap 4 drops frames again (inside the partly-blind cooldown: no WARN), lap 5 is fine. One
