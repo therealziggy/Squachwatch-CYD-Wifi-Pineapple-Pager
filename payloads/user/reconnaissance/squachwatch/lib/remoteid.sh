@@ -365,13 +365,15 @@ _sw_rid_filter() { REPLY='type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and 
 # one WARN per SW_COOLDOWN and recover silently. A capture that fails to start is OFF only when the next lap's
 # fails too: the recon radio's interface goes down for about half a second every 30 s (Phase 0 on the Pager,
 # 2026-10-02), and a capture that starts in that gap fails once (about 2% of laps). One failed lap is only noted,
-# and the status in effect stays as it was. After an OFF line (capture_failed, not_understood) the next lap that
+# and the status in effect stays as it was. A temp file that cannot be made is never that blink: with $3 = at_once
+# it says OFF at once (unless already OFF by capture_failed), and on every lap when its folder is missing, as the
+# state cannot be kept there either. After an OFF line (capture_failed, not_understood) the next lap that
 # captures, ok or partly blind, says it recovered. $1 = ok | capture_failed | not_understood | capped | lost,
 # $2 = now (epoch). The state file: the status in effect, the time of the last partly-blind WARN, and 1 after a
-# failed lap that said nothing yet.
+# failed lap that said nothing yet; when it cannot be written, that fails quietly (no shell error in the output).
 # Once the payload is stopped: no line and no state file (the exit trap has removed it; spec §7.3).
 sw_rid_health_note() {
-  local st="$1" now="$2" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" once="" fail="" cd="${SW_COOLDOWN:-600}"
+  local st="$1" now="$2" how="${3:-}" sf="${SW_RID_STATE_FILE:-${SW_TMP_DIR:-/tmp}/sw_rid.state}" prev="" capt="" once="" fail="" cd="${SW_COOLDOWN:-600}"
   [ -f "$sf" ] && { read -r prev; read -r capt; read -r once; } < "$sf"
   case "$cd" in ''|*[!0-9]*) cd=600 ;; esac
   [[ "$capt" =~ ^[1-9][0-9]{0,11}$ ]] || capt=""
@@ -386,12 +388,12 @@ sw_rid_health_note() {
     ok) case "$prev" in capture_failed|not_understood) _sw_rid_say green "Remote ID capture recovered" ;; esac ;;
     capture_failed)
       if [ "$prev" = capture_failed ]; then :                                          # said already
-      elif [ "$once" = 1 ]; then _sw_rid_say yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF"   # twice in a row
+      elif [ "$once" = 1 ] || [ "$how" = at_once ]; then _sw_rid_say yellow "WARN: WiFi capture failed — Remote ID over WiFi OFF"   # twice in a row, or no temp file
       else st="$prev"; fail=1; fi ;;                                                   # once: noted, nothing said
     not_understood) [ "$prev" = not_understood ] || _sw_rid_say yellow "WARN: WiFi capture not understood — Remote ID over WiFi OFF" ;;
   esac
   sw_stopped && return 0
-  printf '%s\n%s\n%s\n' "$st" "$capt" "$fail" > "$sf"
+  { printf '%s\n%s\n%s\n' "$st" "$capt" "$fail" > "$sf"; } 2>/dev/null
 }
 # a line on the Pager's screen, unless the payload has been stopped (the screen is a relaunch's by then)
 _sw_rid_say() { sw_stopped || LOG "$@" 2>/dev/null; }
@@ -414,8 +416,9 @@ sw_rid_start() {
   [[ "$secs" =~ ^[1-9][0-9]{0,4}$ ]] || secs=12
   [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=300
   [[ "$maxd" =~ ^(0|[1-9][0-9]{0,3})$ ]] || maxd=32
-  cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { sw_rid_health_note capture_failed "$now"; return 0; }
-  err="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { rm -f "$cap"; sw_rid_health_note capture_failed "$now"; return 0; }
+  # no temp file: never the interface's blink, so OFF at once (sw_rid_health_note)
+  cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { sw_rid_health_note capture_failed "$now" at_once; return 0; }
+  err="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { rm -f "$cap"; sw_rid_health_note capture_failed "$now" at_once; return 0; }
   _sw_rid_keys; keys="$REPLY"     # the drones the ignore list may silence are chosen last (the decoder's emit)
   _sw_rid_filter
   nice -n 10 timeout -k 2 "$secs" tcpdump -i "${SW_RID_IFACE:-wlan1mon}" -p -l -t -nn -xx -s 1024 -c "$maxf" "$REPLY" 2>"$err" \
