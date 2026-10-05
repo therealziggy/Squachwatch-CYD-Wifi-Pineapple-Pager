@@ -16,6 +16,13 @@
 #                          no summary on the way out, only "Unable to write output": it was stuck writing to
 #                          the decoder, which had fallen behind, when the TERM came (seen on the Pager in
 #                          Phase 0, 2026-10-02; a decoder that quits, SIGPIPE, ends it the same way)
+#   SW_FAKE_TCPDUMP_SUMMARY_CUT=1|2
+#                          only the first 1 or 2 lines of the summary, as a KILL between them would leave it
+#                          (tcpdump writes the three lines one by one)
+#   SW_FAKE_TCPDUMP_LOOPERR=1
+#                          the capture ends on an error by itself, after the frames and before any TERM: "tcpdump:
+#                          pcap_loop: The interface went down", then the summary, exit 1 (tcpdump 4.99's way, from
+#                          its source)
 # As the real tool does: "listening on ..." on stderr, at most -c N frames on stdout, then it runs until
 # TERM/INT (the payload's timeout) or the -c limit, and reports "N packets captured" on stderr on the way
 # out ("1 packet captured" for exactly one, as tcpdump words it), from the moment it listens: a TERM that
@@ -34,11 +41,14 @@ if [ -n "${SW_FAKE_TCPDUMP_FAIL:-}" ]; then
   exit 1
 fi
 # tcpdump's own wording is "%u packet%s ...": singular only for exactly 1 ("1 packet", "0 packets", "2 packets")
-summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-${n:-0}}" d="${SW_FAKE_TCPDUMP_DROPPED:-0}" s=s ds=s r rs=s
+summary() { local c="${SW_FAKE_TCPDUMP_CAPTURED:-${n:-0}}" d="${SW_FAKE_TCPDUMP_DROPPED:-0}" s=s ds=s r rs=s k="${SW_FAKE_TCPDUMP_SUMMARY_CUT:-3}"
   [ "$c" = 1 ] && s=
   [ "$d" = 1 ] && ds=
   r="${SW_FAKE_TCPDUMP_RECEIVED:-$(( c + d ))}"; [ "$r" = 1 ] && rs=
-  printf '%s packet%s captured\n%s packet%s received by filter\n%s packet%s dropped by kernel\n' "$c" "$s" "$r" "$rs" "$d" "$ds" >&2; }
+  printf '%s packet%s captured\n' "$c" "$s" >&2
+  [ "$k" -ge 2 ] && printf '%s packet%s received by filter\n' "$r" "$rs" >&2
+  [ "$k" -ge 3 ] && printf '%s packet%s dropped by kernel\n' "$d" "$ds" >&2
+  return 0; }
 # the way out: on TERM/INT, at the -c limit, or after 30 s
 finish() {
   if [ -n "${SW_FAKE_TCPDUMP_NOSUMMARY:-}" ]; then echo "tcpdump: Unable to write output: Interrupted system call" >&2; exit 1; fi
@@ -50,6 +60,10 @@ if [ -n "${SW_FAKE_TCPDUMP:-}" ]; then
   # one frame = a header line and its hex lines; at most -c frames, as tcpdump stops there
   awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } max > 0 && f > max { exit } { print }' "$SW_FAKE_TCPDUMP"
   n="$(awk -v max="$max" '$1 !~ /^0x[0-9a-f]+:$/ { f++ } END { print (max > 0 && f > max) ? max : f + 0 }' "$SW_FAKE_TCPDUMP")"
+fi
+# an error ends the capture by itself: the error, then the summary (a TERM now changes nothing)
+if [ -n "${SW_FAKE_TCPDUMP_LOOPERR:-}" ]; then
+  trap '' TERM INT; echo "tcpdump: pcap_loop: The interface went down" >&2; summary; exit 1
 fi
 if [ "$max" -gt 0 ] && [ "${n:-0}" -ge "$max" ]; then finish; fi
 end=$((SECONDS + 30)); while [ "$SECONDS" -lt "$end" ]; do sleep 0.05; done

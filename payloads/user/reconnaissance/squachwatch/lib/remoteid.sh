@@ -432,7 +432,7 @@ sw_rid_collect() {
   wait "$pid" 2>/dev/null
   # stopped during the window: drop the capture unread and report nothing (a relaunch owns the screen now)
   if sw_stopped; then rm -f "$cap" "$err"; return 0; fi
-  local l started=0 radio=0 pkts="" recv="" drops="" stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-300}" st
+  local l started=0 radio=0 pkts="" recv="" drops="" loop=0 stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-300}" st
   [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=300
   while IFS= read -r l || [ -n "$l" ]; do
     case "$l" in
@@ -440,6 +440,7 @@ sw_rid_collect() {
       [0-9]*" packet captured"|[0-9]*" packets captured") pkts="${l%% *}" ;;   # "1 packet", "N packets"
       [0-9]*" packet received by filter"|[0-9]*" packets received by filter") recv="${l%% *}" ;;
       [0-9]*" packet dropped by kernel"|[0-9]*" packets dropped by kernel") drops="${l%% *}" ;;
+      *": pcap_loop: "*) loop=1 ;;                                             # "tcpdump: pcap_loop: <error>"
     esac
   done < "$err"
   # the decoder prints its stats line last, after its drone lines: without one it did not finish
@@ -449,11 +450,14 @@ sw_rid_collect() {
   [[ "$frames" =~ ^[0-9]{1,9}$ ]] || frames=0; [[ "$understood" =~ ^[0-9]{1,9}$ ]] || understood=0
   [[ "$more" =~ ^[0-9]{1,9}$ ]] || more=0; [[ "$pkts" =~ ^[0-9]{1,9}$ ]] || pkts=""
   [[ "$recv" =~ ^[0-9]{1,9}$ ]] || recv=""
-  [[ "$drops" =~ ^[0-9]{1,9}$ ]] || drops=0
+  [[ "$drops" =~ ^[0-9]{1,9}$ ]] || drops=""
   # OFF first (nothing usable), then the ways of being partly blind. tcpdump prints its summary on the way out,
   # at the TERM too, unless it was stuck writing to the decoder then (the decoder had fallen behind: a busy CPU, a
   # flood, costly frames; Phase 0 on the Pager): with none, what was lost cannot be counted, and the rules after
-  # it cannot run, so it is "lost" itself (it used to read "ok").
+  # it cannot run, so it is "lost" itself (it used to read "ok"). So is a summary with any of its three counts
+  # missing or unreadable: tcpdump writes the lines one by one, so a KILL can land between them, and a later
+  # tcpdump could word one otherwise. A capture that ended on an error ("tcpdump: pcap_loop: ...", then its
+  # summary) was deaf for the rest of the window: "lost" too.
   # The last rule reads tcpdump's "received by filter": every frame the kernel filter let through, so also the
   # frames tcpdump never processed. Those are the ones still waiting in the capture buffer when it stopped (a
   # tcpdump short of CPU, its decoder keeping up, stops with a backlog there and still prints a normal summary:
@@ -466,7 +470,8 @@ sw_rid_collect() {
   elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap
   elif [ "$stats" -ne 1 ]; then st=not_understood                                   # the decoder did not finish
   elif [ "$frames" -ge 5 ] && [ "$understood" -eq 0 ]; then st=not_understood       # the format changed
-  elif [ -z "$pkts" ]; then st=lost                                                 # no summary from tcpdump
+  elif [ -z "$pkts" ] || [ -z "$recv" ] || [ -z "$drops" ]; then st=lost            # no summary, or part of one
+  elif [ "$loop" -eq 1 ]; then st=lost                                              # it ended on an error
   elif [ "$pkts" -ge "$maxf" ]; then st=capped                                      # the frame cap (a flood?)
   elif [ "$frames" -lt "$pkts" ]; then st=lost                                      # frames lost on the way
   elif [ "$drops" -gt 0 ]; then st=lost                                             # the kernel dropped some
