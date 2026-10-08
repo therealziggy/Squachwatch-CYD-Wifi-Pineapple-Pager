@@ -303,6 +303,31 @@ assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Flipper Zero
 80:E1:26:00:00:09 -60dBm" plain_kind_alert_unchanged
 rm -rf "$_L7" "$_s7"; unset _L7 _s7 _drone
 
+# The Pager's LOG and ALERT turn the two characters \n into a line break (measured on the Pager, 2026-10-08; no
+# other backslash pair: \r \t \\ \N \0 \e \a \f \v \x41 \101 \u0041 all print as they are), so a name sent over the
+# air could add a line of its own to the screen. On the screen a name's \n shows as "\ n"; the CSV and the ledger
+# keep the name as it is.
+_L9="$(mktemp -d)"; sw_log_init "$_L9"; _s9="$(mktemp)"; : > "$_s9"; : > "$SW_STUB_LOG"
+sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:55|Home"'\n'"Net|-38" 1000 600 "$_s9" "$_L9"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG cyan Evil twin 'Home\\ nNet' 02:11:22:33:44:55 -38dBm" twin_backslash_n_split_on_screen
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Evil twin 'Home\\ nNet'" twin_backslash_n_split_in_alert
+assert_empty "$(grep -F 'Home\nNet' "$SW_STUB_LOG")" twin_backslash_n_never_on_screen
+assert_contains "$(tail -1 "$_L9/detections.csv")" ',"Home\nNet",-38,' twin_backslash_n_kept_in_csv
+assert_contains "$(cat "$_s9")" '02:11:22:33:44:55|evil_twin:Home\nNet|1000' twin_backslash_n_key_unchanged
+# a drone's ID: every \n, also two in a row and one after a backslash
+: > "$SW_STUB_LOG"
+sw_emit "drone_rid|Drone|high|surveillance|wifi|80:E1:26:AA:BB:CC|X"'\n\n'"Y"'\\n'"Z|-47|multirotor"$'\t'"87m up"$'\t'"no pilot location" 1001 600 "$_s9" "$_L9"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG magenta Drone 'X\\ n\\ nY\\\\ nZ' 80:E1:26:AA:BB:CC -47dBm" drone_backslash_n_split_on_screen
+assert_contains "$(cat "$SW_STUB_LOG")" "ALERT Drone 'X\\ n\\ nY\\\\ nZ'" drone_backslash_n_split_in_alert
+assert_empty "$(grep -F '\n' "$SW_STUB_LOG")" drone_backslash_n_never_on_screen
+assert_contains "$(tail -1 "$_L9/detections.csv")" ',"X\n\nY\\nZ",-47,' drone_backslash_n_kept_in_csv
+assert_contains "$(cat "$_s9")" 'drone|drone_rid:X\n\nY\\nZ|1001' drone_backslash_n_key_unchanged
+# control: the other backslash pairs reach the screen as they are
+: > "$SW_STUB_LOG"
+sw_emit "evil_twin|Evil twin|high|attacker|wifi|02:11:22:33:44:56|A"'\N\t\\'"B|-40" 1002 600 "$_s9" "$_L9"
+assert_contains "$(cat "$SW_STUB_LOG")" "LOG cyan Evil twin 'A\\N\\t\\\\B' 02:11:22:33:44:56 -40dBm" twin_other_backslash_pairs_unchanged
+rm -rf "$_L9" "$_s9"; unset _L9 _s9
+
 # --- ledger pruning (spec 2026-09-23 §7) ---
 _P="$(mktemp -d)"; _pf="$_P/seen.db"
 printf '%s\n' 'AA:00:00:00:00:01|old_cat|1000' 'AA:00:00:00:00:02|new_cat|1500' '*|kind_old|1000' '*|kind_new|1550' 'garbage-line' 'AA:00:00:00:00:03|bad_ts|12x4' > "$_pf"

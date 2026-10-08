@@ -782,15 +782,36 @@ Method note: the probe's poll loop is all builtins and cost about 4% of the CPU,
 Pager a forked `sleep 0.1` costs about 8 ms, so the original `swprobe.sh`, which forks one per poll, loads the
 payload it measures.
 
-**Still to do on the Pager, with the user** (the install, the silent run, the window against a real Bluetooth
-scan, the ranking's cost and awk parity, and the slack's measurements at home were done on 2026-10-08, above; the
-user skipped the rest that day):
+### With the user at the Pager (2026-10-08, after the SSH checks)
 
-- The hostile-ID probe with the real `LOG` and `ALERT`: whether quotes, `%s`, `$(x)` and `\` in a drone ID show as
-  plain text.
-- A real menu Stop during a capture window.
+1. **A real menu Stop during a capture window:** pressed 12 to 14 s after launch (about 10 to 12 s into the first
+   lap; the window closes about 12.4 s in): `Payload completed` (a clean exit), no process of that run left, and
+   the relaunch ran normally.
+2. **The hostile-ID probe with the real `LOG` and `ALERT`:** one drone, decoded from the reference beacon with its
+   Basic ID edited as text (nothing on the air), handed to the payload's own emit path with its loot in a temp
+   folder, while the user's SquachWatch ran. Quotes, `%s` and `$(x)` showed as they are, but **`LOG` and `ALERT`
+   turn the two characters `\n` into a line break** (both, seen in screenshots), so a name sent over the air could
+   add a line of its own to the screen. Through `LOG` alone, `\r`, `\t`, `\\`, `\N`, `\0`, `\e`, `\a`, `\f`, `\v`,
+   `\x41`, `\101` and `\u0041` all printed as they are, and `\\n` printed a backslash, then a line break: a plain
+   replace of `\n`, so doubling backslashes cannot help. **Fixed:** on the screen a name's `\n` shows as `\ n` (an
+   evil twin's network and a drone's ID are the only screen text sent over the air); the CSV and the ledger keep
+   the name as it is.
+3. **One "WiFi capture lost frames (CPU busy?)" WARN** came on its own about two minutes after a relaunch, while
+   the user was at the screen (nothing of this session was running then). A read-only watch of the same run for
+   the next 10 minutes (each lap's two capture files held open, counts only): 28 laps, every one with its summary,
+   0 lost, 0 above the slack (excess 0 in 23 laps, 1 in 3, 3 in 2; 50 to 75 frames a lap). The UI process took
+   0.23 to 1.75 s of CPU a lap (mean 0.47), over 1 s only in the first three laps, while the screen was lit. So the
+   WARN was most likely one lap whose nice-10 decoder fell behind while the screen was busy: a real, rare loss,
+   reported as designed (inferred: that lap's counts were not recorded).
+
+**Still to do on the Pager, with the user** (done on 2026-10-08, above: the install, the silent run, the window
+against a real Bluetooth scan, the ranking's cost and awk parity, the slack's measurements at home, a menu Stop
+during a window and the hostile-ID probe):
+
 - Ordinary laps in the busiest place available: received − captured − dropped over 50 or more laps, the worst
-  one noted (at home it was at most 2; the false-alarm side in busy air is only modelled).
+  one noted (at home it was at most 3 in 73 laps; the false-alarm side in busy air is only modelled).
+- The evil-twin run with a hostile-looking name (two networks of that name, one of them open), which now also
+  shows the `\ n` end to end.
 - The live test, with a real Remote ID drone only (SquachWatch only listens: no made-up drone is ever broadcast
   to test it), with the OpenDroneID OSM phone app as the second opinion: the real catch rate, and how many
   different Basic IDs a real drone sends from one address in a lap (more than two, a session ID that changes

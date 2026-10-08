@@ -975,5 +975,11 @@ P0-findings. The user skipped the checks that need someone at the Pager.
 5. **Awk parity with the ranking keys:** 148 of 148 outputs identical on the Pager's BusyBox awk and on mawk and
    BusyBox awk on the dev box (37 distinct, none empty; a `drone:` key changes 3 of the 74 pairs).
 
-Still open: with the user at the Pager, a real menu Stop during a window, the hostile-ID probe with the real `LOG`
-and `ALERT`, and ordinary laps in a busy place; and the live test with a real drone (§10).
+6. **With the user at the Pager, later that day:** a menu Stop during a window exited cleanly (`Payload
+   completed`). The hostile-ID probe found that the Pager's `LOG` and `ALERT` turn the two characters `\n` into a
+   line break (no other backslash pair), so a name sent over the air could add a line to the screen: there, a
+   name's `\n` now shows as `\ n` (the CSV and the ledger keep the name as it is). One "lost frames" WARN came
+   on its own while the screen was busy after a relaunch; the next 28 laps, watched read-only, lost nothing.
+
+Still open: ordinary laps in a busy place, the evil-twin run with a hostile-looking name, and the live test with
+a real drone (§10).

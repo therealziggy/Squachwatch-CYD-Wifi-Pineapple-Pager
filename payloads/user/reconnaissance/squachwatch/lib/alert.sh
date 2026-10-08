@@ -73,13 +73,18 @@ EOF
   local rssitag=""; [ -n "$rssi" ] && rssitag=" ${rssi}dBm"
   # What the screen line and the alert call it. An evil twin is about WHICH network is being
   # copied, so it names that network: "Evil twin 'HomeNet'" (spec 2026-09-29 §6.4).
+  # The Pager's LOG and ALERT turn the two characters \n into a line break (and no other backslash
+  # pair; measured 2026-10-08), so a name sent over the air could add a line of its own to the
+  # screen: there, a name's \n shows as "\ n". The CSV row and the ledger keep the name as it is.
+  local bs='\' sident
+  sident="${ident//"$bs"n/"$bs" n}"
   local shown="$label"
-  [ "$cat" = evil_twin ] && shown="$label '$ident'"
+  [ "$cat" = evil_twin ] && shown="$label '$sident'"
   # A drone is named by its Remote ID, or says it sent none (spec 2026-10-01 §4). Its detail, from
   # lib/remoteid.sh (airframe TAB motion TAB pilot), adds a second screen line and the alert's body.
   local dline="" abody=""
   if [ "$cat" = drone_rid ]; then
-    if [ -n "$ident" ]; then shown="$label '$ident'"; else shown="$label (no ID)"; fi
+    if [ -n "$ident" ]; then shown="$label '$sident'"; else shown="$label (no ID)"; fi
     local d_air="${detail%%$'\t'*}" d_rest="${detail#*$'\t'}" d_motion d_pilot
     d_motion="${d_rest%%$'\t'*}"; d_pilot="${d_rest#*$'\t'}"
     dline="$d_motion"; [ -n "$d_pilot" ] && dline="${dline:+$dline, }$d_pilot"
