@@ -424,9 +424,9 @@ sw_rid_start() {
   [ "${SW_REMOTE_ID:-0}" = 1 ] || return 0
   command -v tcpdump >/dev/null 2>&1 || return 0
   sw_stopped && return 0
-  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-300}" maxd="${SW_RID_MAX_DRONES:-32}" cap err keys
+  local now="$1" secs="${SW_RID_SECONDS:-12}" maxf="${SW_RID_MAX_FRAMES:-700}" maxd="${SW_RID_MAX_DRONES:-32}" cap err keys
   [[ "$secs" =~ ^[1-9][0-9]{0,4}$ ]] || secs=12
-  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=300
+  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=700
   [[ "$maxd" =~ ^(0|[1-9][0-9]{0,3})$ ]] || maxd=32
   # no temp file: never the interface's blink, so OFF at once (sw_rid_health_note)
   cap="$(mktemp "${SW_TMP_DIR:-/tmp}/sw_rid.XXXXXX")" || { sw_rid_health_note capture_failed "$now" at_once; return 0; }
@@ -447,8 +447,8 @@ sw_rid_collect() {
   wait "$pid" 2>/dev/null
   # stopped during the window: drop the capture unread and report nothing (a relaunch owns the screen now)
   if sw_stopped; then rm -f "$cap" "$err"; return 0; fi
-  local l started=0 radio=0 pkts="" recv="" drops="" loop=0 stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-300}" st
-  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=300
+  local l started=0 radio=0 pkts="" recv="" drops="" loop=0 stats=0 frames=0 understood=0 more=0 tag ridf maxf="${SW_RID_MAX_FRAMES:-700}" st
+  [[ "$maxf" =~ ^[1-9][0-9]{0,6}$ ]] || maxf=700
   while IFS= read -r l || [ -n "$l" ]; do
     case "$l" in
       "listening on "*) started=1; case "$l" in *"link-type IEEE802_11_RADIO "*) radio=1 ;; esac ;;
