@@ -48,9 +48,14 @@ $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
   if (match($0, /-?[0-9]+dBm signal/)) { sig = substr($0, RSTART, RLENGTH - 10)
     if (sig !~ /^(0|-?[1-9][0-9]?[0-9]?)$/ || sig + 0 < -128 || sig + 0 > 127) sig = "" }
   next }
-{ for (k = 2; k <= NF; k++) hex = hex $k }
+# The hex lines: each line's text after tcpdump's prefix (a tab, "0x", four hex digits, ":", two blanks), the
+# blanks stripped once per frame in decode(): on the Pager 6.3 ms per ordinary beacon, against 16.7 ms appending
+# field by field (spec 2026-10-08). A line of another shape takes the field loop: the output is the same either way.
+{ if (substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
+  else for (k = 2; k <= NF; k++) hex = hex $k }
 END { if (hex != "") decode(); emit() }
 function decode(  off, fc, hl, ie, id, ln, f, i, pk, steps) {
+  gsub(/[ \t]/, "", hex)                                    # the joining left blanks: one strip per frame
   frames++
   if (length(hex) % 2) return
   off = le16(2)                                              # the radiotap length = where 802.11 starts

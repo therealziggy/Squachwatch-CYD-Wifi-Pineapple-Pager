@@ -804,6 +804,28 @@ payload it measures.
    WARN was most likely one lap whose nice-10 decoder fell behind while the screen was busy: a real, rare loss,
    reported as designed (inferred: that lap's counts were not recorded).
 
+### The decoder's cost per frame, and a cheaper joining (2026-10-08)
+
+Measured on the Pager: 300 real ordinary beacons (427 KB of tcpdump text, about 26 hex lines each), captured into a
+temp folder there and deleted after; BusyBox awk; CPU (user + system), mean of 3 runs; two rounds.
+
+| program (same input) | CPU | per beacon |
+|---|---|---|
+| reading the lines only | 0.07 s | 0.2 ms |
+| + telling header lines from hex lines | 0.35 s | 1.2 ms |
+| + reading the signal | 0.38 s | 1.3 ms |
+| + joining the hex, field by field | 3.6 s | 12 ms |
+| the whole decoder | 5.0 s | 16.7 ms |
+| the whole decoder, joining each line's text after tcpdump's prefix with one strip per frame | 1.9 s | 6.3 ms |
+
+About 70% of the cost was the joining (about 210 appends per beacon): the pre-test already drops an ordinary beacon
+right after its header checks. The last row is the measured candidate (no check of the prefix's shape, blanks only);
+the decoder now has both (spec `2026-10-08-squachwatch-rid-decoder-speedup-design.md`), and its output was
+identical to the old joining's on those 600 beacons and on all 68 fixtures. Programs that only joined, without
+decoding, varied from run to run (2.6 s in one round, 5.6 s in the other) and were not used. Why it mattered: on two
+walks that day recon heard 1,000 to 1,500 different access points per 10 minutes (about 50 at home), so a window
+there very likely filled its 300 frames within seconds (inferred), and the frame cap went to 700 with this change.
+
 **Still to do on the Pager, with the user** (done on 2026-10-08, above: the install, the silent run, the window
 against a real Bluetooth scan, the ranking's cost and awk parity, the slack's measurements at home, a menu Stop
 during a window and the hostile-ID probe):

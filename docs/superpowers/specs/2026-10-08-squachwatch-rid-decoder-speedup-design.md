@@ -56,9 +56,11 @@ The hex-line rule takes the line's text after tcpdump's prefix when the prefix h
 field loop otherwise:
 
 ```awk
-{ if (length($1) == 7 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
+{ if (substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
   else for (k = 2; k <= NF; k++) hex = hex $k }
 ```
+
+(The comparison can only hold when the offset field is 7 characters long, so it needs no length check of its own.)
 
 and `decode()` first removes every blank and tab: `gsub(/[ \t]/, "", hex)`, before any other step.
 

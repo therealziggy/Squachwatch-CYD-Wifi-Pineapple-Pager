@@ -142,6 +142,62 @@ assert_eq "$(_rf "$_o" operator_id)" "5357544553544f50455241544f523032" rid_full
 _o="$(_dec emptyserial)"
 assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)/$(_rf "$_o" ua_type)" "2/4653572d4341412d544553542d30303032///2" rid_emptyserial_empty_id_takes_no_place   # "FSW-CAA-TEST-0002"
 
+# The hex lines are joined from each line's text after tcpdump's prefix (a tab, "0x", four hex digits, ":", two
+# blanks), and decode() strips the blanks once per frame: on the Pager that costs 6.3 ms per ordinary beacon where
+# appending field by field cost 16.7 ms (spec 2026-10-08). The output must not change: the reference below is the
+# same decoder with the old joining, made here from the decoder's own source.
+_rid_new="$(_sw_rid_awk_src)"
+_rid_fast='{ if (substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
+  else for (k = 2; k <= NF; k++) hex = hex $k }'
+_rid_strip='  gsub(/[ \t]/, "", hex)                                    # the joining left blanks: one strip per frame
+'
+_rid_ref="${_rid_new/"$_rid_fast"/'{ for (k = 2; k <= NF; k++) hex = hex $k }'}"
+_rid_ref="${_rid_ref/"$_rid_strip"/}"
+assert_contains "$_rid_new" "$_rid_fast" rid_join_fast_path_in_the_decoder
+assert_contains "$_rid_new" "$_rid_strip" rid_join_strip_in_the_decoder
+# control: the reference is the old joining (else every comparison below is the decoder against itself)
+assert_empty "$(printf '%s\n' "$_rid_ref" | grep -F -e 'substr($0, 11)' -e 'gsub(/[ \t]/')" rid_join_reference_has_no_fast_path
+assert_contains "$_rid_ref" '{ for (k = 2; k <= NF; k++) hex = hex $k }' rid_join_reference_has_the_field_loop
+# Lines of another shape take the field loop, and a tab between the hex words goes in the strip: each variant of the
+# reference beacon decodes as the beacon does (control: each variant's text differs from the beacon's)
+_rid_vd="$(mktemp -d)"; _rid_want="$(_dec beacon)"
+assert_eq "$(_rf "$_rid_want" mac)/$(_rf "$_rid_want" id_hex)" "80e126aabbcc/$_serial1" rid_join_control_the_beacon_decodes
+for _v in "no_tab|s/^\t//" "one_blank|s/^\(\t0x[0-9a-f]*:\)  /\1 /" "short_offset|s/^\t0x0\([0-9a-f]\{3\}\):/\t0x\1:/" \
+          "tab_between_words|s/^\(\t0x[0-9a-f]*:  [0-9a-f]*\) /\1\t/"; do
+  sed "${_v#*|}" "$_RFIX/beacon.txt" > "$_rid_vd/${_v%%|*}.txt"
+  assert_eq "$(_sw_rid_decode_awk < "$_rid_vd/${_v%%|*}.txt")" "$_rid_want" "rid_join_${_v%%|*}_decodes_as_the_beacon"
+  if cmp -s "$_rid_vd/${_v%%|*}.txt" "$_RFIX/beacon.txt"; then fail "rid_join_${_v%%|*}_variant_differs"; else pass; fi
+done
+# The differential: every fixture, every hostile frame and the variants above, then the two whole streams at max 32,
+# 0 and 1, without and with a drone: key, on this machine's awk and on BusyBox awk: the decoder's output equals the
+# reference's (2 awks x 2 key sets x (72 files + 6 streams) = 312 comparisons)
+if command -v busybox >/dev/null 2>&1; then
+  _rid_bad=""; _rid_n=0
+  cat "$_RFIX"/*.txt > "$_rid_vd/stream_top"; cat "$_RFIX"/hostile/*.txt "$_RFIX/beacon.txt" > "$_rid_vd/stream_hostile"
+  for _awk in awk "busybox awk"; do
+    for _keys in " " " :0000FSWTEST000000001 "; do
+      for _f in "$_RFIX"/*.txt "$_RFIX"/hostile/*.txt "$_rid_vd"/*.txt; do
+        _rid_n=$((_rid_n + 1))
+        [ "$($_awk -v max=32 -v ignkeys="$_keys" "$_rid_ref" < "$_f")" = "$($_awk -v max=32 -v ignkeys="$_keys" "$_rid_new" < "$_f")" ] \
+          || _rid_bad="$_rid_bad ${_awk#busybox }:${_f##*/}"
+      done
+      for _s in stream_top stream_hostile; do for _m in 32 0 1; do
+        _rid_n=$((_rid_n + 1))
+        [ "$($_awk -v max="$_m" -v ignkeys="$_keys" "$_rid_ref" < "$_rid_vd/$_s")" = "$($_awk -v max="$_m" -v ignkeys="$_keys" "$_rid_new" < "$_rid_vd/$_s")" ] \
+          || _rid_bad="$_rid_bad ${_awk#busybox }:$_s:$_m"
+      done; done
+    done
+  done
+  assert_eq "$_rid_n" "312" rid_join_differential_count
+  assert_empty "$_rid_bad" rid_join_same_output_as_the_field_loop
+  # control: the same comparison sees a difference (the multi fixture's two drones at max 1 and at max 32)
+  [ "$(awk -v max=1 -v ignkeys=" " "$_rid_ref" < "$_RFIX/multi.txt")" != "$(awk -v max=32 -v ignkeys=" " "$_rid_new" < "$_RFIX/multi.txt")" ] \
+    && pass || fail "rid_join_differential_sees_a_difference"
+else
+  fail "rid_join_differential: busybox not installed (sudo apt install busybox)"
+fi
+rm -rf "$_rid_vd"; unset _rid_new _rid_fast _rid_strip _rid_ref _rid_vd _rid_want _v _rid_bad _rid_n _awk _keys _f _s _m
+
 # --- crafted frames (spec §8): test/fixtures/rid/hostile/ holds byte edits of the fixtures above, as tcpdump
 # text only (no pcap of them exists, and no tool makes them). Each edit is written next to its test: offsets
 # are tcpdump's 0x.. byte offsets, counted from the start of the radiotap header. Every case is decoded by this
