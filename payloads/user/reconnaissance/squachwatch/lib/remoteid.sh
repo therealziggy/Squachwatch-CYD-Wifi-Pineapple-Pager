@@ -42,18 +42,20 @@ BEGIN { for (k = 0; k <= 9; k++) hx[k] = k; hx["a"] = 10; hx["b"] = 11; hx["c"] 
   # the ignore list's keys (_sw_rid_keys), each after a ":", so that a key of "" is one too; ch: digits and letters
   nk = split(ignkeys, kw, " "); for (k = 1; k <= nk; k++) ign[substr(kw[k], 2)] = 1
   for (k = 0; k <= 9; k++) ch[48 + k] = k; for (k = 1; k <= 26; k++) ch[64 + k] = substr("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k, 1) }
+# Joining the hex lines field by field was most of the decoder's cost (spec 2026-10-08). A line of exactly tcpdump's
+# prefix (a tab, "0x", four hex digits, ":", two blanks) with at least one hex word appends its text after the prefix
+# and takes no other rule; decode() strips the blanks once per frame. Any other line takes the field loop below. The
+# output is the same as the field loop's for text whose words are separated by blanks and tabs, which is all tcpdump
+# prints (BusyBox awk also splits fields on \r \v \f, which the strip does not remove).
+/^\t0x[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:  / && NF > 1 { hex = hex substr($0, 11); next }
 $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
   # tcpdump prints the radiotap fields before any frame text, so a network name cannot supply this. A radiotap
   # signal is one signed byte: a match outside -128..127 came from frame text (a radio with no signal field)
   if (match($0, /-?[0-9]+dBm signal/)) { sig = substr($0, RSTART, RLENGTH - 10)
     if (sig !~ /^(0|-?[1-9][0-9]?[0-9]?)$/ || sig + 0 < -128 || sig + 0 > 127) sig = "" }
   next }
-# The hex lines: each line's text after tcpdump's prefix (a tab, "0x", four hex digits, ":", two blanks), the
-# blanks stripped once per frame in decode(): on the Pager 6.3 ms per ordinary beacon, against 16.7 ms appending
-# field by field (spec 2026-10-08). A line of another shape takes the field loop: the output is the same either way.
-# A line with no hex words adds nothing, as before.
-{ if (NF > 1 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
-  else for (k = 2; k <= NF; k++) hex = hex $k }
+# The other hex lines: each of their words appended (a line with no hex words adds nothing)
+{ for (k = 2; k <= NF; k++) hex = hex $k }
 END { if (hex != "") decode(); emit() }
 function decode(  off, fc, hl, ie, id, ln, f, i, pk, steps) {
   gsub(/[ \t]/, "", hex)                                    # the joining left blanks: one strip per frame

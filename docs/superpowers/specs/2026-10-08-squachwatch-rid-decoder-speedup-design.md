@@ -52,27 +52,34 @@ Pager with the change (§4).
 
 ### 3.1 The decoder (`lib/remoteid.sh`, `_sw_rid_awk_src`)
 
-The hex-line rule takes the line's text after tcpdump's prefix when the prefix has its usual shape, and today's
-field loop otherwise:
+One regex rule, placed before the header rule, takes a line of exactly tcpdump's prefix with at least one hex word
+and appends its text after the prefix; every other line goes on to the header rule and, if it is a hex line, to
+today's field loop:
 
 ```awk
-{ if (NF > 1 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
-  else for (k = 2; k <= NF; k++) hex = hex $k }
+/^\t0x[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:  / && NF > 1 { hex = hex substr($0, 11); next }
+$1 !~ /^0x[0-9a-f]+:$/ { ... the header rule, as before ... next }
+{ for (k = 2; k <= NF; k++) hex = hex $k }
 ```
 
-(A line with a second field is never just a tab, its first field and two blanks. So where the comparison holds,
-substr takes a full 10 characters and the offset field is 7 characters long: no length check of its own is needed.)
+(The regex has no `{4}` interval: BusyBox awk and mawk interval support is not relied on. `NF > 1` means a hex word
+follows the prefix. The rule's `next` keeps the line from the two rules below it.)
 
 and `decode()` first removes every blank and tab: `gsub(/[ \t]/, "", hex)`, before any other step.
 
 Why the output does not change: the usual line is a tab, the 7-character offset (`0x`, four hex digits, `:`),
-two spaces, then the frame's hex words separated by blanks. Joining the rest of the line and removing every blank
-and tab gives exactly the fields 2 to NF joined. A line of any other shape takes today's loop, which leaves no blank
-or tab for the strip. A line with no hex words (a prefix and blanks only) added nothing in the field loop; `NF > 1`
-keeps that, so a frame of only such lines never reaches `decode()`. tcpdump prints the offset with `%04x`, and
-`-s 1024` keeps every offset under 0x400, so all of its output takes the fast path and decodes as today. (A line
-with other whitespace between its hex words, a carriage return say, could join differently; tcpdump never prints
-one, and no fixture has one.)
+two spaces, then the frame's hex words separated by blanks. A line the regex matches has `0x` and its four digits
+and `:` as its first field, so the header rule already left it to the hex-line rule, which joined its fields 2 to
+NF. The regex fixes the prefix's shape exactly, so the cut at the 11th character falls where the fields begin;
+joining the rest of the line and removing every blank and tab gives exactly the fields 2 to NF joined. A line the
+regex does not match (another shape, or no hex word) takes the header rule and the field loop as before, which
+leaves no blank or tab for the strip. A line with no hex words (a prefix and blanks only) added nothing in the
+field loop; `NF > 1` keeps that, so a frame of only such lines never reaches `decode()`. tcpdump prints the offset
+with `%04x`, and `-s 1024` keeps every offset under 0x400, so all of its output takes the new rule and decodes as
+today. (The equality holds for text whose words are separated by blanks and tabs, which is all tcpdump prints.
+BusyBox awk also splits fields on carriage return, vertical tab and form feed, which the strip does not remove, so
+a line with one of them between its hex words could join differently; tcpdump never prints one, and no fixture has
+one.)
 
 ### 3.2 The frame cap
 
@@ -92,7 +99,7 @@ reaches the cap; the slack of 5 + received/12; the rest of §7.2).
 - **The fallback and the strip:** lines whose prefix has another shape (a five-digit offset, a blank instead of the
   tab, one blank after the colon) take the field loop; a usual line with a tab between its hex words takes the fast
   path and the strip. Each decodes as it does with the field loop alone.
-- **The fast path is used:** a static check that the decoder's hex-line rule has the cut at a fixed place.
+- **The fast path is used:** a static check that the decoder holds the regex rule's exact line.
 - **The cap:** the tests that assume 300 move to 700 (the payload's defaults, tcpdump's arguments, the capped lap
   at the default cap, the decoder's speed test's comment).
 - **Mutants** (a new group): the fast path's shape checks loosened, the strip removed, the cap's default or a

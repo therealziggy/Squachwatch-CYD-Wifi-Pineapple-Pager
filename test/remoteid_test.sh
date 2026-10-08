@@ -142,16 +142,17 @@ assert_eq "$(_rf "$_o" operator_id)" "5357544553544f50455241544f523032" rid_full
 _o="$(_dec emptyserial)"
 assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf "$_o" id2_hex)/$(_rf "$_o" ua_type)" "2/4653572d4341412d544553542d30303032///2" rid_emptyserial_empty_id_takes_no_place   # "FSW-CAA-TEST-0002"
 
-# The hex lines are joined from each line's text after tcpdump's prefix (a tab, "0x", four hex digits, ":", two
-# blanks), and decode() strips the blanks once per frame: on the Pager that costs 6.3 ms per ordinary beacon where
-# appending field by field cost 16.7 ms (spec 2026-10-08). The output must not change: the reference below is the
-# same decoder with the old joining, made here from the decoder's own source.
+# The hex lines: one regex rule before the header rule takes a line of exactly tcpdump's prefix (a tab, "0x", four
+# hex digits, ":", two blanks) with at least one hex word as its text after the prefix, and decode() strips the
+# blanks once per frame; any other line takes the field loop (spec 2026-10-08). The output must not change: the
+# reference below is the same decoder with that rule and the strip removed, which leaves the old joining, made here
+# from the decoder's own source.
 _rid_new="$(_sw_rid_awk_src)"
-_rid_fast='{ if (NF > 1 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
-  else for (k = 2; k <= NF; k++) hex = hex $k }'
+_rid_fast='/^\t0x[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:  / && NF > 1 { hex = hex substr($0, 11); next }
+'
 _rid_strip='  gsub(/[ \t]/, "", hex)                                    # the joining left blanks: one strip per frame
 '
-_rid_ref="${_rid_new/"$_rid_fast"/'{ for (k = 2; k <= NF; k++) hex = hex $k }'}"
+_rid_ref="${_rid_new/"$_rid_fast"/}"
 _rid_ref="${_rid_ref/"$_rid_strip"/}"
 assert_contains "$_rid_new" "$_rid_fast" rid_join_fast_path_in_the_decoder
 assert_contains "$_rid_new" "$_rid_strip" rid_join_strip_in_the_decoder
