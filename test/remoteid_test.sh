@@ -147,7 +147,7 @@ assert_eq "$(_rf "$_o" id_type)/$(_rf "$_o" id_hex)/$(_rf "$_o" id2_type)/$(_rf 
 # appending field by field cost 16.7 ms (spec 2026-10-08). The output must not change: the reference below is the
 # same decoder with the old joining, made here from the decoder's own source.
 _rid_new="$(_sw_rid_awk_src)"
-_rid_fast='{ if (substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
+_rid_fast='{ if (NF > 1 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
   else for (k = 2; k <= NF; k++) hex = hex $k }'
 _rid_strip='  gsub(/[ \t]/, "", hex)                                    # the joining left blanks: one strip per frame
 '
@@ -158,19 +158,21 @@ assert_contains "$_rid_new" "$_rid_strip" rid_join_strip_in_the_decoder
 # control: the reference is the old joining (else every comparison below is the decoder against itself)
 assert_empty "$(printf '%s\n' "$_rid_ref" | grep -F -e 'substr($0, 11)' -e 'gsub(/[ \t]/')" rid_join_reference_has_no_fast_path
 assert_contains "$_rid_ref" '{ for (k = 2; k <= NF; k++) hex = hex $k }' rid_join_reference_has_the_field_loop
-# Lines of another shape take the field loop, and a tab between the hex words goes in the strip: each variant of the
-# reference beacon decodes as the beacon does (control: each variant's text differs from the beacon's)
+# Lines of another shape take the field loop, a tab between the hex words goes in the strip, and a frame whose only
+# hex line has no hex words (the prefix and blanks) is no frame at all: each variant of the reference beacon decodes
+# as the beacon does (control: each variant's text differs from the beacon's)
 _rid_vd="$(mktemp -d)"; _rid_want="$(_dec beacon)"
 assert_eq "$(_rf "$_rid_want" mac)/$(_rf "$_rid_want" id_hex)" "80e126aabbcc/$_serial1" rid_join_control_the_beacon_decodes
 for _v in "no_tab|s/^\t//" "one_blank|s/^\(\t0x[0-9a-f]*:\)  /\1 /" "short_offset|s/^\t0x0\([0-9a-f]\{3\}\):/\t0x\1:/" \
-          "tab_between_words|s/^\(\t0x[0-9a-f]*:  [0-9a-f]*\) /\1\t/"; do
+          "tab_between_words|s/^\(\t0x[0-9a-f]*:  [0-9a-f]*\) /\1\t/" \
+          "blank_hex_line|1h;\$G;\$s/\$/\n\t0x0000:   /"; do
   sed "${_v#*|}" "$_RFIX/beacon.txt" > "$_rid_vd/${_v%%|*}.txt"
   assert_eq "$(_sw_rid_decode_awk < "$_rid_vd/${_v%%|*}.txt")" "$_rid_want" "rid_join_${_v%%|*}_decodes_as_the_beacon"
   if cmp -s "$_rid_vd/${_v%%|*}.txt" "$_RFIX/beacon.txt"; then fail "rid_join_${_v%%|*}_variant_differs"; else pass; fi
 done
 # The differential: every fixture, every hostile frame and the variants above, then the two whole streams at max 32,
 # 0 and 1, without and with a drone: key, on this machine's awk and on BusyBox awk: the decoder's output equals the
-# reference's (2 awks x 2 key sets x (72 files + 6 streams) = 312 comparisons)
+# reference's (2 awks x 2 key sets x (73 files + 6 streams) = 316 comparisons)
 if command -v busybox >/dev/null 2>&1; then
   _rid_bad=""; _rid_n=0
   cat "$_RFIX"/*.txt > "$_rid_vd/stream_top"; cat "$_RFIX"/hostile/*.txt "$_RFIX/beacon.txt" > "$_rid_vd/stream_hostile"
@@ -188,7 +190,7 @@ if command -v busybox >/dev/null 2>&1; then
       done; done
     done
   done
-  assert_eq "$_rid_n" "312" rid_join_differential_count
+  assert_eq "$_rid_n" "316" rid_join_differential_count
   assert_empty "$_rid_bad" rid_join_same_output_as_the_field_loop
   # control: the same comparison sees a difference (the multi fixture's two drones at max 1 and at max 32)
   [ "$(awk -v max=1 -v ignkeys=" " "$_rid_ref" < "$_RFIX/multi.txt")" != "$(awk -v max=32 -v ignkeys=" " "$_rid_new" < "$_RFIX/multi.txt")" ] \

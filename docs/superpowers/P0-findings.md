@@ -820,7 +820,8 @@ temp folder there and deleted after; BusyBox awk; CPU (user + system), mean of 3
 
 About 70% of the cost was the joining (about 210 appends per beacon): the pre-test already drops an ordinary beacon
 right after its header checks. The last row is the measured candidate (no check of the prefix's shape, blanks only);
-the decoder now has both (spec `2026-10-08-squachwatch-rid-decoder-speedup-design.md`), and its output was
+the decoder now has both, and a guard against a line with no hex words (spec
+`2026-10-08-squachwatch-rid-decoder-speedup-design.md`), and its output was
 identical to the old joining's on those 600 beacons and on all 68 fixtures. Programs that only joined, without
 decoding, varied from run to run (2.6 s in one round, 5.6 s in the other) and were not used. Why it mattered: on two
 walks that day recon heard 1,000 to 1,500 different access points per 10 minutes (about 50 at home), so a window

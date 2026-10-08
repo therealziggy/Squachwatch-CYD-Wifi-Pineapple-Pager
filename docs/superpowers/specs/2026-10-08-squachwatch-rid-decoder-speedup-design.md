@@ -56,20 +56,23 @@ The hex-line rule takes the line's text after tcpdump's prefix when the prefix h
 field loop otherwise:
 
 ```awk
-{ if (substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
+{ if (NF > 1 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
   else for (k = 2; k <= NF; k++) hex = hex $k }
 ```
 
-(The comparison can only hold when the offset field is 7 characters long, so it needs no length check of its own.)
+(A line with a second field is never just a tab, its first field and two blanks. So where the comparison holds,
+substr takes a full 10 characters and the offset field is 7 characters long: no length check of its own is needed.)
 
 and `decode()` first removes every blank and tab: `gsub(/[ \t]/, "", hex)`, before any other step.
 
 Why the output does not change: the usual line is a tab, the 7-character offset (`0x`, four hex digits, `:`),
 two spaces, then the frame's hex words separated by blanks. Joining the rest of the line and removing every blank
 and tab gives exactly the fields 2 to NF joined. A line of any other shape takes today's loop, which leaves no blank
-or tab for the strip. tcpdump prints the offset with `%04x`, and `-s 1024` keeps every offset under 0x400, so all of
-its output takes the fast path and decodes as today. (A line with other whitespace between its hex words, a
-carriage return say, could join differently; tcpdump never prints one, and no fixture has one.)
+or tab for the strip. A line with no hex words (a prefix and blanks only) added nothing in the field loop; `NF > 1`
+keeps that, so a frame of only such lines never reaches `decode()`. tcpdump prints the offset with `%04x`, and
+`-s 1024` keeps every offset under 0x400, so all of its output takes the fast path and decodes as today. (A line
+with other whitespace between its hex words, a carriage return say, could join differently; tcpdump never prints
+one, and no fixture has one.)
 
 ### 3.2 The frame cap
 

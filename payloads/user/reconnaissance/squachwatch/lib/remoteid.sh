@@ -51,7 +51,8 @@ $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
 # The hex lines: each line's text after tcpdump's prefix (a tab, "0x", four hex digits, ":", two blanks), the
 # blanks stripped once per frame in decode(): on the Pager 6.3 ms per ordinary beacon, against 16.7 ms appending
 # field by field (spec 2026-10-08). A line of another shape takes the field loop: the output is the same either way.
-{ if (substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
+# A line with no hex words adds nothing, as before.
+{ if (NF > 1 && substr($0, 1, 10) == "\t" $1 "  ") hex = hex substr($0, 11)
   else for (k = 2; k <= NF; k++) hex = hex $k }
 END { if (hex != "") decode(); emit() }
 function decode(  off, fc, hl, ie, id, ln, f, i, pk, steps) {

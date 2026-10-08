@@ -29,6 +29,9 @@ harness `test/run.sh` (it needs bash, python3 and busybox).
 - The tool shell may be zsh: run every script with `bash`.
 - The patches below come from a dry run verified on 2026-10-08 and apply in order on top of `4c6fc56`. Extract each
   with `planpatch` (next section) and apply it with `git apply`; never retype one.
+- After review, Task 1 got a follow-up fix commit: the hex-line rule needs `NF > 1` (a hex line with no hex words added
+  nothing before and must not start a frame), with one more variant of the reference beacon, 316 comparisons and
+  +2 assertions. Task 2's counts below include it, and its patches apply on top of that commit.
 
 ## Applying the patches
 
@@ -287,7 +290,7 @@ Expected: the last command prints `1`.
   `sw_rid_collect`)
 - Modify: `test/remoteid_test.sh` (`cap_tcpdump_args` and its comment; the default-cap block, plus two new
   assertions), `test/payload_test.sh` (`payload_rid_defaults`), `test/perf_test.sh` (a comment)
-- Modify: `README.md` (`SW_RID_MAX_FRAMES` and the count, 1664 → 1666),
+- Modify: `README.md` (`SW_RID_MAX_FRAMES` and the count, 1666 → 1668),
   `docs/superpowers/specs/2026-10-01-squachwatch-remote-id-wifi-design.md` (§6, §7.5 and a new §22)
 
 **Interfaces:**
@@ -377,7 +380,7 @@ index 56ced29..dde1568 100644
 - [ ] **Step 2: Run them against the cap of 300**
 
 Run: `bash .superpowers/sdd/tools/minirun.sh "$PWD" remoteid_test.sh payload_test.sh perf_test.sh`
-Expected: last line `PASS=977 FAIL=5`; the failures are `cap_tcpdump_args`, `cap_frame_cap_setting_checked`,
+Expected: last line `PASS=979 FAIL=5`; the failures are `cap_tcpdump_args`, `cap_frame_cap_setting_checked`,
 `cap_three_hundred_frames_ok_at_the_default`, `cap_three_hundred_frames_ok_setting_checked` and
 `payload_rid_defaults`.
 
@@ -438,7 +441,7 @@ index 06e5701..3d0ae89 100644
 - [ ] **Step 4: Run the tests again**
 
 Run: `bash .superpowers/sdd/tools/minirun.sh "$PWD" remoteid_test.sh payload_test.sh perf_test.sh`
-Expected: last line `PASS=982 FAIL=0`.
+Expected: last line `PASS=984 FAIL=0`.
 
 - [ ] **Step 5: The docs** (patch `t2-docs`)
 
@@ -460,8 +463,8 @@ index f6c3349..88ee537 100644
  bash test/run.sh
  ```
  
--Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **1664 assertions, all passing** (also as root).
-+Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **1666 assertions, all passing** (also as root).
+-Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **1666 assertions, all passing** (also as root).
++Every detection test pairs a known-hit case with a clean case, and the load-bearing ones are proven to fail against a deliberately-broken variant (no vacuous passes). As of this writing: **1668 assertions, all passing** (also as root).
  
  ## Status & roadmap
  
@@ -510,7 +513,7 @@ index 56be6d2..2faa917 100644
 
 - [ ] **Step 6: The whole suite**
 
-Run: `bash test/run.sh` → last line `PASS=1666 FAIL=0`, nothing else printed but the headers and the dashes.
+Run: `bash test/run.sh` → last line `PASS=1668 FAIL=0`, nothing else printed but the headers and the dashes.
 
 - [ ] **Step 7: Commit**
 
@@ -530,7 +533,7 @@ payload.sh and in the fallbacks of sw_rid_start and sw_rid_collect.
 
 Tests: the defaults, tcpdump's -c, the capped lap at the new default, and
 300 frames reading ok at both ends (the setting unset, and a setting that
-is not a number). README and the Remote ID spec (§6, §7.5, §22). 1666
+is not a number). README and the Remote ID spec (§6, §7.5, §22). 1668
 assertions.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
