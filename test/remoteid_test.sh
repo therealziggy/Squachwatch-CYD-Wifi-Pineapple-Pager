@@ -732,7 +732,8 @@ assert_empty "$(ls -A "$_cap_dir" | grep -v '^sw_rid\.state$')" cap_leaves_no_ca
 # tcpdump ran read only (-p), on the configured interface, without clock times (-t), keeping only the first 1024
 # bytes of each frame (-s 1024), with the frame cap (300 by default). Phase 0 on the Pager (2026-10-02): no beacon
 # heard there came near 1024 bytes (the largest was 526), a crafted 4 KB frame cut to 1024 costs the decoder about 8
-# times less, and an ordinary beacon costs about 15 ms, so 300 frames are about 4.6 s of CPU (1500 were about 23 s)
+# times less, and an ordinary beacon costs about 15 ms (16 to 18 ms on 2026-10-08), so 300 frames are about 4.6 to
+# 5.4 s of CPU (1500 were about 23 s)
 assert_contains "$(grep '^tcpdump ' "$SW_STUB_LOG")" "tcpdump -i wlan1mon -p -l -t -nn -xx -s 1024 -c 300 type mgt subtype beacon or (wlan[0] & 0xfc = 0xd0 and wlan addr1 51:6f:9a:01:00:00)" cap_tcpdump_args
 # ...on the interface SW_RID_IFACE names, not a fixed one
 _cap_reset; _cap beacon SW_RID_IFACE=wlan7mon >/dev/null

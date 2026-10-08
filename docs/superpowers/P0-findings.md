@@ -653,8 +653,8 @@ Pager, **modelled** (worked out from measured numbers) or **reasoned**.
    unless what was left is within the slack (5 frames plus a twelfth of those received, about the window's last
    second at the default 12 s; below). With a `drone:` line in ignore.txt, the drone cap's ranking adds about 10 to 13% to the
    decoder's cost of Remote ID frames on the dev box's BusyBox awk (300 of them cost about 7 to 16 s anyway);
-   ordinary beacons give it no address to rank, so 300 of them stay about 4.6 s (to be measured on the Pager,
-   below).
+   ordinary beacons give it no address to rank. Measured on the Pager on 2026-10-08 (below): +13 to 14% on such
+   floods, and +4.8% on ordinary beacons, from the key's length, not the ranking.
 4. **Lap time — holds at home (measured; the Bluetooth overlap modelled).** Old build against new, alternating,
    laps after "armed" only. With the Bluetooth scan stubbed to nothing, a new lap is bound by the window: 12 s
    plus a 0.22 to 0.45 s tail (the TERM, tcpdump's exit, awk's end, the collect), and +1.25 to +1.37 s of CPU a
@@ -734,27 +734,63 @@ behind, not a shallow backlog like the one above. The share grows with the beaco
 traffic, so in very busy air with few networks the frames counted before the filter, and the last batch the
 kernel had not handed over yet (frames come in batches, and at the Pager's channel hopping in bursts), could
 exceed it in a healthy lap: a model of busy places (reviewer's, from check 5's hop timings, not measured) gave up
-to about 0.5% of laps. Provisional until measured on the Pager (below).
+to about 0.5% of laps. Measured on the Pager at home on 2026-10-08 (next section); busy places are not measured.
 
-**Still to do on the Pager, with the user:**
+### SSH checks after the install (2026-10-08)
 
-- Install, then the launcher-faithful silent run (armed, no WARN, lap time as in check 4).
+The build was installed (staged on the same file system, `mv` into place, md5 of all 12 files) and checked over
+SSH with the user away from the device: silent (the screen, sound and LED commands stubbed), launcher-faithful
+probe runs of the installed folder, everything else in one temp folder in `/tmp` (removed at the end; nothing under
+`/root` written, the user's loot untouched), every capture `-p`, only the session's own processes signalled, by
+PID. One place (the author's home), aggregates only. All **measured** unless marked.
+
+1. **Silent runs (4, the real Bluetooth scan):** armed every time (1.8 to 2.1 s after launch), no WARN, no
+   DEGRADED, no stderr line; the one nearby device that matched alerted once per run, as in the previous build;
+   Stop exited 0 in 31 to 75 ms (9 runs), and every helper had ended within 5 s; no temp file or process left.
+2. **Lap time against the previous build, the real Bluetooth scan** (alternating, 3 runs each, 15 laps each):
+   **+0.28, +0.37 and +0.40 s a lap** (+0.35 s overall; budget 1 s) and +2.0 to +2.5 s of CPU (Phase 0 modelled
+   +0.40 to 0.50 s and +1.7 s with the scan idle). The window ended 12.4 to 12.6 s into the lap and the scan 16.5
+   to 16.9 s: **the window ended first in 22 of 22 laps, by 4.1 to 4.4 s**, so the lap never waits for it; the
+   added time is the sweep running slower beside the nice-10 capture. The health check every lap
+   (`SW_HEALTH_EVERY=1`) adds 1.25 s a lap.
+3. **The slack, ordinary laps at home:** in 45 laps with a summary (63 to 102 frames each), received − captured −
+   dropped was 0 in 35, 1 in 6 and 2 in 4; the worst 2, against a slack of 13; kernel drops 0; the decoder's count
+   equal to `packets captured` in 45 of 45. Busy places are not measured.
+4. **Frames counted before the filter** (a filter that never matches, the code's own start): 0 in 20 of 20
+   standalone starts; inside real laps (started as the sweep began) 0 in 19 starts, 2 and 4 in the other two.
+5. **Busy-loop bursts, now with `received by filter`** (one 12 s window each): with 4 or 2 busy loops at nice 0,
+   4 of 5 windows lost tcpdump's summary (asleep writing to the full pipe at the TERM) and read `lost`, with the
+   WARN; the fifth printed its summary with 1 frame never processed (slack 11) and read `ok`, its decoder count
+   equal to captured. Controls: 0, 0 and 1, `ok`. So on the Pager a starved lap fills the decoder's pipe before
+   tcpdump's buffer: the no-summary rule (fix round 4) catches it, and the received rule (fix round 5) caught
+   none of these and needed to catch none. Phase 0 saw the summary survive with 4 loops and not with 2: both
+   happen, the timing at the TERM decides.
+6. **The drone cap's ranking** (the decoder alone at nice 10, mean of 3): with a `drone:` line, **+13.0%** on 300
+   frames from 300 addresses carrying the listed ID, **+14.0%** on 150 addresses that also send a 20-byte binary
+   ID (dev box: +10% and +13%); on 300 ordinary beacons captured live, +4.8%, which follows the key's length, not
+   the ranking (a one-letter key: +0%; 20-character made-up keys cost as much as the real one; the cause in
+   BusyBox awk is inferred, not profiled). Those beacons cost the decoder 16.0 ms each (Phase 0: 13.4 to 13.7 ms,
+   on smaller ones), so **300 at the cap are about 5.4 s** with tcpdump's 1.76 ms (modelled), not 4.6 s.
+7. **Awk parity with the ranking keys:** all 68 fixture files and 6 streams, with and without a `drone:` key
+   (148 outputs): identical on the Pager's BusyBox awk, the dev box's mawk and its BusyBox awk; 37 distinct
+   outputs, none empty; the key changes 3 of the 74 pairs, so the ranking code ran.
+8. **Device state:** the installed folder's md5 unchanged by the checks, recon still writing, `wlan1mon` still
+   monitor, hci0 UP RUNNING, `/tmp` back to its size before; no process of the session left (checked with a
+   positive control).
+
+Method note: the probe's poll loop is all builtins and cost about 4% of the CPU, the same for both builds; on the
+Pager a forked `sleep 0.1` costs about 8 ms, so the original `swprobe.sh`, which forks one per poll, loads the
+payload it measures.
+
+**Still to do on the Pager, with the user** (the install, the silent run, the window against a real Bluetooth
+scan, the ranking's cost and awk parity, and the slack's measurements at home were done on 2026-10-08, above; the
+user skipped the rest that day):
+
 - The hostile-ID probe with the real `LOG` and `ALERT`: whether quotes, `%s`, `$(x)` and `\` in a drone ID show as
   plain text.
 - A real menu Stop during a capture window.
-- The window against a real Bluetooth scan (Phase 0 modelled the scan as a 13 s idle stage).
-- The drone cap's ranking with a `drone:` line in ignore.txt during a flood lap: its cost on the Pager (modelled
-  in check 3 at about +10 to 13% on Remote ID frames; 300 ordinary beacons stay about 4.6 s), and one awk parity
-  run of its code on the Pager's BusyBox awk (check 8 ran the code from before it; on the dev box BusyBox 1.36.1
-  and mawk agree on it).
-- The slack for frames tcpdump never processed (fix round 5, measured on the dev box only, above):
-  - the frames counted before the filter, with a filter that never matches (about 20 starts), standalone and
-    inside a real lap (at nice 10, with the sweep running);
-  - ordinary laps in the busiest place available: received − captured − dropped over 50 or more laps, the worst
-    one noted (the false-alarm side was only modelled);
-  - a busy-loop burst like check 6's with `received by filter` recorded, which decides what the rule covers on
-    the Pager: an excess above 5 + received/12 means a starved tcpdump there is caught; one below it means the
-    Pager's starvation is shallow and still reads `ok`.
+- Ordinary laps in the busiest place available: received − captured − dropped over 50 or more laps, the worst
+  one noted (at home it was at most 2; the false-alarm side in busy air is only modelled).
 - The live test, with a real Remote ID drone only (SquachWatch only listens: no made-up drone is ever broadcast
   to test it), with the OpenDroneID OSM phone app as the second opinion: the real catch rate, and how many
   different Basic IDs a real drone sends from one address in a lap (more than two, a session ID that changes

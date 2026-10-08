@@ -475,8 +475,9 @@ sw_rid_collect() {
   # frames (about the window's last second at the default 12 s), plus 5. So a backlog deeper than about a second
   # of frames is caught; a shallower one still reads ok: the dev box's starved tcpdump left 37 to 48 frames at
   # 300 a second (about 0.15 s), inside the slack. The share grows with the beacons heard, not with all the
-  # traffic, so very busy air with few networks could still exceed it. Provisional, from the dev box (a normal
-  # window: 1 more, 6 in busy air; before the filter: up to 17 in very busy air), until measured on the Pager.
+  # traffic, so very busy air with few networks could still exceed it. The dev box: a normal window 1 more, 6 in
+  # busy air; before the filter up to 17 in very busy air. The Pager at home (2026-10-08): a normal lap 0 to 2,
+  # before the filter 0 to 4, and a starved tcpdump lost its summary instead (above); busy places not measured.
   if [ "$started" -ne 1 ]; then st=capture_failed
   elif [ "$radio" -ne 1 ]; then st=not_understood                                   # not 802.11 + radiotap
   elif [ "$stats" -ne 1 ]; then st=not_understood                                   # the decoder did not finish

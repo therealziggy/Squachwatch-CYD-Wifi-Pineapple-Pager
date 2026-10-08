@@ -447,8 +447,8 @@ Header:
 - `SW_RID_IFACE=wlan1mon`.
 - `SW_RID_SECONDS=12`: the capture window (confirmed by Phase 0, §6.1).
 - `SW_RID_MAX_FRAMES=300`: frames per lap (user decision 2026-10-02, from the cost Phase 0 measured: about
-  4.6 s of CPU at the cap for ordinary beacons, where 1500 would take about 23 s; §7.5). A value that is not a
-  plain number gives 300.
+  4.6 s of CPU at the cap for ordinary beacons, about 5.4 s with the larger ones heard on 2026-10-08, where 1500
+  would take about 23 s; §7.5). A value that is not a plain number gives 300.
 - `SW_RID_MAX_DRONES=32`: drones per lap.
 - `SW_RID_FILE=$SW_LOOT_DIR/remoteid.csv`.
 - `remoteid` joins the libraries `payload.sh` loads. The library reads each setting as `${VAR:-default}` at
@@ -511,7 +511,9 @@ failed lap that has not been reported.
   still `ok`. Phase 0's four-busy-loop window on the Pager (53 frames where normal windows heard 62 to 83; its
   received count was not recorded) may have been deeper. The share grows with the beacons heard, not with all the
   traffic, so very busy air with few networks could exceed it in a healthy lap (a model of busy places gave up to
-  about 0.5% of laps; not measured). Provisional, from the dev box, until measured on the Pager (§9).
+  about 0.5% of laps; not measured). On the Pager at home (2026-10-08, §21): a normal lap left 0 to 2 (45 laps),
+  0 to 4 came in before the filter, and a CPU-starved tcpdump lost its summary (`lost` above) instead of leaving a
+  backlog; busy places are not measured.
 - **One failed lap says nothing** (Phase 0, 2026-10-02). The recon radio's interface goes down for about 0.57 s
   every 30.6 s, and a capture that starts in that gap fails (`That device is not up`): about 1.9% of laps, a
   false OFF about every 17 minutes. A failed lap is only noted, and the status in effect stays as it was; the
@@ -572,11 +574,16 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   about 88% is the decoder, and a 12 s window at home (62 to 83 frames) costs 1.0 to 1.4 s of CPU. `nice` works.
   A lap took **+0.40 and +0.50 s** against the previous build, with the Bluetooth scan modelled as a 13 s idle
   stage (+1.7 s of CPU), inside the 1 s budget.
+- **Measured again after the install (2026-10-08, the same place, the real Bluetooth scan, §21):** a lap took
+  **+0.28 to +0.40 s** against the previous build (+0.35 s over 15 laps each) and +2.0 to +2.5 s of CPU, with
+  windows of 63 to 102 frames. The decoder took 16.0 ms per ordinary beacon that day (larger beacons than Phase
+  0's), so 300 cost about 5.4 s with tcpdump's share (modelled).
 - **So the frame cap is 300** (user decision): about 4.6 s of CPU at the cap for ordinary beacons of that size
   (modelled from the per-frame cost; 1500 would take about 23 s), 3.6 to 4.8 times the frames a window heard at
   home. With a `drone:` line in `ignore.txt`, the drone cap's ranking adds about 10 to 13% to the decoder's cost
   of Remote ID frames (dev box, below), whose floods cost about 7 to 16 s at 300 frames anyway (next bullet);
-  ordinary beacons give it no address to rank, so 300 of them stay about 4.6 s (to be measured on the Pager).
+  ordinary beacons give it no address to rank. On the Pager (2026-10-08): +13 to 14% on such floods, and +4.8% on
+  ordinary beacons, which comes from the key's length, not the ranking (a one-letter key costs nothing).
 - **Crafted frames** cost more (Pager, decoder only): the reference Remote ID beacon 22.9 ms, a dense one (nine
   messages, a new address each) 52.6 to 55.8 ms, a 2 KB frame 179 ms, a 4 KB frame 430 to 503 ms. `-s 1024` cuts
   every frame to its first 1024 bytes, so that 4 KB frame costs 59 ms, about 8 times less, and no beacon heard at
@@ -588,7 +595,7 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   ends without its summary; one that is not stops with the frames still in the buffer and prints a normal
   summary, whose `received by filter` counts them. Each makes the lap `lost`, with its WARN (§7.2), as the
   kernel's drops do, except a backlog within the slack (5 frames plus a twelfth of those received, about the
-  window's last second at the default 12 s; provisional, to be measured on the Pager), which still reads `ok`. So a spoofer can make
+  window's last second at the default 12 s; measured at home on the Pager, §7.2), which still reads `ok`. So a spoofer can make
   laps a few seconds longer (what is still in the pipe when the window ends is decoded after it, with or without a
   WARN), and frames lost because the decoder or tcpdump fell behind make the lap `lost` beyond that slack.
   (Frames dropped below the capture, by the driver or the interface, are not counted here: tcpdump's
@@ -599,8 +606,8 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   addresses that all send a listed ID take 118 ms on mawk and 862 ms on BusyBox awk, against 118 and 783 ms
   before the ranking (+10% on BusyBox); 750 addresses that each also send a binary ID with no letter or digit
   take 114 and 829 ms, against 104 and 733 (+13%). With no `drone:` line the choice costs less than before (98
-  and 748 ms for the first input), since each address's place is worked out once. On the Pager this was not
-  measured in Phase 0: scaled from the dev box it is the +10 to 13% above (left for the session with the user).
+  and 748 ms for the first input), since each address's place is worked out once. On the Pager (2026-10-08,
+  300-frame floods, §21): +13% and +14%.
 
 ## 8. Testing
 
@@ -707,7 +714,7 @@ caught, one below it means its starvation is shallow and still reads `ok`.
 
 - Install as before: stage on the same file system, `mv` into place, md5 every file.
 - A launcher-faithful silent run (`swprobe.sh`): armed, no WARN, no Remote ID status line, lap time as
-  Phase 0 predicted.
+  Phase 0 predicted. Both done on 2026-10-08 (§21).
 - **Live test, with a real drone only.** SquachWatch only listens: no made-up drone is ever broadcast
   to test it. When a drone that broadcasts Remote ID over WiFi is around (a current DJI, say), run the
   payload near it. Until then the beacon, NAN and Parrot forms rely on the reference fixtures (§8),
@@ -759,7 +766,7 @@ caught, one below it means its starvation is shallow and still reads `ok`.
   cut short, or whose capture ended on an error (a WARN of its own; the two share one per `SW_COOLDOWN`). A very
   busy spot can show it too, and a spoofer's costly frames can make a lap a few seconds longer; frames lost
   because the decoder or tcpdump fell behind are reported, except a backlog within the slack, about the window's
-  last second at the default 12 s (5 frames plus a twelfth of those received; provisional, §7.2, §7.5). In very
+  last second at the default 12 s (5 frames plus a twelfth of those received; measured at home, §7.2, §7.5). In very
   busy air with few networks a healthy lap could exceed that slack now and then (modelled, §7.2).
 - Only the first 1024 bytes of a frame are read (`-s 1024`): Remote ID placed further in is not seen (no beacon
   heard on the Pager came near it; the largest was 526 bytes).
@@ -945,3 +952,28 @@ The re-review of §19 found its docs claimed more than its rule does, and one mo
    stopped, none for a lap that captured fine.
 3. **Catch rate:** with Remote ID's own +0.40 to 0.50 s a lap, 2.6 to 2.8 windows a minute, 62 to 65%: still about
    two times in three.
+
+## 21. After the install and the SSH checks on the Pager (2026-10-08)
+
+The build was installed on the Pager (stage, `mv`, md5 of every file) and checked over SSH, silently (the screen,
+sound and LED commands stubbed, everything else in a temp folder, the user's loot untouched); the numbers are in
+P0-findings. The user skipped the checks that need someone at the Pager.
+
+1. **Silent runs:** armed, no WARN, no stderr line; Stop exited 0 in 31 to 75 ms; nothing left behind.
+2. **Lap time with the real Bluetooth scan:** +0.28 to +0.40 s a lap against the previous build (budget 1 s), and
+   +2.0 to +2.5 s of CPU. The window ended 4.1 to 4.4 s before the Bluetooth scan in 22 of 22 laps, so
+   `SW_RID_SECONDS=12` holds against a real scan, as Phase 0 reasoned.
+3. **The slack (§7.2):** 45 ordinary laps at home left 0 to 2 frames tcpdump never processed (their slack: 10 to
+   13); 0 to 4 frames came in before the filter inside real laps, 0 in 20 standalone starts. Under busy loops the
+   decoder's pipe filled before tcpdump's buffer did: 4 of 5 loaded windows lost tcpdump's summary (`lost`, the
+   WARN), the fifth left 1 frame and read `ok`. The received rule caught none of them, and none needed it: on the
+   Pager a starved lap is caught by the no-summary rule (§18); the received rule stays for the dev box's case.
+4. **Cost (§7.5):** the ranking adds +13 to 14% to Remote ID floods (the dev box: +10 to 13%); on ordinary beacons
+   a `drone:` line adds +4.8%, from the key's length, not the ranking. Ordinary beacons cost the decoder 16.0 ms
+   each that day, so 300 are about 5.4 s with tcpdump's share (modelled), above Phase 0's 4.6 s; the frame cap is
+   unchanged at 300 (a window at home heard 63 to 102 frames).
+5. **Awk parity with the ranking keys:** 148 of 148 outputs identical on the Pager's BusyBox awk and on mawk and
+   BusyBox awk on the dev box (37 distinct, none empty; a `drone:` key changes 3 of the 74 pairs).
+
+Still open: with the user at the Pager, a real menu Stop during a window, the hostile-ID probe with the real `LOG`
+and `ALERT`, and ordinary laps in a busy place; and the live test with a real drone (§10).
