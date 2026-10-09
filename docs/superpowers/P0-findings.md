@@ -818,18 +818,95 @@ temp folder there and deleted after; BusyBox awk; CPU (user + system), mean of 3
 | the whole decoder | 5.0 s | 16.7 ms |
 | the whole decoder, joining each line's text after tcpdump's prefix with one strip per frame | 1.9 s | 6.3 ms |
 
-About 70% of the cost was the joining (about 210 appends per beacon): the pre-test already drops an ordinary beacon
-right after its header checks. The last row is the measured candidate (no check of the prefix's shape, blanks only);
-the decoder now has both, and a guard against a line with no hex words (spec
-`2026-10-08-squachwatch-rid-decoder-speedup-design.md`), and its output was
-identical to the old joining's on those 600 beacons and on all 68 fixtures. Programs that only joined, without
-decoding, varied from run to run (2.6 s in one round, 5.6 s in the other) and were not used. Why it mattered: on two
-walks that day recon heard 1,000 to 1,500 different access points per 10 minutes (about 50 at home), so a window
-there very likely filled its 300 frames within seconds (inferred), and the frame cap went to 700 with this change.
+About two thirds of the cost was the joining (about 210 appends per beacon): the 12 ms row is cumulative, so the
+joining's own share is about 10.7 of the 16.7 ms. The pre-test already drops an ordinary beacon right after its
+header checks. The last row is the measured candidate (no check of the prefix's shape, blanks only), not the decoder
+that shipped: the shipped decoder checks the prefix's shape and has a guard against a line with no hex words (spec
+`2026-10-08-squachwatch-rid-decoder-speedup-design.md`), and its final form is one regex rule, measured in the next
+section. The candidate's output was identical to the old joining's on those 600 beacons and on all 68 fixtures; that
+identity check was of the candidate, and the shipped decoder was checked again (next section). Programs that only
+joined, without decoding, varied from run to run (2.6 s in one round, 5.6 s in the other) and were not used. Why it
+mattered: on two walks that day recon heard 1,000 to 1,500 different access points per 10 minutes (about 50 at
+home), so a window there very likely filled its 300 frames within seconds (inferred), and the frame cap went to 700
+with this change.
+
+### The decoder on the Pager after the review (2026-10-09)
+
+In plain words: the final review measured the shape check that the decoder had after the work above, and found that
+it ate much of the saving. The user chose the reviewer's form, one exact regex rule before the header rule
+(`6cf9291`). On the Pager it is about 2.8 times cheaper than the old decoder, the output is the same, and 700 frames
+now cost about what 300 cost before.
+
+Measured on the Pager with the user's OK and the user away from it: silent (the screen, sound and LED commands
+stubbed or shadowed), every capture `-p`, the captured frames kept in a temp folder and deleted, aggregates only,
+one place (the author's home). BusyBox awk; CPU is user + system. All **measured** unless marked.
+
+1. **The four forms side by side** (300 real ordinary beacons, 7,583 hex lines, 25.3 a beacon, 415 KB; five
+   interleaved rounds; the whole decoder; before the new build was installed):
+
+   | program (same input) | CPU | per beacon |
+   |---|---|---|
+   | the old field loop | 5.05 s | 16.8 ms |
+   | as built after the work above (`98f8a43`): a `substr` check of the prefix's shape | 2.45 s | 8.2 ms |
+   | a reconstruction of the 10-08 candidate (no shape check, blanks only, no guard) | 2.81 s | 9.4 ms |
+   | the regex rule (`6cf9291`) | 1.85 s | 6.2 ms |
+
+   tcpdump alone, for the same 300 frames: 1.9 ms a frame, none dropped. The four outputs were identical, and the
+   regex rule took 7,583 of 7,583 real hex lines. Control: the made-up reference beacon gave its one drone line
+   with every form. The dev box agrees on the order (BusyBox awk, 3,000 beacons of 26 lines, five interleaved
+   rounds: old 251 us, the `substr` check 126 us, the regex rule 88 us a beacon). The `substr` check was the
+   difference between the as-built form and the regex rule: 2.0 of the 8.2 ms here (a quarter), 38 of the 126 us on
+   the dev box. **The 10-08 note's 6.3 ms for the candidate was not reproduced:** the reconstruction cost 9.4 ms
+   here, more than the regex rule, which does more than it. The cause was not found.
+2. **The install:** `6cf9291` replaced the previous build (`7e3a3a8`) on the Pager: staged on the same file system,
+   moved into place file by file, the md5 of all 12 files equal to the commit's before and after, the stage removed.
+3. **Awk parity (P1):** the 68 fixture files and 6 whole streams, with and without a `drone:` key, make 148
+   outputs per column. All **148 of 148 were identical** across the new decoder on the Pager's BusyBox awk, on the
+   dev box's mawk and on the dev box's BusyBox awk, and the old decoder (`7e3a3a8`) on the Pager; 37 distinct
+   outputs, none empty; the key changes 3 of 74 pairs in every column, so the ranking code ran. All 789 hex lines
+   of the fixtures take the regex rule, so these inputs test the fast path against the old field loop and not the
+   fallback loop (reasoned).
+4. **Cost at the cap (P2):** 700 live ordinary beacons captured with the payload's own tcpdump command (700
+   received, 0 dropped), then each decoder run on them (the payload's own command, nice 10), three interleaved
+   rounds:
+
+   | input | old decoder | new decoder | old / new |
+   |---|---|---|---|
+   | 700 beacons | 17.1 ms a frame (12.00 s) | 6.0 ms (4.23 s) | 2.83 |
+   | the first 300 | 17.4 ms (5.23 s) | 6.3 ms (1.90 s) | 2.75 |
+
+   The old and new outputs were identical in every round, and the new rule took 18,115 of 18,115 hex lines (25.9 a
+   frame). tcpdump cost 2.2 ms a frame under `nice` and `timeout`, as the payload runs it (1.51 s for 700 frames).
+   **So 700 frames cost 5.74 s of CPU: the decoder 4.23 s + tcpdump 1.51 s, 8.2 ms a frame.** The old build at its
+   cap of 300 cost about 5.9 s (modelled: 5.23 s measured for the decoder on the first 300 frames, plus tcpdump's
+   2.2 ms a frame), so the new cap costs about what the old one did. The 10-08 design had modelled about 5.6 s at
+   700.
+5. **A silent A/B with the real Bluetooth scan (P3):** old, new, old, new, 120 s each, the default settings, the
+   probe of 2026-10-08:
+
+   | | CPU per lap | lap interval | WARN | stderr |
+   |---|---|---|---|---|
+   | old (2 runs, 10 laps) | 6.91 s | 20.90 s | 0 | 0 |
+   | new (2 runs, 10 laps) | 5.86 s | 20.84 s | 0 | 0 |
+
+   **The new build saves 1.05 s of CPU a lap (15%)** (pair by pair: 0.94 and 1.16 s), which agrees with item 4's
+   per-frame costs at these laps' 92 to 98 frames (about 1.0 s, modelled). The lap does not get shorter: the
+   decoder runs beside the Bluetooth scan and the window ended before the scan in 20 of 20 completed laps (by 4.5 to
+   5.2 s), so a cheaper decoder saves CPU, not time (reasoned). Nothing else changed: the same log lines in both
+   builds (one green "armed", five detections), a Stop that exited 0 in 31 to 41 ms, nothing left behind, the
+   decoder's frame count equal to tcpdump's in 24 of 24 laps, the worst excess (received − captured − dropped) 2
+   against a slack of 10 or more, 0 kernel drops.
+6. **Odd findings:** both builds' laps were about 0.6 s longer than on 2026-10-08, the same for both, so the A/B
+   holds (cause not measured). The new decoder cost about 3% more a frame on the first 300 frames than on all 700
+   (cause not looked into). The device was the same before and after (installed files, recon running, the radio and
+   hci0 as they were, no process left).
+
+Still open from this track: the laps in a busy place (the list below).
 
 **Still to do on the Pager, with the user** (done on 2026-10-08, above: the install, the silent run, the window
 against a real Bluetooth scan, the ranking's cost and awk parity, the slack's measurements at home, a menu Stop
-during a window and the hostile-ID probe):
+during a window and the hostile-ID probe; done on 2026-10-09, in the section above: the decoder's benchmark, the
+install of the regex build, its awk parity, its cost at the cap and a silent A/B):
 
 - Ordinary laps in the busiest place available: received − captured − dropped over 50 or more laps, the worst
   one noted (at home it was at most 3 in 73 laps; the false-alarm side in busy air is only modelled).

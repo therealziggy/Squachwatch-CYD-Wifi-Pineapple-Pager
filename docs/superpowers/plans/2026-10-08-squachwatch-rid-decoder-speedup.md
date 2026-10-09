@@ -32,6 +32,8 @@ harness `test/run.sh` (it needs bash, python3 and busybox).
 - After review, Task 1 got a follow-up fix commit: the hex-line rule needs `NF > 1` (a hex line with no hex words added
   nothing before and must not start a frame), with one more variant of the reference beacon, 316 comparisons and
   +2 assertions. Task 2's counts below include it, and its patches apply on top of that commit.
+- After the final review a Task 3 (`6cf9291`, user decision 2026-10-09) replaced the shape check with one exact regex
+  rule; the tasks below are as first planned.
 
 ## Applying the patches
 

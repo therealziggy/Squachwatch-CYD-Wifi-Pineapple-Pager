@@ -44,9 +44,10 @@ BEGIN { for (k = 0; k <= 9; k++) hx[k] = k; hx["a"] = 10; hx["b"] = 11; hx["c"] 
   for (k = 0; k <= 9; k++) ch[48 + k] = k; for (k = 1; k <= 26; k++) ch[64 + k] = substr("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k, 1) }
 # Joining the hex lines field by field was most of the decoder's cost (spec 2026-10-08). A line of exactly tcpdump's
 # prefix (a tab, "0x", four hex digits, ":", two blanks) with at least one hex word appends its text after the prefix
-# and takes no other rule; decode() strips the blanks once per frame. Any other line takes the field loop below. The
-# output is the same as the field loop's for text whose words are separated by blanks and tabs, which is all tcpdump
-# prints (BusyBox awk also splits fields on \r \v \f, which the strip does not remove).
+# and takes no other rule; decode() strips the blanks once per frame. Any other hex line takes the field loop below (a
+# line that is not a hex line takes the header rule). The output is the same as the field loop's for text whose words
+# are separated by blanks and tabs, which is all tcpdump prints (BusyBox awk also splits fields on \r \v \f, which the
+# strip does not remove).
 /^\t0x[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:  / && NF > 1 { hex = hex substr($0, 11); next }
 $1 !~ /^0x[0-9a-f]+:$/ { if (hex != "") decode(); hex = ""; sig = ""
   # tcpdump prints the radiotap fields before any frame text, so a network name cannot supply this. A radiotap

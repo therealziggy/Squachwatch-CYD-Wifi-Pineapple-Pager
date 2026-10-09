@@ -448,8 +448,8 @@ Header:
 - `SW_RID_SECONDS=12`: the capture window (confirmed by Phase 0, §6.1).
 - `SW_RID_MAX_FRAMES=700`: frames per lap. It was 300 (user decision 2026-10-02, from the cost Phase 0 measured:
   about 4.6 s of CPU at the cap for ordinary beacons, where 1500 would take about 23 s); since 2026-10-08 it is 700,
-  with the cheaper decoder of §22 (about 5.6 s at the cap, modelled; §7.5). A value that is not a plain number gives
-  700.
+  with the cheaper decoder of §22 (5.74 s at the cap, measured on 700 live beacons on 2026-10-09; §7.5). A value that
+  is not a plain number gives 700.
 - `SW_RID_MAX_DRONES=32`: drones per lap.
 - `SW_RID_FILE=$SW_LOOT_DIR/remoteid.csv`.
 - `remoteid` joins the libraries `payload.sh` loads. The library reads each setting as `${VAR:-default}` at
@@ -585,9 +585,9 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   of Remote ID frames (dev box, below), whose floods cost about 7 to 16 s at 300 frames anyway (next bullet);
   ordinary beacons give it no address to rank. On the Pager (2026-10-08): +13 to 14% on such floods, and +4.8% on
   ordinary beacons, which comes from the key's length, not the ranking (a one-letter key costs nothing).
-- **Since 2026-10-08 the cap is 700** (§22): the cheaper joining costs the decoder 6.3 ms per ordinary beacon on the
-  Pager (measured, before its check of the prefix's shape), so 700 frames take about 5.6 s with tcpdump's share
-  (modelled), about what 300 took before.
+- **Since 2026-10-08 the cap is 700** (§22): the decoder with the cheaper joining (one regex rule) costs 6.0 to 6.3
+  ms per ordinary beacon on the Pager (measured on live beacons, 2026-10-09), so 700 frames take 5.74 s of CPU with
+  tcpdump's 2.2 ms a frame (measured on 700 live beacons), about what 300 took before (about 5.9 s, modelled).
 - **Crafted frames** cost more (Pager, decoder only): the reference Remote ID beacon 22.9 ms, a dense one (nine
   messages, a new address each) 52.6 to 55.8 ms, a 2 KB frame 179 ms, a 4 KB frame 430 to 503 ms. `-s 1024` cuts
   every frame to its first 1024 bytes, so that 4 KB frame costs 59 ms, about 8 times less, and no beacon heard at
@@ -655,7 +655,7 @@ Remote ID is not authenticated, and spoofing tools are public, so every byte is 
   drone across an address change, and the kind cooldown.
 - **Stop:** a Stop inside the window exits 0 quickly, reports nothing afterwards, and leaves no files after
   the next start (the existing Stop harness).
-- **Performance:** the decoder over 1,500 frames (five times the default frame cap), 300 of them Remote ID,
+- **Performance:** the decoder over 1,500 frames (more than twice the default frame cap), 300 of them Remote ID,
   within a time budget on the dev box, and over 1,500 addresses for the drone cap to rank (§7.5); plus the
   static check that bash forks nothing per frame (it only runs per drone).
 - **Portability:** the awk program under mawk and the dev box's BusyBox awk; on the Pager's own BusyBox awk
@@ -992,7 +992,11 @@ a real drone (§10).
 
 Design: `2026-10-08-squachwatch-rid-decoder-speedup-design.md`. On two walks the Pager's recon heard 1,000 to 1,500
 access points per 10 minutes (about 50 at home), so a window there very likely filled its 300 frames within seconds
-(inferred). On the Pager about 70% of the decoder's 16.7 ms per ordinary beacon went to joining tcpdump's hex field
-by field. The decoder now joins each hex line's text after tcpdump's prefix and strips the blanks once per frame (a
-line of another shape takes the old field loop; tested against the old joining on every fixture, the hostile ones
-too, on mawk and BusyBox awk), and `SW_RID_MAX_FRAMES` defaults to 700.
+(inferred). On the Pager about two thirds of the decoder's 16.7 ms per ordinary beacon went to joining tcpdump's hex
+field by field. The decoder now has one exact regex rule before the header rule: a line of exactly tcpdump's prefix
+(a tab, `0x`, four hex digits, `:`, two blanks) with at least one hex word has its text after the prefix appended,
+and the blanks are stripped once per frame; a line of another shape takes the old field loop (tested against the old
+joining on every fixture, the hostile ones too, on mawk and BusyBox awk), and `SW_RID_MAX_FRAMES` defaults to 700.
+Measured on the Pager on 2026-10-09 (`P0-findings.md`): the decoder costs 6.0 ms a frame against the old 17.1 (2.83
+times cheaper, the same output on 148 of 148 test inputs), 700 frames cost 5.74 s of CPU, and a silent run with the
+real Bluetooth scan saves 1.05 s of CPU a lap without changing the lap time.
