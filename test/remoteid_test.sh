@@ -171,9 +171,15 @@ for _v in "no_tab|s/^\t//" "one_blank|s/^\(\t0x[0-9a-f]*:\)  /\1 /" "short_offse
   assert_eq "$(_sw_rid_decode_awk < "$_rid_vd/${_v%%|*}.txt")" "$_rid_want" "rid_join_${_v%%|*}_decodes_as_the_beacon"
   if cmp -s "$_rid_vd/${_v%%|*}.txt" "$_RFIX/beacon.txt"; then fail "rid_join_${_v%%|*}_variant_differs"; else pass; fi
 done
+# One more variant, for the differential only: an uppercase hex digit in an offset (the last line's 0x00a0). tcpdump
+# prints lowercase offsets, so under the old joining and under the decoder alike such a line is not a hex line: the
+# header rule takes it and it ends the frame. It does not decode as the beacon; the differential decides that the
+# decoder's output on it equals the reference's. Control: its text differs from the beacon's.
+sed $'s/^\t0x00a0:/\t0x00A0:/' "$_RFIX/beacon.txt" > "$_rid_vd/uppercase_offset.txt"
+if cmp -s "$_rid_vd/uppercase_offset.txt" "$_RFIX/beacon.txt"; then fail "rid_join_uppercase_offset_variant_differs"; else pass; fi
 # The differential: every fixture, every hostile frame and the variants above, then the two whole streams at max 32,
 # 0 and 1, without and with a drone: key, on this machine's awk and on BusyBox awk: the decoder's output equals the
-# reference's (2 awks x 2 key sets x (73 files + 6 streams) = 316 comparisons)
+# reference's (2 awks x 2 key sets x (74 files + 6 streams) = 320 comparisons)
 if command -v busybox >/dev/null 2>&1; then
   _rid_bad=""; _rid_n=0
   cat "$_RFIX"/*.txt > "$_rid_vd/stream_top"; cat "$_RFIX"/hostile/*.txt "$_RFIX/beacon.txt" > "$_rid_vd/stream_hostile"
@@ -191,7 +197,7 @@ if command -v busybox >/dev/null 2>&1; then
       done; done
     done
   done
-  assert_eq "$_rid_n" "316" rid_join_differential_count
+  assert_eq "$_rid_n" "320" rid_join_differential_count
   assert_empty "$_rid_bad" rid_join_same_output_as_the_field_loop
   # control: the same comparison sees a difference (the multi fixture's two drones at max 1 and at max 32)
   [ "$(awk -v max=1 -v ignkeys=" " "$_rid_ref" < "$_RFIX/multi.txt")" != "$(awk -v max=32 -v ignkeys=" " "$_rid_new" < "$_RFIX/multi.txt")" ] \
