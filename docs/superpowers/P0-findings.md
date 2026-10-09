@@ -859,7 +859,8 @@ one place (the author's home). BusyBox awk; CPU is user + system. All **measured
    the dev box. **The 10-08 note's 6.3 ms for the candidate was not reproduced:** the reconstruction cost 9.4 ms
    here, more than the regex rule, which does more than it. The cause was not found.
 2. **The install:** `6cf9291` replaced the previous build (`7e3a3a8`) on the Pager: staged on the same file system,
-   moved into place file by file, the md5 of all 12 files equal to the commit's before and after, the stage removed.
+   moved into place file by file; the staged files, then the installed ones, matched the commit's md5, 12 of 12;
+   the stage removed.
 3. **Awk parity (P1):** the 68 fixture files and 6 whole streams, with and without a `drone:` key, make 148
    outputs per column. All **148 of 148 were identical** across the new decoder on the Pager's BusyBox awk, on the
    dev box's mawk and on the dev box's BusyBox awk, and the old decoder (`7e3a3a8`) on the Pager; 37 distinct
@@ -890,7 +891,8 @@ one place (the author's home). BusyBox awk; CPU is user + system. All **measured
    | new (2 runs, 10 laps) | 5.86 s | 20.84 s | 0 | 0 |
 
    **The new build saves 1.05 s of CPU a lap (15%)** (pair by pair: 0.94 and 1.16 s), which agrees with item 4's
-   per-frame costs at these laps' 92 to 98 frames (about 1.0 s, modelled). The lap does not get shorter: the
+   per-frame costs at these laps' frames (a mean of 92 a lap in the old runs and 98 in the new; 71 to 118 a lap)
+   (about 1.0 s, modelled). The lap does not get shorter: the
    decoder runs beside the Bluetooth scan and the window ended before the scan in 20 of 20 completed laps (by 4.5 to
    5.2 s), so a cheaper decoder saves CPU, not time (reasoned). Nothing else changed: the same log lines in both
    builds (one green "armed", five detections), a Stop that exited 0 in 31 to 41 ms, nothing left behind, the

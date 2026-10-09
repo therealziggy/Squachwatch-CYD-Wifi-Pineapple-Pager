@@ -998,5 +998,5 @@ field by field. The decoder now has one exact regex rule before the header rule:
 and the blanks are stripped once per frame; a line of another shape takes the old field loop (tested against the old
 joining on every fixture, the hostile ones too, on mawk and BusyBox awk), and `SW_RID_MAX_FRAMES` defaults to 700.
 Measured on the Pager on 2026-10-09 (`P0-findings.md`): the decoder costs 6.0 ms a frame against the old 17.1 (2.83
-times cheaper, the same output on 148 of 148 test inputs), 700 frames cost 5.74 s of CPU, and a silent run with the
-real Bluetooth scan saves 1.05 s of CPU a lap without changing the lap time.
+times cheaper, the same output on 148 of 148 test outputs), 700 frames cost 5.74 s of CPU, and a silent run with the
+real Bluetooth scan saves 1.05 s of CPU a lap at home (about 95 frames a lap) without changing the lap time.

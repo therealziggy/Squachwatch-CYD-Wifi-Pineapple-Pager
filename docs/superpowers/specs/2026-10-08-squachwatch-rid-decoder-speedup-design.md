@@ -141,15 +141,15 @@ The README (the cap and its cost), the Remote ID spec (§6, §7.5, and a section
   frame and was counted as a frame. `NF > 1` keeps the old behaviour (such a line adds nothing). tcpdump never
   prints one, so this is defensive; it keeps "the output does not change, for any input" true.
 - **The regex rule (`6cf9291`).** The decoder first checked each line's prefix by comparing its first ten characters
-  with `substr` (`98f8a43`). The final review measured that check as a large part of what the cheaper joining cost
-  (about 45% on the dev box), so the docs' cost figures, which came from the candidate without it, were too low. The
+  with `substr` (`98f8a43`). The final review measured that check adding about 45% to the candidate's cost on the
+  dev box, so the docs' cost figures, which came from the candidate without it, were too low. The
   user chose the reviewer's form: the one regex rule of §3.1, before the header rule, with the hex-line rule back to
   the old field loop. Its output is the old joining's for any text whose words are separated by blanks and tabs.
 - **Measured on the Pager (2026-10-09; P0-findings has the tables).** Four forms of the joining on 300 live beacons:
   the old field loop 16.8 ms a beacon, the `substr` check 8.2, a reconstruction of the candidate 9.4 (the 6.3 ms of
   2026-10-08 was not reproduced, cause not found) and the regex rule 6.2. After the install, on 700 live beacons the
   decoder costs 17.1 ms a frame (old) and 6.0 ms (new), 2.83 times cheaper, with identical output; 700 frames cost
-  5.74 s of CPU. A silent A/B with the real Bluetooth scan saves 1.05 s of CPU a lap (15%), with the same laps, the
+  5.74 s of CPU. A silent A/B with the real Bluetooth scan saves 1.05 s of CPU a lap at home (15%, about 95 frames a lap), with the same laps, the
   same log lines and no WARN. The awk parity holds: 148 of 148 outputs identical on the Pager's BusyBox awk, on the
   dev box's mawk and BusyBox awk, and for the old decoder.
 - **Still open:** laps in a busy place, the reason for the cap of 700, have not been measured.
